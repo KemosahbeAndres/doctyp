@@ -1,0 +1,7 @@
+# Registro de correlativos/versiones de doctyp: estado local de todo el sistema, no se versiona.
+doctyp-registro.json
+
+# Salidas de compilación de informes (el manual de referencia sí se versiona)
+*.pdf
+!TI-MAN-GOB_2026-0020_v2.0_20260514.pdf
+__pycache__/

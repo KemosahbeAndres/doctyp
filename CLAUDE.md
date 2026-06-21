@@ -13,7 +13,8 @@
   portada, márgenes) salvo orden explícita del usuario. Regla del manual §11.2.
 - **Cada informe es un archivo `.typ` propio** que importa `lib.typ` y solo aporta `meta` + prosa.
 - **El correlativo NUNCA se inventa:** es secuencial automático. Genera los documentos con
-  `docctl.py` (§3) o, si creas el archivo a mano, calcula el siguiente con `python docctl.py listar`.
+  `doctyp` (§3) o, si creas el archivo a mano, calcula el siguiente con `doctyp listar`.
+  La fuente de verdad del correlativo y de las versiones es `doctyp-registro.json` (junto al script).
 - Tras cada cambio, **compila y verifica** (§7). No afirmar que algo funciona sin compilarlo.
 - Diffs mínimos; una sola fuente de verdad (todo dato en `meta`); sin hardcodear estilos.
 
@@ -23,10 +24,11 @@
 
 ```
 .
-├── lib.typ          # PLANTILLA (motor): estilos, portada/contraportada, componentes, atajos.
-├── docctl.py        # CLI que crea informes con nomenclatura y estructura estándar.
-├── main.typ         # Informe de ejemplo (referencia). No es la plantilla.
-├── CLAUDE.md        # Este archivo.
+├── lib.typ                # PLANTILLA (motor): estilos, portada/contraportada, componentes, atajos.
+├── doctyp.py              # CLI que crea informes (comando global `doctyp`; symlink en ~/.local/bin).
+├── doctyp-registro.json   # Registro de correlativos y versiones (fuente de verdad; lo gestiona el script).
+├── main.typ               # Informe de ejemplo (referencia). No es la plantilla.
+├── CLAUDE.md              # Este archivo.
 └── Images/
     ├── logoslepch.png   # Logo color SLEP (portada + header)   ← meta.logos.slep
     └── isologo_2.png    # Marca pequeña (reservado)            ← meta.logos.isologo
@@ -38,17 +40,24 @@ Cada informe se nombra con su **código base**: `TI-<TIPO>-<CAT>_<AAAA>-<NNNN>.t
 
 ## 2. Crear un informe — dos vías
 
-**Vía A (recomendada): generador `docctl.py`** — asigna el correlativo y escribe la estructura:
+**Vía A (recomendada): generador `doctyp`** — asigna el correlativo y escribe la estructura.
+El documento se crea **en el directorio actual** (donde se llama el comando). Con los defaults
+de autoría (Andrés Cubillos), tipo `INF` y categoría `SFW` basta con el título:
 
 ```bash
-python docctl.py nuevo --tipo INF --categoria SEG \
-  --titulo "Auditoría de respaldos del Centro de Datos" \
-  --autor "Nombre Apellido" --cargo "Ingeniero en Informática" \
-  --correo "x@epchinchorro.cl"
+doctyp nuevo "Auditoría de respaldos del Centro de Datos"   # título posicional
+doctyp nuevo --t "Manual de red" --tipo MAN --categoria RED  # o con --t / --titulo
+```
+
+Para subir la versión de un documento ya creado (bump del patch, `1.0.0 → 1.0.1`), actualiza el
+`.typ` y añade una fila a la tabla de control de versiones:
+
+```bash
+doctyp save 1 --m "Corrige la sección de alcance"   # 1 = correlativo del documento
 ```
 
 **Vía B (manual):** crea el `.typ` con este esqueleto (también está embebido en la cabecera de
-`lib.typ`). Antes, obtén el correlativo con `python docctl.py listar`.
+`lib.typ`). Antes, obtén el correlativo con `doctyp listar`.
 
 ```typst
 #import "lib.typ": *
@@ -77,51 +86,76 @@ La portada y la contraportada se generan solas. No escribas `= Portada` ni `= Co
 
 ---
 
-## 3. Generador `docctl.py`  (Claude Code puede ejecutarlo)
+## 3. Generador `doctyp`  (Claude Code puede ejecutarlo)
 
-Script en Python estándar (sin dependencias). Detecta los documentos existentes, calcula el
-**correlativo secuencial** y crea el `.typ` con la estructura canónica completa.
+Script en Python estándar (sin dependencias), instalado como **comando global** `doctyp`
+(symlink en `~/.local/bin` → `doctyp.py`). Funciona desde cualquier carpeta:
+
+- **Salida en el directorio actual (CWD):** el `.typ` se crea donde se invoca el comando.
+- **Plantilla y assets junto al script:** `lib.typ`, `Images/` y el registro viven en el
+  directorio real del script (`SCRIPT_DIR`); el `.typ` generado importa `lib.typ` por **ruta
+  absoluta**, así Typst resuelve los logos y las fuentes desde cualquier carpeta.
+- **Registro central:** `doctyp-registro.json` (en `SCRIPT_DIR`) es la **fuente de verdad** de
+  correlativos y versiones de todo el sistema.
 
 ### Correlativo secuencial
-- **Global anual:** el próximo número = (máximo correlativo existente para ese año) + 1.
-- Detecta documentos por nombre de archivo y por el `meta` de cada `.typ` (ignora `lib.typ`
-  y las líneas comentadas). Nunca reutiliza un número ya usado.
+- **Global anual:** el próximo número = (máximo correlativo del año en el registro JSON) + 1.
+- El JSON manda; como respaldo se escanea el CWD para no pisar un `.typ` ya presente con el
+  mismo año. Nunca reutiliza un número ya usado.
 
 ### Subcomandos
 ```bash
-python docctl.py listar [--anio 2026]      # lista documentos y el próximo correlativo
-python docctl.py nuevo  --tipo INF --categoria SEG --titulo "..." [opciones]
+doctyp listar [--anio 2026]                  # lista documentos del registro y el próximo correlativo
+doctyp nuevo  "Título" [opciones]            # crea (tipo INF, categoría SFW por defecto)
+doctyp save   <correlativo> --m "mensaje"    # sube versión (patch) y registra el cambio
 ```
+El título de `nuevo` admite tres formas: posicional (`doctyp nuevo "Título"`), `--t "Título"`
+o `--titulo "Título"`.
 
 ### Opciones de `nuevo`
 | Flag | Por defecto | Notas |
 |---|---|---|
-| `--tipo` (oblig.) | — | INF, MAN, POL, PRO, PLA, EVL, ETT, ACT |
-| `--categoria` (oblig.) | — | SEG, RED, HRW, SFW, DAT, SRV, PRV, GOB, USR, CPD, BCK, PRY, CAP |
-| `--titulo` | (se pide interactivo) | Título del documento |
+| `--tipo` | `INF` | INF, MAN, POL, PRO, PLA, EVL, ETT, ACT |
+| `--categoria` | `SFW` | SEG, RED, HRW, SFW, DAT, SRV, PRV, GOB, USR, CPD, BCK, PRY, CAP |
+| `título` (posicional) / `--titulo` / `--t` | (se pide interactivo) | Título del documento |
 | `--subtitulo` | `SLEP Chinchorro` | |
 | `--area` | `TI` | |
 | `--correlativo` | **secuencial automático** | solo para forzar un número |
-| `--version` | `1.0` | |
+| `--version` | `1.0.0` | versión inicial (semántica) |
 | `--fecha` | hoy (AAAAMMDD) | |
 | `--anio` | el de `--fecha` | |
 | `--estado` | `BORRADOR` | BORRADOR \| EN REVISIÓN \| APROBADO |
 | `--clasificacion` | `INTERNO` | PÚBLICO \| INTERNO \| RESERVADO \| CONFIDENCIAL |
-| `--autor` `--cargo` `--correo` | placeholders | autoría |
+| `--autor` | `Andres Cubillos Salazar` | autoría |
+| `--cargo` | `Tecnico de Soporte Informático` | autoría |
+| `--correo` | `andres.cubillos@epchinchorro.cl` | autoría |
 | `--revisor` `--aprobador` | defaults de la plantilla | |
-| `--dir` | `.` | subdirectorio de salida (relativo a la raíz) |
+| `--dir` | `.` | subdirectorio de salida (relativo al directorio actual) |
 | `--compilar` | — | compila a PDF tras crear (requiere `typst`) |
 | `--forzar` | — | sobrescribe si el archivo existe |
 
 El archivo se nombra `<código-base>.typ` y la salida indica el código completo asignado.
 
+### Opciones de `save`
+Sube la versión de un documento ya registrado: incrementa el **patch** (`1.0.0 → 1.0.1`),
+actualiza el campo `version:` del `.typ` y **antepone una fila** a la tabla de control de
+versiones (fecha = hoy, autor = el del registro, descripción = el mensaje).
+
+| Flag | Notas |
+|---|---|
+| `<correlativo>` (oblig.) | Número del documento a versionar (p. ej. `1` o `0001`). Se localiza por el registro JSON. |
+| `--m` / `--mensaje` (oblig.) | Descripción de la nueva versión. |
+| `--anio` | Año del documento (por defecto, el actual). |
+| `--compilar` | Compila a PDF tras versionar. |
+
 ### Cómo lo usa Claude Code
-1. Ejecuta `python docctl.py listar` para conocer el próximo correlativo (informativo).
-2. Ejecuta `python docctl.py nuevo --tipo ... --categoria ... --titulo "..." --autor "..."`.
+1. Ejecuta `doctyp listar` para conocer el próximo correlativo (informativo).
+2. Ejecuta `doctyp nuevo "..."` (ajusta `--tipo`/`--categoria`/autoría si hace falta).
 3. Abre el `.typ` creado y **rellena las secciones marcadas `// TODO`** con el contenido del usuario.
 4. Compila (§7) e itera.
 
-> Si `--root` no se indica, el script busca `lib.typ` hacia arriba desde el directorio actual.
+> El script localiza `lib.typ` junto a sí mismo (resolviendo el symlink). No usa `--root`.
+> Instalación: `ln -sf "$(pwd)/doctyp.py" ~/.local/bin/doctyp` (requiere `~/.local/bin` en el PATH).
 
 ---
 
@@ -171,7 +205,7 @@ Ya vienen por defecto (no repetir salvo cambio): `unidad`, `subdireccion`, `inst
 | 18 | Anexos | `= Anexos` + `== Anexo X. ...` (incl. `== Anexo B. Firmas` → `#firmas-estandar(meta)`) |
 | 19 | Contraportada | automática (`meta.contraportada`) |
 
-Los encabezados se numeran solos (`1`, `1.1`). `docctl.py nuevo` ya escribe todo este esqueleto.
+Los encabezados se numeran solos (`1`, `1.1`). `doctyp nuevo` ya escribe todo este esqueleto.
 
 ---
 
@@ -179,7 +213,7 @@ Los encabezados se numeran solos (`1`, `1.1`). `docctl.py nuevo` ya escribe todo
 
 Patrón: `AREA-TIPO-CAT_AAAA-NNNN_vX.Y_AAAAMMDD` → p. ej. `TI-INF-SEG_2026-0023_v1.0_20260601`.
 
-- **`NNNN` es secuencial global anual** (4 dígitos), asignado por `docctl.py` (§3). No lo inventes.
+- **`NNNN` es secuencial global anual** (4 dígitos), asignado por `doctyp` (§3). No lo inventes.
 - `codigo-base(meta)` = `TI-INF-SEG_2026-0023` · `codigo-completo(meta)` = con versión y fecha.
   Se imprimen solos (portada, ficha, footer, contraportada). No los escribas a mano.
 - **Tipos:** INF Informe · MAN Manual · POL Política · PRO Procedimiento · PLA Plan · EVL Evaluación · ETT Esp. Técnica · ACT Acta.
@@ -198,7 +232,7 @@ typst compile --font-path ./fonts <archivo>.typ
 - Requiere **Typst ≥ 0.12** y, para fidelidad tipográfica, la fuente **Museo Sans**
   (si falta, cae a Liberation Sans; el layout no se rompe).
 - Coloca los logos reales en `Images/` antes de la versión final.
-- `docctl.py nuevo --compilar` compila automáticamente al crear.
+- `doctyp nuevo --compilar` compila automáticamente al crear.
 - Sin binario, valida con las bindings de Python:
   `pip install typst --break-system-packages && python3 -c "import typst; typst.compile('<archivo>.typ', output='out.pdf')"`
 
@@ -231,13 +265,13 @@ typst compile --font-path ./fonts <archivo>.typ
 Cuando el usuario diga “redactemos un informe sobre X”:
 
 1. **Identifica `--tipo` y `--categoria`** (§6) y confirma autor/cargo/correo si no los da.
-2. **Crea el archivo con el generador** (asigna el correlativo secuencial):
-   `python docctl.py nuevo --tipo INF --categoria <CAT> --titulo "<título>" --autor "<...>" --cargo "<...>" --correo "<...>"`.
+2. **Crea el archivo con el generador** (asigna el correlativo secuencial y lo deja en el CWD):
+   `doctyp nuevo "<título>"` (ajusta `--tipo`/`--categoria`/autoría solo si difieren de los defaults).
 3. **Rellena las secciones `// TODO`** del archivo con el contenido del usuario, siguiendo la
    estructura canónica (§5). Usa `aviso(...)` para estados/riesgos y `tabla(...)`/`tabla-prioridad(...)` para datos.
 4. **Compila** (§7) y revisa el PDF; corrige e **itera** sección por sección.
-5. Al cerrar una versión: sube `version`, actualiza `fecha-codigo`, agrega fila en `s-versiones`
-   y reporta el `codigo-completo`.
+5. Al cerrar una versión: `doctyp save <correlativo> --m "<qué cambió>"` sube el patch, actualiza
+   el `version:` del `.typ` y añade la fila a `s-versiones` automáticamente. Reporta el `codigo-completo`.
 
 Sugerencia: deja `typst watch <archivo>.typ` corriendo durante la redacción.
 
@@ -248,12 +282,13 @@ Sugerencia: deja `typst watch <archivo>.typ` corriendo durante la redacción.
 | Síntoma | Causa | Solución |
 |---|---|---|
 | `dictionary does not contain key "..."` | `meta` parcial pasado a un helper | Construye `meta` con `crear-meta(...)` |
-| `file not found (Images/...)` | rutas relativas a `lib.typ` | Mantén `lib.typ` y `Images/` en la misma carpeta; compila desde la del informe |
+| `file not found (Images/...)` | rutas relativas a `lib.typ` | Mantén `lib.typ` y `Images/` juntos en `SCRIPT_DIR`; el `.typ` importa `lib.typ` por ruta absoluta |
 | Recuadros de logo vacíos | faltan los PNG reales | Copia `logoslepch.png` (y `isologo_2.png`) a `Images/` |
 | Tipografía distinta al estándar | Museo Sans no instalada | Instálala o usa `--font-path`; fallback Liberation Sans |
 | Íconos de aviso como cuadros | la fuente fallback no trae ℹ/⚠/⛔/✓ | Con Museo Sans renderizan; o cambia los glifos en `_aviso-cfg` |
-| Correlativo repetido o saltado | se asignó a mano | Usa `docctl.py` (secuencial automático); no fijes `--correlativo` sin motivo |
-| `docctl.py` no encuentra `lib.typ` | ejecutado fuera del proyecto | Corre desde la raíz o pasa `--root <ruta>` |
+| Correlativo repetido o saltado | se asignó a mano | Usa `doctyp` (secuencial automático desde el JSON); no fijes `--correlativo` sin motivo |
+| `doctyp` no encuentra `lib.typ` | symlink roto o `lib.typ` movido | Mantén `lib.typ` junto a `doctyp.py`; recrea el symlink con `ln -sf "$(pwd)/doctyp.py" ~/.local/bin/doctyp` |
+| `doctyp: command not found` | `~/.local/bin` fuera del PATH | Añádelo en `~/.bashrc`: `export PATH="$HOME/.local/bin:$PATH"` y reabre la terminal |
 | Portada numerada / doble contraportada | se alteró `report` | No edites `report`; no escribas portada/contraportada a mano |
 
 ---
@@ -261,6 +296,7 @@ Sugerencia: deja `typst watch <archivo>.typ` corriendo durante la redacción.
 ## 11. TL;DR para Claude Code
 
 1. No toques el estilo de `lib.typ` sin orden explícita.
-2. Crea informes con `python docctl.py nuevo ...` (correlativo secuencial automático).
+2. Crea informes con `doctyp nuevo "..."` (correlativo secuencial automático; sale en el CWD).
+   Sube versión con `doctyp save <correlativo> --m "..."`.
 3. Rellena los `// TODO` siguiendo la estructura canónica (§5) y la API (§8).
 4. Compila tras cada cambio (§7) y reporta el `codigo-completo`.
