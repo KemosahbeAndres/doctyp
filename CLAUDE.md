@@ -89,7 +89,8 @@ La portada y la contraportada se generan solas. No escribas `= Portada` ni `= Co
 ## 3. Generador `doctyp`  (Claude Code puede ejecutarlo)
 
 Script en Python estándar (sin dependencias), instalado como **comando global** `doctyp`
-(symlink en `~/.local/bin` → `doctyp.py`). Funciona desde cualquier carpeta:
+(symlink en `~/.local/bin` → `doctyp.py`), con alias equivalentes **`ty`**, **`tp`** y **`dt`**
+(symlinks al mismo script). Funciona desde cualquier carpeta:
 
 - **Salida en el directorio actual (CWD):** el `.typ` se crea donde se invoca el comando.
 - **Plantilla y assets junto al script:** `lib.typ`, `Images/` y el registro viven en el
@@ -182,7 +183,8 @@ queda **junto al `.typ`**. Detalles de la invocación (en `compilar_typ`):
 4. Compila con `doctyp compile <correlativo>` (§7) e itera.
 
 > El script localiza `lib.typ` junto a sí mismo (resolviendo el symlink). No usa `--root`.
-> Instalación: `ln -sf "$(pwd)/doctyp.py" ~/.local/bin/doctyp` (requiere `~/.local/bin` en el PATH).
+> Instalación: `for n in doctyp ty tp dt; do ln -sf "$(pwd)/doctyp.py" ~/.local/bin/$n; done`
+> (requiere `~/.local/bin` en el PATH). `ty`, `tp` y `dt` son alias del mismo comando.
 
 ---
 
