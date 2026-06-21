@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-docctl.py — Generador de informes para la plantilla Typst del SLEP Chinchorro (Unidad TI).
+doc.py — Generador de informes para la plantilla Typst del SLEP Chinchorro (Unidad TI).
 
 Crea un archivo .typ con la nomenclatura oficial (AREA-TIPO-CAT_AAAA-NNNN) y la estructura
 canónica, asignando el correlativo de forma SECUENCIAL automática (global anual: el siguiente
 número = máximo correlativo existente para ese año + 1).
 
 Uso rápido:
-    python docctl.py nuevo --tipo INF --categoria SEG --titulo "Auditoría de respaldos" \\
+    python doc.py nuevo --tipo INF --categoria SEG --titulo "Auditoría de respaldos" \\
                            --autor "Nombre Apellido" --cargo "Ingeniero" --correo "x@epchinchorro.cl"
-    python docctl.py listar
+    python doc.py listar
 
 Sin --titulo, lo pide de forma interactiva. No requiere paquetes externos (solo stdlib).
+python docctl.py nuevo --tipo INF --categoria SEG \
+  --titulo "Auditoría de respaldos del Centro de Datos" \
+  --autor "Roberto I. Vargas Vargas" --cargo "Técnico" --correo "x@epchinchorro.cl"
 """
 from __future__ import annotations
 import argparse, os, re, sys, subprocess, datetime
@@ -108,7 +111,7 @@ def build_typ(f: dict, rel_lib: str) -> str:
         meta.append(f'  aprobador: "{ty_str(f["aprobador"])}",')
     meta_block = "\n".join(meta)
 
-    return f'''// {base}  ·  generado por docctl.py
+    return f'''// {base}  ·  generado por doc.py
 #import "{rel_lib}": *
 
 #let meta = crear-meta((
