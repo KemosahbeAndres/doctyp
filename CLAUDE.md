@@ -13,7 +13,7 @@
   portada, márgenes) salvo orden explícita del usuario. Regla del manual §11.2.
 - **Cada informe es un archivo `.typ` propio** que importa `lib.typ` y solo aporta `meta` + prosa.
 - **El correlativo NUNCA se inventa:** es secuencial automático. Genera los documentos con
-  `doctyp` (§3) o, si creas el archivo a mano, calcula el siguiente con `doctyp listar`.
+  `doctyp` (§3) o, si creas el archivo a mano, calcula el siguiente con `doctyp list`.
   La fuente de verdad del correlativo y de las versiones es `doctyp-registro.json` (junto al script).
 - Tras cada cambio, **compila y verifica** (§7). No afirmar que algo funciona sin compilarlo.
 - Diffs mínimos; una sola fuente de verdad (todo dato en `meta`); sin hardcodear estilos.
@@ -45,19 +45,19 @@ El documento se crea **en el directorio actual** (donde se llama el comando). Co
 de autoría (Andrés Cubillos), tipo `INF` y categoría `SFW` basta con el título:
 
 ```bash
-doctyp nuevo "Auditoría de respaldos del Centro de Datos"   # título posicional
-doctyp nuevo --t "Manual de red" --tipo MAN --categoria RED  # o con --t / --titulo
+doctyp new "Auditoría de respaldos del Centro de Datos"   # título posicional (alias: doctyp n)
+doctyp n --t "Manual de red" --tipo MAN --categoria RED    # o con --t / --titulo
 ```
 
 Para subir la versión de un documento ya creado (bump del patch, `1.0.0 → 1.0.1`), actualiza el
 `.typ` y añade una fila a la tabla de control de versiones:
 
 ```bash
-doctyp save 1 --m "Corrige la sección de alcance"   # 1 = correlativo del documento
+doctyp save 1 --m "Corrige la sección de alcance"   # 1 = correlativo del documento (alias: doctyp s)
 ```
 
 **Vía B (manual):** crea el `.typ` con este esqueleto (también está embebido en la cabecera de
-`lib.typ`). Antes, obtén el correlativo con `doctyp listar`.
+`lib.typ`). Antes, obtén el correlativo con `doctyp list`.
 
 ```typst
 #import "lib.typ": *
@@ -105,11 +105,13 @@ Script en Python estándar (sin dependencias), instalado como **comando global**
 
 ### Subcomandos
 ```bash
-doctyp listar [--anio 2026]                  # lista documentos del registro y el próximo correlativo
-doctyp nuevo  "Título" [opciones]            # crea (tipo INF, categoría SFW por defecto)
-doctyp save   <correlativo> --m "mensaje"    # sube versión (patch) y registra el cambio
+doctyp list  [--anio 2026]                   # (alias: ls) lista documentos y el próximo correlativo
+doctyp new   "Título" [opciones]             # (alias: n)  crea (tipo INF, categoría SFW por defecto)
+doctyp save  <correlativo> --m "mensaje"     # (alias: s)  sube versión (patch) y registra el cambio
+doctyp add                                   # (alias: a)  importa al registro un .typ del CWD
+doctyp compile <correlativo>                 # (alias: c)  compila el documento a PDF (junto al .typ)
 ```
-El título de `nuevo` admite tres formas: posicional (`doctyp nuevo "Título"`), `--t "Título"`
+El título de `new` admite tres formas: posicional (`doctyp new "Título"`), `--t "Título"`
 o `--titulo "Título"`.
 
 ### Opciones de `nuevo`
@@ -131,8 +133,9 @@ o `--titulo "Título"`.
 | `--correo` | `andres.cubillos@epchinchorro.cl` | autoría |
 | `--revisor` `--aprobador` | defaults de la plantilla | |
 | `--dir` | `.` | subdirectorio de salida (relativo al directorio actual) |
-| `--compilar` | — | compila a PDF tras crear (requiere `typst`) |
 | `--forzar` | — | sobrescribe si el archivo existe |
+
+> Para compilar usa `doctyp compile <correlativo>` (la compilación no está dentro de `new`/`save`).
 
 El archivo se nombra `<código-base>.typ` y la salida indica el código completo asignado.
 
@@ -146,13 +149,37 @@ versiones (fecha = hoy, autor = el del registro, descripción = el mensaje).
 | `<correlativo>` (oblig.) | Número del documento a versionar (p. ej. `1` o `0001`). Se localiza por el registro JSON. |
 | `--m` / `--mensaje` (oblig.) | Descripción de la nueva versión. |
 | `--anio` | Año del documento (por defecto, el actual). |
-| `--compilar` | Compila a PDF tras versionar. |
+
+### Subcomando `add`
+Importa al registro un documento `.typ` que ya existe en el **directorio actual** (p. ej. uno
+creado a mano o traído de otra parte). `doctyp add` (sin argumentos):
+- Lista solo los `.typ` del CWD que tienen `crear-meta` **completo** (area, tipo, categoría,
+  año, correlativo, versión, título, autor) y que **aún no están** en el registro.
+- Permite elegir uno tecleando su número (`q` cancela).
+- **Renombra el archivo** al estándar `<código-base>.typ` y lo registra (conservando el
+  correlativo del meta; si choca con otro del registro, avisa y no importa).
+
+Tras `add`, el documento queda gestionado como cualquier otro: `doctyp save <correlativo> ...`
+funciona sobre él.
+
+### Subcomando `compile`
+`doctyp compile <correlativo>` localiza el documento en el registro y lo compila a PDF; el PDF
+queda **junto al `.typ`**. Detalles de la invocación (en `compilar_typ`):
+- **`--root /`**: el `.typ` importa `lib.typ` por ruta absoluta y Typst trata `/` como la raíz
+  del *proyecto* (no del sistema); con `--root /` la raíz del proyecto pasa a ser la del
+  filesystem y la ruta absoluta resuelve. **Sin esto la compilación falla** (compilar a mano sin
+  `--root /` no funciona).
+- **`--font-path <SCRIPT_DIR>/museo-sans`**: fuentes Museo Sans para fidelidad tipográfica.
+- **Flatpak (Fedora):** si `typst` no está en el PATH del sandbox pero sí en el host, usa
+  `flatpak-spawn --host typst`. Funciona con archivos bajo `$HOME` (compartido host↔sandbox);
+  `/tmp` del sandbox **no** es visible para el host. En una terminal normal del host se usa
+  `typst` directo.
 
 ### Cómo lo usa Claude Code
-1. Ejecuta `doctyp listar` para conocer el próximo correlativo (informativo).
-2. Ejecuta `doctyp nuevo "..."` (ajusta `--tipo`/`--categoria`/autoría si hace falta).
+1. Ejecuta `doctyp list` para conocer el próximo correlativo (informativo).
+2. Ejecuta `doctyp new "..."` (ajusta `--tipo`/`--categoria`/autoría si hace falta).
 3. Abre el `.typ` creado y **rellena las secciones marcadas `// TODO`** con el contenido del usuario.
-4. Compila (§7) e itera.
+4. Compila con `doctyp compile <correlativo>` (§7) e itera.
 
 > El script localiza `lib.typ` junto a sí mismo (resolviendo el symlink). No usa `--root`.
 > Instalación: `ln -sf "$(pwd)/doctyp.py" ~/.local/bin/doctyp` (requiere `~/.local/bin` en el PATH).
@@ -205,7 +232,7 @@ Ya vienen por defecto (no repetir salvo cambio): `unidad`, `subdireccion`, `inst
 | 18 | Anexos | `= Anexos` + `== Anexo X. ...` (incl. `== Anexo B. Firmas` → `#firmas-estandar(meta)`) |
 | 19 | Contraportada | automática (`meta.contraportada`) |
 
-Los encabezados se numeran solos (`1`, `1.1`). `doctyp nuevo` ya escribe todo este esqueleto.
+Los encabezados se numeran solos (`1`, `1.1`). `doctyp new` ya escribe todo este esqueleto.
 
 ---
 
@@ -223,18 +250,27 @@ Patrón: `AREA-TIPO-CAT_AAAA-NNNN_vX.Y_AAAAMMDD` → p. ej. `TI-INF-SEG_2026-002
 
 ## 7. Compilar  (hazlo tras cada edición)
 
+**Recomendado:** `doctyp compile <correlativo>` — localiza el documento por el registro, le aplica
+`--root /` y `--font-path` automáticamente y deja el PDF junto al `.typ` (§3, subcomando `compile`).
+
 ```bash
-typst compile TI-INF-SEG_2026-0023.typ      # → .pdf
-typst watch  TI-INF-SEG_2026-0023.typ       # recompila al guardar (modo redacción)
-typst compile --font-path ./fonts <archivo>.typ
+doctyp compile 23                            # vía el generador (maneja --root / y fuentes)
 ```
 
-- Requiere **Typst ≥ 0.12** y, para fidelidad tipográfica, la fuente **Museo Sans**
-  (si falta, cae a Liberation Sans; el layout no se rompe).
+A mano (recuerda `--root /`, necesario por el import absoluto a `lib.typ`):
+
+```bash
+typst compile --root / --font-path <ruta>/museo-sans TI-INF-SEG_2026-0023.typ   # → .pdf
+typst watch  --root / TI-INF-SEG_2026-0023.typ                                   # modo redacción
+```
+
+- Requiere **Typst ≥ 0.12** y, para fidelidad tipográfica, la fuente **Museo Sans** en
+  `museo-sans/` (si falta, cae a Liberation Sans; el layout no se rompe).
+- En **Fedora/Flatpak** (sandbox de VS Code), si `typst` no está en el PATH, usa
+  `flatpak-spawn --host typst ...` con archivos bajo `$HOME` (`/tmp` del sandbox no lo ve el host).
+  `doctyp compile` ya elige la invocación correcta.
 - Coloca los logos reales en `Images/` antes de la versión final.
-- `doctyp nuevo --compilar` compila automáticamente al crear.
-- Sin binario, valida con las bindings de Python:
-  `pip install typst --break-system-packages && python3 -c "import typst; typst.compile('<archivo>.typ', output='out.pdf')"`
+- La compilación vive solo en `doctyp compile <correlativo>` (no hay `--compilar` en `new`/`save`).
 
 ---
 
@@ -266,14 +302,14 @@ Cuando el usuario diga “redactemos un informe sobre X”:
 
 1. **Identifica `--tipo` y `--categoria`** (§6) y confirma autor/cargo/correo si no los da.
 2. **Crea el archivo con el generador** (asigna el correlativo secuencial y lo deja en el CWD):
-   `doctyp nuevo "<título>"` (ajusta `--tipo`/`--categoria`/autoría solo si difieren de los defaults).
+   `doctyp new "<título>"` (ajusta `--tipo`/`--categoria`/autoría solo si difieren de los defaults).
 3. **Rellena las secciones `// TODO`** del archivo con el contenido del usuario, siguiendo la
    estructura canónica (§5). Usa `aviso(...)` para estados/riesgos y `tabla(...)`/`tabla-prioridad(...)` para datos.
-4. **Compila** (§7) y revisa el PDF; corrige e **itera** sección por sección.
+4. **Compila** con `doctyp compile <correlativo>` (§7) y revisa el PDF; corrige e **itera** sección por sección.
 5. Al cerrar una versión: `doctyp save <correlativo> --m "<qué cambió>"` sube el patch, actualiza
    el `version:` del `.typ` y añade la fila a `s-versiones` automáticamente. Reporta el `codigo-completo`.
 
-Sugerencia: deja `typst watch <archivo>.typ` corriendo durante la redacción.
+Sugerencia: deja `typst watch --root / <archivo>.typ` corriendo durante la redacción.
 
 ---
 
@@ -296,7 +332,8 @@ Sugerencia: deja `typst watch <archivo>.typ` corriendo durante la redacción.
 ## 11. TL;DR para Claude Code
 
 1. No toques el estilo de `lib.typ` sin orden explícita.
-2. Crea informes con `doctyp nuevo "..."` (correlativo secuencial automático; sale en el CWD).
-   Sube versión con `doctyp save <correlativo> --m "..."`.
+2. Crea informes con `doctyp new "..."` (correlativo secuencial automático; sale en el CWD).
+   Sube versión con `doctyp save <correlativo> --m "..."`. Subcomandos con alias: `list/ls`,
+   `new/n`, `save/s`, `add/a`, `compile/c`.
 3. Rellena los `// TODO` siguiendo la estructura canónica (§5) y la API (§8).
-4. Compila tras cada cambio (§7) y reporta el `codigo-completo`.
+4. Compila con `doctyp compile <correlativo>` tras cada cambio (§7) y reporta el `codigo-completo`.

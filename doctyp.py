@@ -11,11 +11,15 @@ Crea un archivo .typ con la nomenclatura oficial (AREA-TIPO-CAT_AAAA-NNNN) y la 
 canónica, asignando el correlativo de forma SECUENCIAL automática (global anual). La fuente de
 verdad del correlativo y de las versiones es `doctyp-registro.json`, junto al script.
 
+Subcomandos (con alias):  list/ls · new/n · save/s · add/a · compile/c
+
 Uso rápido:
-    doctyp nuevo "Auditoría de respaldos"               # título posicional + defaults de autoría
-    doctyp nuevo --t "Manual de red" --tipo MAN --categoria RED
+    doctyp new "Auditoría de respaldos"                 # título posicional + defaults de autoría
+    doctyp n --t "Manual de red" --tipo MAN --categoria RED
     doctyp save 1 --m "Corrige sección de alcance"      # sube versión (1.0.0 -> 1.0.1) del doc 0001
-    doctyp listar
+    doctyp add                                          # importa un .typ del CWD al registro
+    doctyp compile 1                                    # compila el doc 0001 a PDF (junto al .typ)
+    doctyp ls
 
 El título acepta posicional, --titulo o --t. Sin título, se pide de forma interactiva.
 No requiere paquetes externos (solo stdlib).
@@ -42,6 +46,39 @@ CATEGORIAS = {"SEG","RED","HRW","SFW","DAT","SRV","PRV","GOB","USR","CPD","BCK",
 RE_CODE = re.compile(r"([A-Z]{2,4})-([A-Z]{2,4})-([A-Z]{2,4})_(\d{4})-(\d{4})")
 RE_ANIO = re.compile(r"anio:\s*(\d{4})")
 RE_CORR = re.compile(r"correlativo:\s*(\d+)")
+
+
+def _meta_str(code: str, clave: str) -> str | None:
+    """Valor de un campo `clave: "..."` del meta (None si no está)."""
+    m = re.search(rf'{clave}:\s*"((?:[^"\\]|\\.)*)"', code)
+    return m.group(1).replace('\\"', '"').replace("\\\\", "\\") if m else None
+
+
+def parse_meta_typ(path: Path) -> dict | None:
+    """Extrae del crear-meta de un .typ los campos necesarios para versionar.
+    Devuelve None si el archivo no es legible o le falta algún campo requerido."""
+    try:
+        txt = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    code = "\n".join(l for l in txt.splitlines() if not l.lstrip().startswith("//"))
+
+    ma, mc = RE_ANIO.search(code), RE_CORR.search(code)
+    if not (ma and mc):
+        return None
+    d = {"anio": int(ma.group(1)), "correlativo": int(mc.group(1))}
+    for clave, dest in (("area", "area"), ("tipo", "tipo"), ("categoria", "categoria"),
+                        ("version", "version"), ("titulo", "titulo"), ("autor", "autor")):
+        val = _meta_str(code, clave)
+        if not val:
+            return None
+        d[dest] = val
+    d["tipo"] = d["tipo"].upper()
+    d["categoria"] = d["categoria"].upper()
+    d["area"] = d["area"].upper()
+    if d["tipo"] not in TIPOS or d["categoria"] not in CATEGORIAS:
+        return None
+    return d
 
 
 # ----------------------------------------------------------------------
@@ -137,15 +174,41 @@ def bump_patch(version: str) -> str:
     return ".".join(str(n) for n in nums)
 
 
-def compilar_typ(out_file: Path) -> None:
-    """Compila un .typ a PDF con el binario typst (si está disponible)."""
+def _typst_cmd() -> list[str] | None:
+    """Prefijo de comando para invocar typst.
+    - Si `typst` está en el PATH (uso normal en el host), lo usa directo.
+    - Si no, y estamos dentro de un sandbox Flatpak con `flatpak-spawn`, cae al typst del host.
+    Devuelve None si no hay forma de ejecutar typst."""
+    import shutil
+    if shutil.which("typst"):
+        return ["typst"]
+    if Path("/.flatpak-info").exists() and shutil.which("flatpak-spawn"):
+        return ["flatpak-spawn", "--host", "typst"]
+    return None
+
+
+def compilar_typ(out_file: Path) -> bool:
+    """Compila un .typ a PDF (el PDF queda junto al .typ). Devuelve True si tuvo éxito.
+
+    Usa `--root /` porque el .typ importa lib.typ por ruta absoluta (Typst trata `/` como la raíz
+    del proyecto, no del sistema; con `--root /` la raíz del proyecto es la del filesystem y la
+    ruta absoluta resuelve). Pasa `--font-path` a la carpeta de fuentes para fidelidad tipográfica."""
+    base = _typst_cmd()
+    if base is None:
+        print("⚠ 'typst' no está disponible (ni en el PATH ni vía flatpak-spawn); omito la compilación.")
+        return False
+    cmd = base + ["compile", "--root", "/"]
+    font_dir = SCRIPT_DIR / "museo-sans"
+    if font_dir.is_dir():
+        cmd += ["--font-path", str(font_dir)]
+    cmd.append(str(out_file))
     try:
-        subprocess.run(["typst", "compile", str(out_file)], check=True)
+        subprocess.run(cmd, check=True)
         print(f"✔ Compilado: {out_file.with_suffix('.pdf')}")
-    except FileNotFoundError:
-        print("⚠ 'typst' no está instalado; omito la compilación.")
+        return True
     except subprocess.CalledProcessError as e:
         print(f"⚠ Error de compilación: {e}")
+        return False
 
 
 def codigo_base(area, tipo, cat, anio, corr) -> str:
@@ -356,22 +419,24 @@ def cmd_nuevo(args):
     print(f"  Correlativo asignado: {corr:04d} (año {anio})")
     print(f"  Registrado en:   {registro_path(SCRIPT_DIR)}")
 
-    if args.compilar:
-        compilar_typ(out_file)
+
+def buscar_doc(registro: dict, correlativo: int, anio: int) -> dict:
+    """Localiza en el registro el documento por correlativo + año, o aborta con error."""
+    docs = [d for d in registro["documentos"]
+            if d.get("correlativo") == correlativo and d.get("anio") == anio]
+    if not docs:
+        sys.exit(f"ERROR: no hay documento con correlativo {correlativo:04d} (año {anio}) "
+                 f"en el registro. Revisa con 'doctyp list'.")
+    if len(docs) > 1:
+        sys.exit(f"ERROR: hay {len(docs)} documentos con correlativo {correlativo:04d} "
+                 f"(año {anio}). Resuelve el duplicado en {registro_path(SCRIPT_DIR)}.")
+    return docs[0]
 
 
 def cmd_save(args):
     registro = cargar_registro(SCRIPT_DIR)
     anio = args.anio or datetime.date.today().year
-    docs = [d for d in registro["documentos"]
-            if d.get("correlativo") == args.correlativo and d.get("anio") == anio]
-    if not docs:
-        sys.exit(f"ERROR: no hay documento con correlativo {args.correlativo:04d} (año {anio}) "
-                 f"en el registro. Revisa con 'doctyp listar'.")
-    if len(docs) > 1:
-        sys.exit(f"ERROR: hay {len(docs)} documentos con correlativo {args.correlativo:04d} "
-                 f"(año {anio}). Resuelve el duplicado en {registro_path(SCRIPT_DIR)}.")
-    doc = docs[0]
+    doc = buscar_doc(registro, args.correlativo, anio)
 
     typ_path = Path(doc["ruta"])
     if not typ_path.exists():
@@ -414,8 +479,105 @@ def cmd_save(args):
     print(f"  Archivo:   {typ_path}")
     print(f"  Mensaje:   {args.mensaje}")
 
-    if args.compilar:
-        compilar_typ(typ_path)
+
+def cmd_compile(args):
+    registro = cargar_registro(SCRIPT_DIR)
+    anio = args.anio or datetime.date.today().year
+    doc = buscar_doc(registro, args.correlativo, anio)
+
+    typ_path = Path(doc["ruta"])
+    if not typ_path.exists():
+        sys.exit(f"ERROR: el archivo registrado no existe: {typ_path}")
+
+    print(f"Compilando {doc['codigo_base']} → {typ_path.with_suffix('.pdf').name}")
+    if not compilar_typ(typ_path):
+        sys.exit(1)
+
+
+def _seleccionar(opciones: list[str], titulo: str) -> int | None:
+    """Muestra un menú numerado y devuelve el índice elegido (o None si se cancela).
+    El usuario teclea el número de la lista y Enter; 'q' o vacío cancela."""
+    print(titulo)
+    for i, etiqueta in enumerate(opciones, 1):
+        print(f"  [{i}] {etiqueta}")
+    while True:
+        try:
+            sel = input(f"Selecciona (1-{len(opciones)}, q para cancelar): ").strip()
+        except EOFError:
+            return None
+        if sel.lower() in ("", "q"):
+            return None
+        if sel.isdigit() and 1 <= int(sel) <= len(opciones):
+            return int(sel) - 1
+        print("  Opción inválida.")
+
+
+def cmd_add(args):
+    registro = cargar_registro(SCRIPT_DIR)
+    registrados = {d.get("codigo_base") for d in registro["documentos"]}
+
+    cwd = Path.cwd()
+    candidatos = []
+    for p in sorted(cwd.glob("*.typ")):
+        if p.name == args.lib:
+            continue
+        meta = parse_meta_typ(p)
+        if meta is None:
+            continue
+        base = codigo_base(meta["area"], meta["tipo"], meta["categoria"],
+                           meta["anio"], meta["correlativo"])
+        if base in registrados:
+            continue  # ya está en el registro
+        candidatos.append((p, meta, base))
+
+    if not candidatos:
+        print(f"No hay documentos válidos sin registrar en {cwd}.")
+        return
+
+    etiquetas = [f"{base}  ·  v{m['version']}  ·  {m['titulo']}  ({p.name})"
+                 for p, m, base in candidatos]
+    idx = _seleccionar(etiquetas, f"\nDocumentos disponibles en {cwd}:")
+    if idx is None:
+        print("Cancelado.")
+        return
+    p, meta, base = candidatos[idx]
+
+    # Conservar el correlativo del meta; avisar si choca con otro del registro (mismo año).
+    choque = next((d for d in registro["documentos"]
+                   if d.get("anio") == meta["anio"]
+                   and d.get("correlativo") == meta["correlativo"]), None)
+    if choque:
+        sys.exit(f"ERROR: el correlativo {meta['correlativo']:04d} (año {meta['anio']}) ya está "
+                 f"registrado por {choque['codigo_base']}. Reasigna el correlativo en el .typ "
+                 f"antes de importarlo.")
+
+    # Ajustar el nombre del archivo al estándar <código-base>.typ.
+    destino = p.with_name(f"{base}.typ")
+    if destino != p:
+        if destino.exists():
+            sys.exit(f"ERROR: ya existe {destino}; no se puede renombrar {p.name}.")
+        p.rename(destino)
+        print(f"✔ Renombrado: {p.name} → {destino.name}")
+    else:
+        print(f"  Nombre ya conforme: {destino.name}")
+
+    # Registrar como documento, reconstruyendo el historial de versiones desde la versión actual.
+    ahora = datetime.datetime.now().isoformat(timespec="seconds")
+    registro["documentos"].append({
+        "codigo_base": base,
+        "area": meta["area"], "tipo": meta["tipo"], "categoria": meta["categoria"],
+        "anio": meta["anio"], "correlativo": meta["correlativo"],
+        "titulo": meta["titulo"], "autor": meta["autor"],
+        "ruta": str(destino),
+        "creado": ahora,
+        "versiones": [{"version": meta["version"], "fecha": ahora[:10].replace("-", ""),
+                       "creado": ahora, "mensaje": "Importado al registro."}],
+    })
+    guardar_registro(SCRIPT_DIR, registro)
+
+    print(f"✔ Registrado: {base}  (v{meta['version']})")
+    print(f"  Archivo:   {destino}")
+    print(f"  Registro:  {registro_path(SCRIPT_DIR)}")
 
 
 # ----------------------------------------------------------------------
@@ -426,11 +588,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lib", default="lib.typ", help="Nombre del archivo de plantilla (junto al script). Por defecto: lib.typ")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    pl = sub.add_parser("listar", help="Lista documentos existentes y el próximo correlativo.")
+    pl = sub.add_parser("list", aliases=["ls"], help="Lista documentos existentes y el próximo correlativo.")
     pl.add_argument("--anio", type=int, help="Año a consultar (por defecto, el actual).")
     pl.set_defaults(func=cmd_listar)
 
-    pn = sub.add_parser("nuevo", help="Crea un nuevo documento .typ con correlativo secuencial.")
+    pn = sub.add_parser("new", aliases=["n"], help="Crea un nuevo documento .typ con correlativo secuencial.")
     pn.add_argument("titulo_pos", nargs="?", metavar="TÍTULO",
                     help="Título del documento (posicional). Equivale a --titulo / --t.")
     pn.add_argument("--titulo", "--t", dest="titulo",
@@ -452,18 +614,25 @@ def build_parser() -> argparse.ArgumentParser:
     pn.add_argument("--revisor", help="Revisor (si se omite, usa el default de la plantilla).")
     pn.add_argument("--aprobador", help="Aprobador (si se omite, usa el default de la plantilla).")
     pn.add_argument("--dir", default=".", help="Subdirectorio de salida (relativo al directorio actual). Por defecto: .")
-    pn.add_argument("--compilar", action="store_true", help="Compilar a PDF tras crear (requiere typst).")
     pn.add_argument("--forzar", action="store_true", help="Sobrescribir si el archivo ya existe.")
     pn.set_defaults(func=cmd_nuevo)
 
-    ps = sub.add_parser("save", help="Sube la versión de un documento (bump del patch) y registra el cambio.")
+    ps = sub.add_parser("save", aliases=["s"], help="Sube la versión de un documento (bump del patch) y registra el cambio.")
     ps.add_argument("correlativo", type=int, metavar="CORRELATIVO",
                     help="Número correlativo del documento a versionar (p. ej. 1 o 0001).")
     ps.add_argument("--mensaje", "--m", dest="mensaje", required=True,
                     help="Mensaje descriptivo de la nueva versión.")
     ps.add_argument("--anio", type=int, help="Año del documento (por defecto, el actual).")
-    ps.add_argument("--compilar", action="store_true", help="Compilar a PDF tras versionar (requiere typst).")
     ps.set_defaults(func=cmd_save)
+
+    pa = sub.add_parser("add", aliases=["a"], help="Importa al registro un documento existente del directorio actual.")
+    pa.set_defaults(func=cmd_add)
+
+    pc = sub.add_parser("compile", aliases=["c"], help="Compila un documento a PDF (queda junto al .typ).")
+    pc.add_argument("correlativo", type=int, metavar="CORRELATIVO",
+                    help="Número correlativo del documento a compilar (p. ej. 1 o 0001).")
+    pc.add_argument("--anio", type=int, help="Año del documento (por defecto, el actual).")
+    pc.set_defaults(func=cmd_compile)
     return p
 
 
