@@ -811,6 +811,9 @@ def cmd_edit(args):
     if not typ_path.exists():
         sys.exit(f"ERROR: el archivo registrado no existe: {typ_path}")
 
+    agregar_doctyp_json(Path.cwd(), doc["correlativo"], doc["anio"],
+                        typ_path.name, doc.get("autor", ""))
+
     print(f"\n  Documento: {_c(_C.BOLD, doc['codigo_base'])}")
     print(f"  Archivo:   {_c(_C.DIM, str(typ_path))}\n")
 
