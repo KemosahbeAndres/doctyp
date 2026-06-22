@@ -940,6 +940,45 @@ def cmd_add(args):
     print(f"       Registro: {_c(_C.DIM, str(registro_path(SCRIPT_DIR)))}\n")
 
 
+def cmd_import(args):
+    """Registra un documento del sistema en doctyp.json del directorio actual."""
+    registro = cargar_registro(SCRIPT_DIR)
+    docs = sorted(registro["documentos"],
+                  key=lambda d: (d.get("anio", 0), d.get("correlativo", 0)))
+    if not docs:
+        sys.exit("ERROR: el registro está vacío (aún no se han creado documentos).")
+
+    anio = args.anio or datetime.date.today().year
+
+    if args.correlativo is not None:
+        doc = buscar_doc(registro, args.correlativo, anio)
+    else:
+        etiquetas = []
+        for d in docs:
+            vers = d.get("versiones") or []
+            ver_str = f"v{vers[-1]['version']}" if vers else ""
+            etiquetas.append(
+                f"{d.get('correlativo', 0):04d}  {d.get('codigo_base', '')}"
+                f"  {ver_str}  ·  {d.get('titulo', '')}"
+            )
+        idx = _seleccionar(etiquetas, "Documentos registrados en el sistema:")
+        if idx is None:
+            print("  Cancelado.")
+            return
+        doc = docs[idx]
+
+    cwd = Path.cwd()
+    nombre_archivo = Path(doc["ruta"]).name
+    agregar_doctyp_json(cwd, doc["correlativo"], doc["anio"],
+                        nombre_archivo, doc.get("autor", ""))
+
+    corr_str = f"{doc['correlativo']:04d}"
+    print()
+    _ok(f"Importado en {_c(_C.DIM, str(cwd / DOCTYP_JSON))}")
+    print(f"       Documento: {_c(_C.BOLD, doc.get('codigo_base', ''))}")
+    print(f"       Correlativo: {_c(_C.CYAN, corr_str)} (año {doc['anio']})\n")
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1003,6 +1042,13 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Importa al registro un documento existente del directorio actual.")
     pa.set_defaults(func=cmd_add)
 
+    pi = sub.add_parser("import", aliases=["i"],
+                        help="Añade un documento del registro al doctyp.json del directorio actual.")
+    pi.add_argument("correlativo", type=int, nargs="?", metavar="CORRELATIVO",
+                    help="Correlativo del documento a importar (si se omite, selección interactiva).")
+    pi.add_argument("--anio", type=int, help="Año del documento (por defecto, el actual).")
+    pi.set_defaults(func=cmd_import)
+
     pc = sub.add_parser("compile", aliases=["c"],
                         help="Compila un documento a PDF (queda junto al .typ).")
     pc.add_argument("correlativo", type=int, nargs="?", metavar="CORRELATIVO",
@@ -1049,14 +1095,15 @@ def menu_interactivo() -> None:
         print()
 
     CMDS = [
-        ("list",          "ls",            "Listar documentos y el próximo correlativo"),
-        ("new",           "n",             "Crear un nuevo documento"),
-        ("save",          "s",             "Subir versión de un documento (patch)"),
-        ("add",           "a",             "Importar un .typ existente al registro"),
-        ("compile",       "c",             "Compilar un documento a PDF"),
+        ("list",          "ls",              "Listar documentos y el próximo correlativo"),
+        ("new",           "n",               "Crear un nuevo documento"),
+        ("save",          "s",               "Subir versión de un documento (patch)"),
+        ("add",           "a",               "Importar un .typ existente al registro"),
+        ("import",        "i",               "Anclar un documento del registro en doctyp.json"),
+        ("compile",       "c",               "Compilar un documento a PDF"),
         ("edit",          "code / e / open", "Abrir un documento en el editor"),
-        ("reset",         "",              "Fijar el inicio del correlativo del año"),
-        ("config-author", "author",        "Configurar el autor global"),
+        ("reset",         "",                "Fijar el inicio del correlativo del año"),
+        ("config-author", "author",          "Configurar el autor global"),
     ]
 
     print(f"\n  {_c(_C.BOLD, 'Comandos disponibles:')}\n")
@@ -1099,6 +1146,9 @@ def menu_interactivo() -> None:
             _warn("El mensaje es obligatorio.")
             return
         argv += ["--m", msg]
+
+    elif cmd_sel == "import":
+        pass  # cmd_import muestra la lista interactiva por sí solo
 
     elif cmd_sel in ("edit", "compile"):
         ctx_list = leer_doctyp_json(Path.cwd())
