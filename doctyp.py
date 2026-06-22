@@ -562,44 +562,72 @@ def cmd_compile(args):
         print(f"✔ Copiado a: {destino_cwd}")
 
 
-def _host_tiene(cmd: str) -> bool:
-    """True si `cmd` existe en el host (vía flatpak-spawn). flatpak-spawn no propaga el código
-    de error cuando el comando del host falta, así que se comprueba explícitamente."""
+def _host_prefix() -> list[str]:
+    """Prefijo para ejecutar comandos en el host. Si estamos dentro de un sandbox Flatpak con
+    flatpak-spawn, antepone `flatpak-spawn --host`; en el host normal, lista vacía."""
+    import shutil
+    if Path("/.flatpak-info").exists() and shutil.which("flatpak-spawn"):
+        return ["flatpak-spawn", "--host"]
+    return []
+
+
+def _host_run_ok(argv: list[str]) -> bool:
+    """Ejecuta `argv` (en el host si hace falta) y devuelve True si terminó con código 0.
+    Útil para sondear existencia de comandos/apps de forma fiable: `flatpak info <id>` o
+    `sh -c 'command -v <cmd>'` devuelven 0 solo si la app/comando existe. (No se mira stdout
+    porque algunos comandos —p. ej. `flatpak info`— escriben en stderr o nada relevante.)"""
     try:
-        r = subprocess.run(["flatpak-spawn", "--host", "sh", "-c", f"command -v {cmd}"],
-                           capture_output=True, text=True)
-        return r.returncode == 0 and bool(r.stdout.strip())
+        r = subprocess.run(_host_prefix() + argv, capture_output=True, text=True)
+        return r.returncode == 0
     except (FileNotFoundError, OSError):
         return False
+
+
+# IDs Flatpak conocidos de VS Code (y derivados), en orden de preferencia.
+_VSCODE_FLATPAK_IDS = ("com.visualstudio.code", "com.vscodium.codium")
+
+
+def _vscode_flatpak_cmd(path: Path) -> tuple[str, list[str]] | None:
+    """Si VS Code (o VSCodium) está instalado como Flatpak, devuelve (nombre, comando) para
+    abrir `path` con él; si no, None. Funciona tanto desde el host como desde el sandbox."""
+    pre = _host_prefix()
+    for app_id in _VSCODE_FLATPAK_IDS:
+        if _host_run_ok(["flatpak", "info", app_id]):
+            return (f"flatpak:{app_id}", pre + ["flatpak", "run", app_id, str(path)])
+    return None
 
 
 def _abrir_en_editor(path: Path) -> bool:
     """Abre `path` en VS Code si está disponible; si no, en el editor favorito
     ($VISUAL/$EDITOR) o, como último recurso, con xdg-open. Devuelve True si lanzó algo."""
     import shutil
-    en_flatpak = Path("/.flatpak-info").exists() and shutil.which("flatpak-spawn") is not None
+    pre = _host_prefix()
     candidatos: list[tuple[str, list[str]]] = []  # (nombre legible, comando)
 
-    # 1) VS Code: directo en el PATH, o el del host (Fedora/Flatpak) si existe allí.
+    # 1) VS Code como binario en el PATH (sandbox o host).
     if shutil.which("code"):
-        candidatos.append(("code", ["code"]))
-    elif en_flatpak and _host_tiene("code"):
-        candidatos.append(("code (host)", ["flatpak-spawn", "--host", "code"]))
-    # 2) Editor favorito del entorno.
+        candidatos.append(("code", ["code", str(path)]))
+    elif pre and _host_run_ok(["sh", "-c", "command -v code"]):
+        candidatos.append(("code (host)", pre + ["code", str(path)]))
+    # 2) VS Code / VSCodium instalado como Flatpak (caso típico en Fedora).
+    vscode_fp = _vscode_flatpak_cmd(path)
+    if vscode_fp:
+        candidatos.append(vscode_fp)
+    # 3) Editor favorito del entorno.
     for var in ("VISUAL", "EDITOR"):
         val = os.environ.get(var)
         if val:
-            candidatos.append((val.split()[0], val.split()))
+            candidatos.append((val.split()[0], val.split() + [str(path)]))
             break
-    # 3) Último recurso: la app predeterminada del sistema.
+    # 4) Último recurso: la app predeterminada del sistema.
     if shutil.which("xdg-open"):
-        candidatos.append(("xdg-open", ["xdg-open"]))
-    elif en_flatpak and _host_tiene("xdg-open"):
-        candidatos.append(("xdg-open (host)", ["flatpak-spawn", "--host", "xdg-open"]))
+        candidatos.append(("xdg-open", ["xdg-open", str(path)]))
+    elif pre and _host_run_ok(["sh", "-c", "command -v xdg-open"]):
+        candidatos.append(("xdg-open (host)", pre + ["xdg-open", str(path)]))
 
-    for nombre, base in candidatos:
+    for nombre, cmd in candidatos:
         try:
-            subprocess.Popen(base + [str(path)])
+            subprocess.Popen(cmd)
             print(f"✔ Abriendo en: {nombre}")
             return True
         except (FileNotFoundError, OSError):

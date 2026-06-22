@@ -26,6 +26,8 @@
 .
 ├── lib.typ          # PLANTILLA (motor): estilos, portada/contraportada, componentes, atajos.
 ├── doctyp.py        # CLI que crea informes (comando global `doctyp`; symlink en ~/.local/bin).
+├── init             # Instalador (bash): dependencias + fuentes + symlinks. Ejecutar una vez tras clonar.
+├── README.md        # Descripción, instalación por distro y uso.
 ├── settings.json    # Config + registro de doctyp: inicio de correlativo (local), correlativos y versiones.
 ├── main.typ         # Informe de ejemplo (referencia). No es la plantilla.
 ├── CLAUDE.md        # Este archivo.
@@ -196,10 +198,17 @@ Usa `--anio` para configurar otro año.
 
 ### Subcomando `edit`
 `doctyp edit <correlativo>` (alias `code`, `e`) abre el `.typ` del documento en un editor, en
-este orden de preferencia: **VS Code** (`code`, directo o el del host vía `flatpak-spawn`) →
-**editor favorito** (`$VISUAL`/`$EDITOR`) → **`xdg-open`** (app predeterminada del sistema).
-Como `flatpak-spawn` no propaga el código de error si el comando del host falta, antes de usar
-el host se comprueba su existencia con `command -v`.
+este orden de preferencia:
+1. **VS Code binario** `code` en el PATH (sandbox, terminal integrada o host con `code` instalado).
+2. **VS Code / VSCodium como Flatpak** (`com.visualstudio.code` / `com.vscodium.codium`): se lanza
+   con `flatpak run <id>`. Es el caso típico en Fedora, donde **no** hay binario `code` en el PATH.
+3. **Editor favorito** `$VISUAL` / `$EDITOR`.
+4. **`xdg-open`** (app predeterminada del sistema).
+
+Cada opción se sondea de forma fiable por **código de salida** (`flatpak info <id>`,
+`command -v <cmd>`), porque `flatpak-spawn` no propaga el error si el comando del host falta.
+Si estamos dentro de un sandbox Flatpak, los comandos del host se ejecutan con
+`flatpak-spawn --host`; en una terminal normal del host, directos.
 
 ### Cómo lo usa Claude Code
 1. Ejecuta `doctyp list` para conocer el próximo correlativo (informativo).
