@@ -1,5 +1,5 @@
-# Registro de correlativos/versiones de doctyp: estado local de todo el sistema, no se versiona.
-doctyp-registro.json
+# Configuración/registro de doctyp (correlativos, versiones, inicio): estado local, no se versiona.
+settings.json
 
 # Salidas de compilación de informes (el manual de referencia sí se versiona)
 *.pdf

@@ -3,23 +3,25 @@
 doctyp — Generador de informes para la plantilla Typst del SLEP Chinchorro (Unidad TI).
 
 Comando global: se instala como `doctyp` (symlink en ~/.local/bin) y se invoca desde cualquier
-carpeta. El documento .typ se crea EN EL DIRECTORIO ACTUAL (donde se llama el comando), mientras
-que la plantilla (lib.typ), los logos (Images/) y el registro de correlativos viven junto al
-script (SCRIPT_DIR).
+carpeta. Todos los documentos se gestionan de forma centralizada en <Documentos>/doctyp/<año>/
+(creados, importados, editados, compilados). La plantilla (lib.typ), los logos (Images/) y la
+configuración/registro (settings.json) viven junto al script.
 
 Crea un archivo .typ con la nomenclatura oficial (AREA-TIPO-CAT_AAAA-NNNN) y la estructura
 canónica, asignando el correlativo de forma SECUENCIAL automática (global anual). La fuente de
-verdad del correlativo y de las versiones es `doctyp-registro.json`, junto al script.
+verdad del correlativo y de las versiones es `settings.json`, junto al script.
 
-Subcomandos (con alias):  list/ls · new/n · save/s · add/a · compile/c · edit/code/e
+Subcomandos (con alias):  list/ls · new/n · save/s · add/a · compile/c · edit/code/e · reset
 
 Uso rápido:
     doctyp new "Auditoría de respaldos"                 # título posicional + defaults de autoría
     doctyp n --t "Manual de red" --tipo MAN --categoria RED
+    doctyp new "Otro informe" --code 50                 # fuerza el correlativo a 0050
     doctyp save 1 --m "Corrige sección de alcance"      # sube versión (1.0.0 -> 1.0.1) del doc 0001
     doctyp add                                          # importa un .typ del CWD al registro
     doctyp compile 1                                    # compila el doc 0001 a PDF (junto al .typ)
     doctyp edit 1                                       # abre el doc 0001 en VS Code / editor favorito
+    doctyp reset 100                                    # el próximo correlativo del año será 0100
     doctyp ls
 
 El título acepta posicional, --titulo o --t. Sin título, se pide de forma interactiva.
@@ -29,9 +31,9 @@ from __future__ import annotations
 import argparse, json, os, re, sys, subprocess, datetime
 from pathlib import Path
 
-# Ubicación real del script (resuelve el symlink). Aquí viven lib.typ, Images/ y el registro.
+# Ubicación real del script (resuelve el symlink). Aquí viven lib.typ, Images/ y settings.json.
 SCRIPT_DIR = Path(__file__).resolve().parent
-REGISTRO = "doctyp-registro.json"
+REGISTRO = "settings.json"
 
 # ----------------------------------------------------------------------
 # Tablas oficiales (Anexos A y B del manual TI-MAN-GOB_2026-0020)
@@ -127,6 +129,32 @@ def next_correlativo(existing: list[dict], anio: int) -> int:
     return (max(nums) + 1) if nums else 1
 
 
+def documentos_dir() -> Path:
+    """Carpeta «Documentos» del sistema. Usa xdg-user-dir (en el host si estamos en Flatpak),
+    con fallback a ~/Documentos o ~/Documents."""
+    import shutil
+    for base in (["xdg-user-dir", "DOCUMENTS"],
+                 ["flatpak-spawn", "--host", "xdg-user-dir", "DOCUMENTS"]):
+        if shutil.which(base[0]):
+            try:
+                r = subprocess.run(base, capture_output=True, text=True)
+                ruta = r.stdout.strip()
+                if r.returncode == 0 and ruta and ruta != str(Path.home()):
+                    return Path(ruta)
+            except (OSError, FileNotFoundError):
+                pass
+    for cand in (Path.home() / "Documentos", Path.home() / "Documents"):
+        if cand.is_dir():
+            return cand
+    return Path.home() / "Documentos"
+
+
+def docs_dir(anio: int) -> Path:
+    """Carpeta donde se gestionan los documentos: <Documentos>/doctyp/<año>/.
+    Todos los .typ viven aquí (creados, importados, editados, compilados)."""
+    return documentos_dir() / "doctyp" / str(anio)
+
+
 # ----------------------------------------------------------------------
 # Registro JSON (fuente de verdad de correlativos y versiones)
 # ----------------------------------------------------------------------
@@ -135,14 +163,16 @@ def registro_path(script_dir: Path) -> Path:
 
 
 def cargar_registro(script_dir: Path) -> dict:
-    """Carga doctyp-registro.json; si no existe o está corrupto, estructura vacía."""
+    """Carga settings.json; si no existe o está corrupto, estructura vacía.
+    Estructura: {"local": {"correlativo_inicio": {<año>: N}}, "documentos": [...]}."""
     p = registro_path(script_dir)
     if not p.exists():
-        return {"documentos": []}
+        return {"local": {}, "documentos": []}
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as e:
-        sys.exit(f"ERROR: no se pudo leer el registro {p}: {e}")
+        sys.exit(f"ERROR: no se pudo leer la configuración {p}: {e}")
+    data.setdefault("local", {})
     data.setdefault("documentos", [])
     return data
 
@@ -153,11 +183,22 @@ def guardar_registro(script_dir: Path, data: dict) -> None:
     )
 
 
+def correlativo_inicio(registro: dict, anio: int) -> int | None:
+    """Inicio de correlativo configurado por `reset` para el año (o None si no hay)."""
+    val = registro.get("local", {}).get("correlativo_inicio", {}).get(str(anio))
+    return int(val) if val is not None else None
+
+
 def next_correlativo_json(registro: dict, anio: int, fallback: int = 0) -> int:
-    """Siguiente correlativo del año: máximo entre el JSON y `fallback` (escaneo), + 1."""
+    """Siguiente correlativo del año: máximo entre el JSON, `fallback` (escaneo) y el inicio
+    configurado por `reset` (si lo hay), + 1. El inicio fija el MÍNIMO del próximo número."""
     nums = [d["correlativo"] for d in registro["documentos"] if d.get("anio") == anio]
     base = max([fallback, *nums]) if (nums or fallback) else 0
-    return base + 1
+    proximo = base + 1
+    inicio = correlativo_inicio(registro, anio)
+    if inicio is not None and inicio > proximo:
+        return inicio
+    return proximo
 
 
 def bump_patch(version: str) -> str:
@@ -203,8 +244,10 @@ def compilar_typ(out_file: Path) -> bool:
     if font_dir.is_dir():
         cmd += ["--font-path", str(font_dir)]
     cmd.append(str(out_file))
+    # Ejecuta con cwd en la carpeta del .typ (siempre bajo SCRIPT_DIR, visible para el host).
+    # Con flatpak-spawn --host, el cwd del sandbox (p. ej. /tmp/...) puede no existir en el host.
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, cwd=str(out_file.parent))
         print(f"✔ Compilado: {out_file.with_suffix('.pdf')}")
         return True
     except subprocess.CalledProcessError as e:
@@ -345,7 +388,23 @@ def cmd_listar(args):
             print(f"  {d.get('anio')} · {d.get('correlativo', 0):04d} · {d.get('titulo','')} · {d.get('ruta','')}")
     else:
         print("\nEl registro está vacío (aún no se han creado documentos).")
+    inicio = correlativo_inicio(registro, anio)
+    if inicio is not None:
+        print(f"\nInicio de correlativo configurado para {anio}: {inicio:04d}")
     print(f"\nPróximo correlativo para {anio}: {next_correlativo_json(registro, anio):04d}")
+
+
+def cmd_reset(args):
+    registro = cargar_registro(SCRIPT_DIR)
+    anio = args.anio or datetime.date.today().year
+    inicio = args.correlativo if args.correlativo is not None else 1
+    if inicio < 1:
+        sys.exit("ERROR: el correlativo de inicio debe ser >= 1.")
+    registro.setdefault("local", {}).setdefault("correlativo_inicio", {})[str(anio)] = inicio
+    guardar_registro(SCRIPT_DIR, registro)
+    print(f"✔ Inicio de correlativo para {anio} fijado en {inicio:04d}.")
+    print(f"  Próximo documento: {next_correlativo_json(registro, anio):04d}")
+    print(f"  Guardado en: {registro_path(SCRIPT_DIR)} (local.correlativo_inicio)")
 
 
 def cmd_nuevo(args):
@@ -370,11 +429,11 @@ def cmd_nuevo(args):
         sys.exit("ERROR: --fecha debe ser AAAAMMDD.")
     anio = args.anio or int(fecha[:4])
 
-    # Carpeta de salida: el directorio actual (CWD), o --dir relativo a él.
-    out_dir = (Path.cwd() / args.dir).resolve()
+    # Carpeta de salida: <Documentos>/doctyp/<año>/ (centralizada, no el CWD).
+    out_dir = docs_dir(anio)
 
-    # Correlativo: el JSON es la fuente de verdad; respaldo con un escaneo del CWD para no
-    # pisar un .typ que ya exista en la carpeta con el mismo año.
+    # Correlativo: el registro es la fuente de verdad; respaldo con un escaneo de la carpeta del
+    # año para no pisar un .typ que ya exista allí.
     registro = cargar_registro(SCRIPT_DIR)
     fallback = next_correlativo(scan_existing(out_dir, exclude={args.lib}), anio) - 1
     corr = args.correlativo if args.correlativo is not None else next_correlativo_json(registro, anio, fallback)
@@ -494,6 +553,14 @@ def cmd_compile(args):
     if not compilar_typ(typ_path):
         sys.exit(1)
 
+    # El PDF queda junto al .typ (en Documentos/doctyp/); además se copia al CWD para tenerlo a mano.
+    pdf = typ_path.with_suffix(".pdf")
+    destino_cwd = Path.cwd() / pdf.name
+    if pdf.exists() and destino_cwd.resolve() != pdf.resolve():
+        import shutil
+        shutil.copy2(pdf, destino_cwd)
+        print(f"✔ Copiado a: {destino_cwd}")
+
 
 def _host_tiene(cmd: str) -> bool:
     """True si `cmd` existe en el host (vía flatpak-spawn). flatpak-spawn no propaga el código
@@ -611,15 +678,16 @@ def cmd_add(args):
                  f"registrado por {choque['codigo_base']}. Reasigna el correlativo en el .typ "
                  f"antes de importarlo.")
 
-    # Ajustar el nombre del archivo al estándar <código-base>.typ.
-    destino = p.with_name(f"{base}.typ")
-    if destino != p:
-        if destino.exists():
-            sys.exit(f"ERROR: ya existe {destino}; no se puede renombrar {p.name}.")
-        p.rename(destino)
-        print(f"✔ Renombrado: {p.name} → {destino.name}")
+    # Mover a <Documentos>/doctyp/<año>/ con el nombre estándar <código-base>.typ (sobrescribe).
+    import shutil
+    dest_dir = docs_dir(meta["anio"])
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    destino = dest_dir / f"{base}.typ"
+    if destino.resolve() != p.resolve():
+        shutil.move(str(p), str(destino))
+        print(f"✔ Movido: {p.name} → {destino}")
     else:
-        print(f"  Nombre ya conforme: {destino.name}")
+        print(f"  Ya está en su carpeta: {destino}")
 
     # Registrar como documento, reconstruyendo el historial de versiones desde la versión actual.
     ahora = datetime.datetime.now().isoformat(timespec="seconds")
@@ -662,7 +730,8 @@ def build_parser() -> argparse.ArgumentParser:
     pn.add_argument("--subtitulo", help="Subtítulo de portada.")
     pn.add_argument("--area", default="TI", help="Área emisora. Por defecto: TI")
     pn.add_argument("--anio", type=int, help="Año (por defecto, el de --fecha o el actual).")
-    pn.add_argument("--correlativo", type=int, help="Forzar correlativo (por defecto: secuencial automático).")
+    pn.add_argument("--correlativo", "--code", type=int, dest="correlativo",
+                    help="Forzar correlativo manualmente (por defecto: secuencial automático).")
     pn.add_argument("--version", default="1.0.0", help="Versión inicial (semántica). Por defecto: 1.0.0")
     pn.add_argument("--fecha", help="Fecha AAAAMMDD. Por defecto: hoy.")
     pn.add_argument("--tipo-largo", dest="tipo_largo", help="Rótulo de portada (por defecto, según --tipo).")
@@ -673,7 +742,6 @@ def build_parser() -> argparse.ArgumentParser:
     pn.add_argument("--correo", default="andres.cubillos@epchinchorro.cl")
     pn.add_argument("--revisor", help="Revisor (si se omite, usa el default de la plantilla).")
     pn.add_argument("--aprobador", help="Aprobador (si se omite, usa el default de la plantilla).")
-    pn.add_argument("--dir", default=".", help="Subdirectorio de salida (relativo al directorio actual). Por defecto: .")
     pn.add_argument("--forzar", action="store_true", help="Sobrescribir si el archivo ya existe.")
     pn.set_defaults(func=cmd_nuevo)
 
@@ -700,6 +768,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Número correlativo del documento a abrir (p. ej. 1 o 0001).")
     pe.add_argument("--anio", type=int, help="Año del documento (por defecto, el actual).")
     pe.set_defaults(func=cmd_edit)
+
+    pr = sub.add_parser("reset", help="Fija dónde empieza el correlativo del año (en settings.json).")
+    pr.add_argument("correlativo", type=int, nargs="?", metavar="CORRELATIVO",
+                    help="Número de inicio (por defecto: 1).")
+    pr.add_argument("--anio", type=int, help="Año a configurar (por defecto, el actual).")
+    pr.set_defaults(func=cmd_reset)
     return p
 
 

@@ -14,7 +14,7 @@
 - **Cada informe es un archivo `.typ` propio** que importa `lib.typ` y solo aporta `meta` + prosa.
 - **El correlativo NUNCA se inventa:** es secuencial automático. Genera los documentos con
   `doctyp` (§3) o, si creas el archivo a mano, calcula el siguiente con `doctyp list`.
-  La fuente de verdad del correlativo y de las versiones es `doctyp-registro.json` (junto al script).
+  La fuente de verdad del correlativo y de las versiones es `settings.json` (junto al script).
 - Tras cada cambio, **compila y verifica** (§7). No afirmar que algo funciona sin compilarlo.
 - Diffs mínimos; una sola fuente de verdad (todo dato en `meta`); sin hardcodear estilos.
 
@@ -24,15 +24,18 @@
 
 ```
 .
-├── lib.typ                # PLANTILLA (motor): estilos, portada/contraportada, componentes, atajos.
-├── doctyp.py              # CLI que crea informes (comando global `doctyp`; symlink en ~/.local/bin).
-├── doctyp-registro.json   # Registro de correlativos y versiones (fuente de verdad; lo gestiona el script).
-├── main.typ               # Informe de ejemplo (referencia). No es la plantilla.
-├── CLAUDE.md              # Este archivo.
+├── lib.typ          # PLANTILLA (motor): estilos, portada/contraportada, componentes, atajos.
+├── doctyp.py        # CLI que crea informes (comando global `doctyp`; symlink en ~/.local/bin).
+├── settings.json    # Config + registro de doctyp: inicio de correlativo (local), correlativos y versiones.
+├── main.typ         # Informe de ejemplo (referencia). No es la plantilla.
+├── CLAUDE.md        # Este archivo.
 └── Images/
     ├── logoslepch.png   # Logo color SLEP (portada + header)   ← meta.logos.slep
     └── isologo_2.png    # Marca pequeña (reservado)            ← meta.logos.isologo
 ```
+
+Los **documentos generados NO viven en el repo**: se guardan en la carpeta «Documentos» del
+sistema, en `<Documentos>/doctyp/<año>/<código-base>.typ` (p. ej. `~/Documentos/doctyp/2026/`).
 
 Cada informe se nombra con su **código base**: `TI-<TIPO>-<CAT>_<AAAA>-<NNNN>.typ`.
 
@@ -41,8 +44,8 @@ Cada informe se nombra con su **código base**: `TI-<TIPO>-<CAT>_<AAAA>-<NNNN>.t
 ## 2. Crear un informe — dos vías
 
 **Vía A (recomendada): generador `doctyp`** — asigna el correlativo y escribe la estructura.
-El documento se crea **en el directorio actual** (donde se llama el comando). Con los defaults
-de autoría (Andrés Cubillos), tipo `INF` y categoría `SFW` basta con el título:
+El documento se crea de forma centralizada en **`<Documentos>/doctyp/<año>/`**, no en el CWD.
+Con los defaults de autoría (Andrés Cubillos), tipo `INF` y categoría `SFW` basta con el título:
 
 ```bash
 doctyp new "Auditoría de respaldos del Centro de Datos"   # título posicional (alias: doctyp n)
@@ -92,26 +95,31 @@ Script en Python estándar (sin dependencias), instalado como **comando global**
 (symlink en `~/.local/bin` → `doctyp.py`), con alias equivalentes **`ty`**, **`tp`** y **`dt`**
 (symlinks al mismo script). Funciona desde cualquier carpeta:
 
-- **Salida en el directorio actual (CWD):** el `.typ` se crea donde se invoca el comando.
-- **Plantilla y assets junto al script:** `lib.typ`, `Images/` y el registro viven en el
-  directorio real del script (`SCRIPT_DIR`); el `.typ` generado importa `lib.typ` por **ruta
-  absoluta**, así Typst resuelve los logos y las fuentes desde cualquier carpeta.
-- **Registro central:** `doctyp-registro.json` (en `SCRIPT_DIR`) es la **fuente de verdad** de
-  correlativos y versiones de todo el sistema.
+- **Gestión centralizada en `<Documentos>/doctyp/<año>/`:** todos los documentos (creados,
+  importados, editados, compilados) viven en la carpeta «Documentos» del sistema. El CWD ya no
+  almacena documentos. La carpeta se resuelve con `xdg-user-dir DOCUMENTS` (fallback `~/Documentos`).
+- **Plantilla y assets junto al script:** `lib.typ`, `Images/` y `settings.json` viven en
+  `SCRIPT_DIR`; el `.typ` generado importa `lib.typ` por **ruta absoluta**, así Typst resuelve
+  los logos y las fuentes desde cualquier carpeta.
+- **Config + registro central:** `settings.json` (en `SCRIPT_DIR`) es la **fuente de verdad** de
+  correlativos y versiones; guarda la `ruta` de cada `.typ`. El campo `local.correlativo_inicio`
+  (por año) define dónde empieza la numeración (ver `reset`).
 
 ### Correlativo secuencial
-- **Global anual:** el próximo número = (máximo correlativo del año en el registro JSON) + 1.
-- El JSON manda; como respaldo se escanea el CWD para no pisar un `.typ` ya presente con el
-  mismo año. Nunca reutiliza un número ya usado.
+- **Global anual:** el próximo número = (máximo correlativo del año en el registro) + 1, pero
+  nunca menor que `local.correlativo_inicio.<año>` si está configurado (ver `reset`).
+- El registro manda; como respaldo se escanea `<Documentos>/doctyp/<año>/` para no pisar un
+  `.typ` ya presente con el mismo año. Nunca reutiliza un número ya usado.
 
 ### Subcomandos
 ```bash
 doctyp list  [--anio 2026]                   # (alias: ls) lista documentos y el próximo correlativo
 doctyp new   "Título" [opciones]             # (alias: n)  crea (tipo INF, categoría SFW por defecto)
 doctyp save  <correlativo> --m "mensaje"     # (alias: s)  sube versión (patch) y registra el cambio
-doctyp add                                   # (alias: a)  importa al registro un .typ del CWD
-doctyp compile <correlativo>                 # (alias: c)  compila el documento a PDF (junto al .typ)
+doctyp add                                   # (alias: a)  mueve un .typ del CWD a Documentos/doctyp/ y lo registra
+doctyp compile <correlativo>                 # (alias: c)  compila a PDF (en Documentos/doctyp/ y copia al CWD)
 doctyp edit <correlativo>                    # (alias: code, e) abre el .typ en VS Code / editor favorito
+doctyp reset [<correlativo>]                 # fija dónde empieza el correlativo del año (def. 1)
 ```
 El título de `new` admite tres formas: posicional (`doctyp new "Título"`), `--t "Título"`
 o `--titulo "Título"`.
@@ -124,7 +132,7 @@ o `--titulo "Título"`.
 | `título` (posicional) / `--titulo` / `--t` | (se pide interactivo) | Título del documento |
 | `--subtitulo` | `SLEP Chinchorro` | |
 | `--area` | `TI` | |
-| `--correlativo` | **secuencial automático** | solo para forzar un número |
+| `--correlativo` / `--code` | **secuencial automático** | fuerza un número manualmente (p. ej. `--code 50`) |
 | `--version` | `1.0.0` | versión inicial (semántica) |
 | `--fecha` | hoy (AAAAMMDD) | |
 | `--anio` | el de `--fecha` | |
@@ -134,9 +142,9 @@ o `--titulo "Título"`.
 | `--cargo` | `Tecnico de Soporte Informático` | autoría |
 | `--correo` | `andres.cubillos@epchinchorro.cl` | autoría |
 | `--revisor` `--aprobador` | defaults de la plantilla | |
-| `--dir` | `.` | subdirectorio de salida (relativo al directorio actual) |
 | `--forzar` | — | sobrescribe si el archivo existe |
 
+> El `.typ` se crea siempre en `<Documentos>/doctyp/<año>/`, no en el CWD.
 > Para compilar usa `doctyp compile <correlativo>` (la compilación no está dentro de `new`/`save`).
 
 El archivo se nombra `<código-base>.typ` y la salida indica el código completo asignado.
@@ -153,29 +161,38 @@ versiones (fecha = hoy, autor = el del registro, descripción = el mensaje).
 | `--anio` | Año del documento (por defecto, el actual). |
 
 ### Subcomando `add`
-Importa al registro un documento `.typ` que ya existe en el **directorio actual** (p. ej. uno
+Importa al registro un documento `.typ` que existe en el **directorio actual** (p. ej. uno
 creado a mano o traído de otra parte). `doctyp add` (sin argumentos):
 - Lista solo los `.typ` del CWD que tienen `crear-meta` **completo** (area, tipo, categoría,
   año, correlativo, versión, título, autor) y que **aún no están** en el registro.
 - Permite elegir uno tecleando su número (`q` cancela).
-- **Renombra el archivo** al estándar `<código-base>.typ` y lo registra (conservando el
-  correlativo del meta; si choca con otro del registro, avisa y no importa).
+- **Mueve el archivo** a `<Documentos>/doctyp/<año>/<código-base>.typ` (sobrescribe si ya existe
+  allí) y lo registra, conservando el correlativo del meta; si ese correlativo choca con otro del
+  registro, avisa y no importa.
 
 Tras `add`, el documento queda gestionado como cualquier otro: `doctyp save <correlativo> ...`
 funciona sobre él.
 
 ### Subcomando `compile`
-`doctyp compile <correlativo>` localiza el documento en el registro y lo compila a PDF; el PDF
-queda **junto al `.typ`**. Detalles de la invocación (en `compilar_typ`):
+`doctyp compile <correlativo>` localiza el documento en el registro y lo compila a PDF. El PDF
+queda **junto al `.typ` en `<Documentos>/doctyp/<año>/`** y, además, se **copia al CWD** donde se
+ejecutó. Detalles de la invocación (en `compilar_typ`):
 - **`--root /`**: el `.typ` importa `lib.typ` por ruta absoluta y Typst trata `/` como la raíz
   del *proyecto* (no del sistema); con `--root /` la raíz del proyecto pasa a ser la del
   filesystem y la ruta absoluta resuelve. **Sin esto la compilación falla** (compilar a mano sin
   `--root /` no funciona).
 - **`--font-path <SCRIPT_DIR>/museo-sans`**: fuentes Museo Sans para fidelidad tipográfica.
+- **`cwd` = carpeta del `.typ`** (bajo Documentos): con `flatpak-spawn --host`, el cwd del sandbox
+  (p. ej. `/tmp/...`) puede no existir en el host; ejecutar dentro de Documentos (bajo `$HOME`) lo evita.
 - **Flatpak (Fedora):** si `typst` no está en el PATH del sandbox pero sí en el host, usa
-  `flatpak-spawn --host typst`. Funciona con archivos bajo `$HOME` (compartido host↔sandbox);
-  `/tmp` del sandbox **no** es visible para el host. En una terminal normal del host se usa
-  `typst` directo.
+  `flatpak-spawn --host typst`. En una terminal normal del host se usa `typst` directo.
+
+### Subcomando `reset`
+`doctyp reset [<correlativo>]` fija dónde empieza la numeración del año en `settings.json`
+(`local.correlativo_inicio.<año>`). Sin argumento, el inicio vuelve a **1**; con `doctyp reset 50`
+el próximo documento del año será `0050`. El inicio actúa como **mínimo**: nunca retrocede sobre
+correlativos ya usados (si ya existe el 0101, el próximo seguirá siendo 0102 aunque fijes 1).
+Usa `--anio` para configurar otro año.
 
 ### Subcomando `edit`
 `doctyp edit <correlativo>` (alias `code`, `e`) abre el `.typ` del documento en un editor, en
@@ -311,7 +328,7 @@ typst watch  --root / TI-INF-SEG_2026-0023.typ                                  
 Cuando el usuario diga “redactemos un informe sobre X”:
 
 1. **Identifica `--tipo` y `--categoria`** (§6) y confirma autor/cargo/correo si no los da.
-2. **Crea el archivo con el generador** (asigna el correlativo secuencial y lo deja en el CWD):
+2. **Crea el archivo con el generador** (asigna el correlativo y lo deja en `<Documentos>/doctyp/<año>/`):
    `doctyp new "<título>"` (ajusta `--tipo`/`--categoria`/autoría solo si difieren de los defaults).
 3. **Rellena las secciones `// TODO`** del archivo con el contenido del usuario, siguiendo la
    estructura canónica (§5). Usa `aviso(...)` para estados/riesgos y `tabla(...)`/`tabla-prioridad(...)` para datos.
@@ -342,7 +359,7 @@ Sugerencia: deja `typst watch --root / <archivo>.typ` corriendo durante la redac
 ## 11. TL;DR para Claude Code
 
 1. No toques el estilo de `lib.typ` sin orden explícita.
-2. Crea informes con `doctyp new "..."` (correlativo secuencial automático; sale en el CWD).
+2. Crea informes con `doctyp new "..."` (correlativo automático; se guarda en `<Documentos>/doctyp/<año>/`).
    Sube versión con `doctyp save <correlativo> --m "..."`. Subcomandos con alias: `list/ls`,
    `new/n`, `save/s`, `add/a`, `compile/c`.
 3. Rellena los `// TODO` siguiendo la estructura canónica (§5) y la API (§8).
