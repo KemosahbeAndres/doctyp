@@ -272,28 +272,97 @@ def compilar_typ(out_file: Path) -> bool:
         return False
 
 
-def escribir_doctyp_json(cwd: Path, correlativo: int, anio: int) -> None:
-    """Escribe doctyp.json en cwd con el correlativo del documento activo."""
+def agregar_doctyp_json(cwd: Path, correlativo: int, anio: int,
+                        nombre_archivo: str, autor: str) -> None:
+    """Añade una entrada al doctyp.json del directorio cwd (lo crea si no existe).
+    Migra automáticamente el formato anterior (dict plano) a lista."""
     path = cwd / DOCTYP_JSON
-    path.write_text(
-        json.dumps({"correlativo": correlativo, "anio": anio}, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    try:
+        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except (json.JSONDecodeError, OSError):
+        data = {}
+
+    # Migrar formato anterior (dict plano con "correlativo")
+    if isinstance(data.get("correlativo"), int):
+        entrada_vieja = {
+            "correlativo": data["correlativo"],
+            "anio": data.get("anio", anio),
+            "fecha_creacion": "",
+            "nombre_archivo": "",
+            "autor": "",
+        }
+        data = {"documentos": [entrada_vieja]}
+    data.setdefault("documentos", [])
+
+    # Evitar duplicados (mismo correlativo + año)
+    if not any(d.get("correlativo") == correlativo and d.get("anio") == anio
+               for d in data["documentos"]):
+        data["documentos"].append({
+            "correlativo": correlativo,
+            "anio": anio,
+            "fecha_creacion": datetime.datetime.now().isoformat(timespec="seconds"),
+            "nombre_archivo": nombre_archivo,
+            "autor": autor,
+        })
+
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     _ok(f"Contexto guardado: {_c(_C.DIM, str(path))}")
 
 
-def leer_doctyp_json(cwd: Path) -> dict | None:
-    """Lee doctyp.json del directorio actual. Devuelve None si no existe o es inválido."""
+def leer_doctyp_json(cwd: Path) -> list[dict] | None:
+    """Lee doctyp.json del directorio actual.
+    Devuelve la lista de entradas o None si no existe o es inválido.
+    Migra el formato anterior (dict plano) de forma transparente."""
     path = cwd / DOCTYP_JSON
     if not path.exists():
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        # Formato anterior: dict plano con "correlativo"
         if isinstance(data.get("correlativo"), int):
-            return data
+            return [data]
+        docs = data.get("documentos", [])
+        if isinstance(docs, list) and docs:
+            return docs
     except (json.JSONDecodeError, OSError):
         pass
     return None
+
+
+def resolver_desde_doctyp_json(cwd: Path, registro: dict, anio_arg: int | None) -> dict:
+    """Lee doctyp.json y devuelve el documento del registro seleccionado.
+    Si hay una sola entrada la usa directamente; si hay varias pide selección interactiva."""
+    entradas = leer_doctyp_json(cwd)
+    if not entradas:
+        sys.exit(
+            f"ERROR: no se proporcionó correlativo y no existe {DOCTYP_JSON} "
+            f"en el directorio actual.\n"
+            f"  Uso: doctyp <edit|compile> <correlativo>"
+        )
+
+    if len(entradas) == 1:
+        e = entradas[0]
+        corr = e["correlativo"]
+        anio = anio_arg or e.get("anio", datetime.date.today().year)
+        _ok(f"Usando correlativo {_c(_C.CYAN, f'{corr:04d}')} de {DOCTYP_JSON}")
+        return buscar_doc(registro, corr, anio)
+
+    # Múltiples entradas → selección interactiva
+    etiquetas = []
+    for e in entradas:
+        corr_str = f"{e['correlativo']:04d}"
+        fecha = e.get("fecha_creacion", "")[:10]
+        nombre = e.get("nombre_archivo", "")
+        autor = e.get("autor", "")
+        etiquetas.append(f"{corr_str}  {nombre}  ·  {fecha}  ·  {autor}")
+
+    idx = _seleccionar(etiquetas, f"Documentos en {DOCTYP_JSON}:")
+    if idx is None:
+        sys.exit("Cancelado.")
+
+    e = entradas[idx]
+    anio = anio_arg or e.get("anio", datetime.date.today().year)
+    return buscar_doc(registro, e["correlativo"], anio)
 
 
 def codigo_base(area, tipo, cat, anio, corr) -> str:
@@ -637,7 +706,7 @@ def cmd_nuevo(args):
         "versiones": [{"version": f["version"], "fecha": fecha, "creado": ahora}],
     })
     guardar_registro(SCRIPT_DIR, registro)
-    escribir_doctyp_json(Path.cwd(), corr, anio)
+    agregar_doctyp_json(Path.cwd(), corr, anio, f"{base}.typ", f["autor"])
 
     print()
     _ok(f"Creado: {_c(_C.DIM, str(out_file))}")
@@ -707,8 +776,11 @@ def cmd_save(args):
 
 def cmd_compile(args):
     registro = cargar_registro(SCRIPT_DIR)
-    anio = args.anio or datetime.date.today().year
-    doc = buscar_doc(registro, args.correlativo, anio)
+    if args.correlativo is None:
+        doc = resolver_desde_doctyp_json(Path.cwd(), registro, args.anio)
+    else:
+        anio = args.anio or datetime.date.today().year
+        doc = buscar_doc(registro, args.correlativo, anio)
 
     typ_path = Path(doc["ruta"])
     if not typ_path.exists():
@@ -729,21 +801,11 @@ def cmd_compile(args):
 
 def cmd_edit(args):
     registro = cargar_registro(SCRIPT_DIR)
-    correlativo = args.correlativo
-    anio = args.anio or datetime.date.today().year
-    if correlativo is None:
-        ctx = leer_doctyp_json(Path.cwd())
-        if ctx is None:
-            sys.exit(
-                f"ERROR: no se proporcionó correlativo y no existe {DOCTYP_JSON} "
-                f"en el directorio actual.\n"
-                f"  Uso: doctyp edit <correlativo>"
-            )
-        correlativo = ctx["correlativo"]
-        if args.anio is None:
-            anio = ctx.get("anio", datetime.date.today().year)
-        _ok(f"Usando correlativo {_c(_C.CYAN, f'{correlativo:04d}')} de {DOCTYP_JSON}")
-    doc = buscar_doc(registro, correlativo, anio)
+    if args.correlativo is None:
+        doc = resolver_desde_doctyp_json(Path.cwd(), registro, args.anio)
+    else:
+        anio = args.anio or datetime.date.today().year
+        doc = buscar_doc(registro, args.correlativo, anio)
 
     typ_path = Path(doc["ruta"])
     if not typ_path.exists():
@@ -870,7 +932,7 @@ def cmd_add(args):
                        "creado": ahora, "mensaje": "Importado al registro."}],
     })
     guardar_registro(SCRIPT_DIR, registro)
-    escribir_doctyp_json(cwd, meta["correlativo"], meta["anio"])
+    agregar_doctyp_json(cwd, meta["correlativo"], meta["anio"], f"{base}.typ", meta["autor"])
 
     print()
     _ok(f"Registrado: {_c(_C.BOLD, base)}  (v{meta['version']})")
@@ -943,8 +1005,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     pc = sub.add_parser("compile", aliases=["c"],
                         help="Compila un documento a PDF (queda junto al .typ).")
-    pc.add_argument("correlativo", type=int, metavar="CORRELATIVO",
-                    help="Número correlativo del documento a compilar.")
+    pc.add_argument("correlativo", type=int, nargs="?", metavar="CORRELATIVO",
+                    help="Número correlativo del documento a compilar. "
+                         "Si se omite, se lee de doctyp.json en el directorio actual.")
     pc.add_argument("--anio", type=int, help="Año del documento (por defecto, el actual).")
     pc.set_defaults(func=cmd_compile)
 
@@ -1018,7 +1081,7 @@ def menu_interactivo() -> None:
     argv = [cmd_sel]
 
     # Solicitar argumentos adicionales según el comando
-    if cmd_sel in ("save", "compile"):
+    if cmd_sel == "save":
         print()
         try:
             corr = input("  Correlativo del documento: ").strip()
@@ -1028,38 +1091,33 @@ def menu_interactivo() -> None:
             _warn("Correlativo inválido.")
             return
         argv.append(corr)
-        if cmd_sel == "save":
-            try:
-                msg = input("  Mensaje de la nueva versión: ").strip()
-            except (EOFError, KeyboardInterrupt):
-                return
-            if not msg:
-                _warn("El mensaje es obligatorio.")
-                return
-            argv += ["--m", msg]
-
-    elif cmd_sel == "edit":
-        ctx = leer_doctyp_json(Path.cwd())
-        if ctx:
-            corr_hint = _c(_C.CYAN, f"{ctx['correlativo']:04d}")
-            json_hint = _c(_C.DIM, f"({DOCTYP_JSON})")
-            hint = f" [Enter = {corr_hint} {json_hint}]"
-        else:
-            hint = ""
-        print()
         try:
-            corr = input(f"  Correlativo del documento{hint}: ").strip()
+            msg = input("  Mensaje de la nueva versión: ").strip()
         except (EOFError, KeyboardInterrupt):
             return
-        if corr:
+        if not msg:
+            _warn("El mensaje es obligatorio.")
+            return
+        argv += ["--m", msg]
+
+    elif cmd_sel in ("edit", "compile"):
+        ctx_list = leer_doctyp_json(Path.cwd())
+        if ctx_list:
+            # doctyp.json disponible: el subcomando resolverá (1 entrada auto, varios interactivo)
+            n = len(ctx_list)
+            hint = _c(_C.DIM, f"({n} documento(s) en {DOCTYP_JSON} — Enter para usar)")
+            print(f"\n  {hint}")
+        else:
+            # Sin doctyp.json: pedir correlativo obligatorio
+            print()
+            try:
+                corr = input("  Correlativo del documento: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                return
             if not corr.isdigit():
                 _warn("Correlativo inválido.")
                 return
             argv.append(corr)
-        elif not ctx:
-            _warn(f"No se indicó correlativo y no existe {DOCTYP_JSON} en el directorio actual.")
-            return
-        # Si corr vacío y ctx existe, no se añade argv; cmd_edit leerá doctyp.json
 
     elif cmd_sel == "reset":
         print()
