@@ -943,6 +943,82 @@ def cmd_add(args):
     print(f"       Registro: {_c(_C.DIM, str(registro_path(SCRIPT_DIR)))}\n")
 
 
+def _quitar_de_doctyp_json(cwd: Path, correlativo: int, anio: int) -> bool:
+    """Elimina la entrada del doctyp.json del directorio cwd. Devuelve True si lo modificó."""
+    entradas = leer_doctyp_json(cwd)
+    if not entradas:
+        return False
+    nuevas = [e for e in entradas
+              if not (e.get("correlativo") == correlativo and e.get("anio") == anio)]
+    if len(nuevas) == len(entradas):
+        return False
+    path = cwd / DOCTYP_JSON
+    if nuevas:
+        path.write_text(
+            json.dumps({"documentos": nuevas}, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    else:
+        path.unlink()
+    return True
+
+
+def cmd_delete(args):
+    """Elimina un documento: archivo .typ, entrada en settings.json y en doctyp.json (si existe)."""
+    registro = cargar_registro(SCRIPT_DIR)
+    anio = args.anio or datetime.date.today().year
+    doc = buscar_doc(registro, args.correlativo, anio)
+
+    typ_path = Path(doc["ruta"])
+    base = doc.get("codigo_base", typ_path.stem)
+
+    print(f"\n  {_c(_C.BOLD + _C.RED, 'Eliminar documento')}")
+    print(f"  Código:  {_c(_C.BOLD, base)}")
+    print(f"  Archivo: {_c(_C.DIM, str(typ_path))}")
+    print(f"  Título:  {doc.get('titulo', '')}\n")
+
+    if not args.yes:
+        try:
+            resp = input(f"  {_c(_C.YELLOW, '¿Confirmar eliminación?')} [s/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        if resp not in ("s", "si", "sí", "y", "yes"):
+            print("  Cancelado.\n")
+            return
+
+    eliminado_typ = False
+    if typ_path.exists():
+        typ_path.unlink()
+        eliminado_typ = True
+
+    pdf_path = typ_path.with_suffix(".pdf")
+    eliminado_pdf = False
+    if pdf_path.exists():
+        pdf_path.unlink()
+        eliminado_pdf = True
+
+    registro["documentos"] = [
+        d for d in registro["documentos"]
+        if not (d.get("correlativo") == doc["correlativo"] and d.get("anio") == doc["anio"])
+    ]
+    guardar_registro(SCRIPT_DIR, registro)
+
+    eliminado_json = _quitar_de_doctyp_json(Path.cwd(), doc["correlativo"], doc["anio"])
+
+    print()
+    if eliminado_typ:
+        _ok(f"Archivo eliminado:  {_c(_C.DIM, str(typ_path))}")
+    else:
+        _warn(f"Archivo no encontrado (ya no existía): {typ_path}")
+    if eliminado_pdf:
+        _ok(f"PDF eliminado:      {_c(_C.DIM, str(pdf_path))}")
+    _ok(f"Eliminado del registro: {_c(_C.DIM, str(registro_path(SCRIPT_DIR)))}")
+    if eliminado_json:
+        _ok(f"Eliminado de {DOCTYP_JSON} en el directorio actual.")
+    print()
+
+
 def cmd_import(args):
     """Registra un documento del sistema en doctyp.json del directorio actual."""
     registro = cargar_registro(SCRIPT_DIR)
@@ -1045,6 +1121,15 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Importa al registro un documento existente del directorio actual.")
     pa.set_defaults(func=cmd_add)
 
+    pd = sub.add_parser("delete", aliases=["del"],
+                        help="Elimina un documento: .typ, registro y doctyp.json.")
+    pd.add_argument("correlativo", type=int, metavar="CORRELATIVO",
+                    help="Número correlativo del documento a eliminar.")
+    pd.add_argument("--anio", type=int, help="Año del documento (por defecto, el actual).")
+    pd.add_argument("--y", dest="yes", action="store_true",
+                    help="Confirmar sin preguntar.")
+    pd.set_defaults(func=cmd_delete)
+
     pi = sub.add_parser("import", aliases=["i"],
                         help="Añade un documento del registro al doctyp.json del directorio actual.")
     pi.add_argument("correlativo", type=int, nargs="?", metavar="CORRELATIVO",
@@ -1103,6 +1188,7 @@ def menu_interactivo() -> None:
         ("save",          "s",               "Subir versión de un documento (patch)"),
         ("add",           "a",               "Importar un .typ existente al registro"),
         ("import",        "i",               "Anclar un documento del registro en doctyp.json"),
+        ("delete",        "del",             "Eliminar un documento del sistema"),
         ("compile",       "c",               "Compilar un documento a PDF"),
         ("edit",          "code / e / open", "Abrir un documento en el editor"),
         ("reset",         "",                "Fijar el inicio del correlativo del año"),
@@ -1152,6 +1238,18 @@ def menu_interactivo() -> None:
 
     elif cmd_sel == "import":
         pass  # cmd_import muestra la lista interactiva por sí solo
+
+    elif cmd_sel == "delete":
+        print()
+        try:
+            corr = input("  Correlativo del documento a eliminar: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return
+        if not corr.isdigit():
+            _warn("Correlativo inválido.")
+            return
+        argv.append(corr)
+        # La confirmación la pide cmd_delete de forma interactiva
 
     elif cmd_sel in ("edit", "compile"):
         ctx_list = leer_doctyp_json(Path.cwd())
