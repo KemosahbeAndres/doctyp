@@ -3,16 +3,15 @@
   init.ps1 — Instalador de doctyp (generador de informes Typst · SLEP Chinchorro) para Windows.
 
 .DESCRIPTION
-  Equivalente en PowerShell del script `init` de Linux. Comprueba Python 3 y Typst, instala las
-  fuentes oficiales (Museo Sans + gobCL) para el usuario, y crea envoltorios `.cmd` del comando
-  (doctyp + alias ty/tp/dt) en una carpeta de scripts, que se añade al PATH del usuario.
+  Instala dependencias (Python 3, Typst, fuentes), crea lanzadores .cmd y añade la carpeta de
+  scripts al PATH del usuario. No actualiza dependencias ya instaladas.
 
-  En Windows no se usan symlinks (requieren privilegios o Developer Mode): en su lugar se generan
-  pequeños lanzadores `.cmd` que invocan `python doctyp.py`. Así el comando funciona desde
-  cualquier carpeta, igual que en Linux.
+  Comportamiento:
+    - Python 3, Typst y fuentes: pide confirmación antes de instalar (predeterminado: Sí).
+    - Lanzadores .cmd (doctyp, ty, tp, dt) y PATH: se configuran automáticamente.
 
-  Lo que NO se puede automatizar (instalar Python/Typst sin un gestor) se reporta con
-  instrucciones, sin abortar.
+  En Windows no se usan symlinks (requieren Developer Mode): se crean lanzadores .cmd que
+  invocan "python doctyp.py", lo que permite usar el comando desde cualquier carpeta.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\init.ps1
@@ -22,23 +21,26 @@ param()
 
 $ErrorActionPreference = 'Stop'
 
-# Carpetas de destino (perfil del usuario; no requieren administrador).
 $RepoDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$BinDir  = Join-Path $env:USERPROFILE 'bin'              # lanzadores .cmd (se añade al PATH)
-$FontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'  # fuentes por-usuario
+$BinDir  = Join-Path $env:USERPROFILE 'bin'
+$FontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
+$Script  = Join-Path $RepoDir 'doctyp.py'
 $Aliases = @('doctyp', 'ty', 'tp', 'dt')
 
-function Info($m) { Write-Host "==> $m" -ForegroundColor Blue }
-function Ok($m)   { Write-Host "  OK $m" -ForegroundColor Green }
-function Warn($m) { Write-Host "  ! $m"  -ForegroundColor Yellow }
-function Err($m)  { Write-Host "ERROR: $m" -ForegroundColor Red }
+function Info($m) { Write-Host "`n==> $m" -ForegroundColor Cyan }
+function Ok($m)   { Write-Host "  [OK] $m"  -ForegroundColor Green }
+function Warn($m) { Write-Host "   !  $m"   -ForegroundColor Yellow }
+function Err($m)  { Write-Host " [ERR] $m"  -ForegroundColor Red }
 
-# Resuelve el ejecutable de Python (py launcher si existe; si no, python).
+function Ask-Confirm([string]$prompt) {
+  $r = Read-Host "  $prompt [S/n]"
+  return ($r -eq '' -or $r -imatch '^[sy]')
+}
+
 function Get-Python {
   foreach ($c in @('py', 'python', 'python3')) {
     $cmd = Get-Command $c -ErrorAction SilentlyContinue
     if ($cmd) {
-      # `py` necesita -3 para forzar Python 3; los demás van directos.
       if ($c -eq 'py') { return @{ Exe = $cmd.Source; Args = '-3' } }
       return @{ Exe = $cmd.Source; Args = '' }
     }
@@ -46,98 +48,131 @@ function Get-Python {
   return $null
 }
 
-# --------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────
 # 1) Python 3
-# --------------------------------------------------------------------------
-Info 'Comprobando Python 3...'
+# ──────────────────────────────────────────────────────
+Info 'Python 3'
 $py = Get-Python
 if ($py) {
   $ver = & $py.Exe $py.Args '--version' 2>&1
-  Ok "Python presente: $ver"
+  Ok "Ya instalado: $ver"
 } else {
-  Err 'No se encontró Python 3.'
-  Warn 'Instálalo desde https://www.python.org/downloads/ (marca "Add python.exe to PATH"),'
-  Warn 'o con winget:  winget install Python.Python.3.12'
-}
-
-# --------------------------------------------------------------------------
-# 2) Typst
-# --------------------------------------------------------------------------
-Info 'Comprobando Typst...'
-if (Get-Command typst -ErrorAction SilentlyContinue) {
-  Ok "Typst presente: $(typst --version)"
-} else {
-  Warn 'Typst no está instalado. Instálalo con uno de:'
-  Warn '  winget install Typst.Typst'
-  Warn '  scoop install typst'
-  Warn '  cargo install typst-cli'
-  Warn '  o binario desde https://github.com/typst/typst/releases'
-}
-
-# --------------------------------------------------------------------------
-# 3) Fuentes oficiales (Museo Sans + gobCL)
-# --------------------------------------------------------------------------
-Info "Instalando fuentes oficiales en $FontDir..."
-New-Item -ItemType Directory -Force -Path $FontDir | Out-Null
-$copied = 0
-foreach ($d in @((Join-Path $RepoDir 'museo-sans'), (Join-Path $RepoDir 'GobCLFontsFiles'))) {
-  if (-not (Test-Path $d)) { continue }
-  foreach ($f in Get-ChildItem -Path $d -Include '*.otf', '*.ttf' -File -Recurse -ErrorAction SilentlyContinue) {
-    Copy-Item -Force $f.FullName (Join-Path $FontDir $f.Name)
-    $copied++
+  Warn 'No encontrado.'
+  if (Ask-Confirm '¿Instalar Python 3?') {
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+      try {
+        winget install -e --id Python.Python.3.12 --source winget
+        $py = Get-Python
+        if ($py) { Ok 'Instalado correctamente.' }
+        else      { Warn 'Instalado. Abre una nueva terminal y vuelve a ejecutar init.ps1 para completar la configuración.' }
+      } catch { Err "winget falló: $_" }
+    } else {
+      Warn 'winget no disponible. Instala Python 3 manualmente:'
+      Warn '  https://www.python.org/downloads/  (marca "Add python.exe to PATH")'
+      Warn '  Luego vuelve a ejecutar init.ps1.'
+    }
+  } else {
+    Warn 'Omitido. doctyp no funcionará sin Python 3.'
   }
 }
-if ($copied -gt 0) {
-  Ok "Fuentes copiadas ($copied archivos)."
-  Warn 'En Windows, para que las apps reconozcan fuentes por-usuario puede hacer falta'
-  Warn 'reiniciar la sesión. Typst las usa vía --font-path sin necesidad de instalarlas.'
+
+# ──────────────────────────────────────────────────────
+# 2) Typst
+# ──────────────────────────────────────────────────────
+Info 'Typst'
+if (Get-Command typst -ErrorAction SilentlyContinue) {
+  Ok "Ya instalado: $(typst --version)"
 } else {
-  Warn 'No se encontraron archivos de fuente en el repositorio.'
+  Warn 'No encontrado.'
+  if (Ask-Confirm '¿Instalar Typst?') {
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+      try {
+        winget install -e --id Typst.Typst --source winget
+        if (Get-Command typst -ErrorAction SilentlyContinue) { Ok 'Instalado correctamente.' }
+        else { Warn 'Puede requerir abrir una terminal nueva.' }
+      } catch { Err "winget falló: $_" }
+    } else {
+      Warn 'winget no disponible. Instala Typst manualmente:'
+      Warn '  scoop install typst  |  cargo install typst-cli'
+      Warn '  https://github.com/typst/typst/releases'
+    }
+  } else {
+    Warn 'Omitido. No podrás compilar documentos sin Typst.'
+  }
 }
 
-# --------------------------------------------------------------------------
-# 4) Lanzadores .cmd del comando (doctyp + alias)
-# --------------------------------------------------------------------------
-Info "Creando lanzadores en $BinDir..."
+# ──────────────────────────────────────────────────────
+# 3) Fuentes (Museo Sans + gobCL)
+# ──────────────────────────────────────────────────────
+Info 'Fuentes (Museo Sans + gobCL)'
+$fontSrc = @()
+foreach ($d in @((Join-Path $RepoDir 'museo-sans'), (Join-Path $RepoDir 'GobCLFontsFiles'))) {
+  if (Test-Path $d) {
+    $found = Get-ChildItem -Path $d -Include '*.otf','*.ttf' -File -Recurse -ErrorAction SilentlyContinue
+    if ($found) { $fontSrc += $found }
+  }
+}
+
+if ($fontSrc.Count -eq 0) {
+  Warn 'No se encontraron fuentes en el repositorio (museo-sans/, GobCLFontsFiles/).'
+} else {
+  $toInstall = @($fontSrc | Where-Object { -not (Test-Path (Join-Path $FontDir $_.Name)) })
+  if ($toInstall.Count -eq 0) {
+    Ok "Ya instaladas ($($fontSrc.Count) archivos en $FontDir)."
+  } else {
+    Warn "$($toInstall.Count) de $($fontSrc.Count) fuente(s) pendientes."
+    if (Ask-Confirm '¿Instalar fuentes?') {
+      New-Item -ItemType Directory -Force -Path $FontDir | Out-Null
+      $toInstall | ForEach-Object { Copy-Item -Force $_.FullName (Join-Path $FontDir $_.Name) }
+      Ok "Instaladas ($($toInstall.Count) archivos)."
+      Warn 'Puede requerir reiniciar la sesión para que las apps las reconozcan.'
+      Warn 'Typst las usa con --font-path sin necesidad de instalarlas globalmente.'
+    } else {
+      Warn 'Omitidas. Typst usará Liberation Sans como respaldo.'
+    }
+  }
+}
+
+# ──────────────────────────────────────────────────────
+# 4) Lanzadores .cmd  [automático]
+# ──────────────────────────────────────────────────────
+Info "Lanzadores .cmd ($($Aliases -join ', '))"
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-$script = Join-Path $RepoDir 'doctyp.py'
-# Comando Python a invocar dentro del .cmd: usa `py -3` si está, si no `python`.
-if ($py -and $py.Exe -like '*py.exe') { $pyCall = 'py -3' } else { $pyCall = 'python' }
+$pyCall = if ($py -and $py.Exe -like '*py.exe') { 'py -3' } else { 'python' }
 foreach ($n in $Aliases) {
-  $cmdPath = Join-Path $BinDir "$n.cmd"
-  # %* reenvía todos los argumentos al script. Comillas por si la ruta tiene espacios.
-  @(
-    '@echo off'
-    "$pyCall `"$script`" %*"
-  ) -join "`r`n" | Set-Content -Encoding ASCII -Path $cmdPath
-  Ok "$n -> $script"
+  $cmdPath = Join-Path $BinDir ($n + '.cmd')
+  if (Test-Path $cmdPath) {
+    Ok "$n.cmd ya presente."
+  } else {
+    @('@echo off', "$pyCall `"$Script`" %*") -join "`r`n" | Set-Content -Encoding ASCII -Path $cmdPath
+    Ok "$n.cmd creado -> $Script"
+  }
 }
 
-# --------------------------------------------------------------------------
-# 5) Datos del autor (settings.json -> local.author)
-# --------------------------------------------------------------------------
-# Se piden interactivamente y se guardan globalmente; al crear documentos, doctyp los usa por
-# defecto. Se delega en el propio script (config-author). Volver a ejecutar init.ps1 permite
-# cambiarlos (en blanco se mantiene el valor actual).
-if ($py) {
-  Info 'Configurando datos del autor (se guardan en settings.json)...'
-  if ($py.Args) { & $py.Exe $py.Args $script 'config-author' }
-  else          { & $py.Exe        $script 'config-author' }
-} else {
-  Warn 'Omito la configuración del autor (sin Python). Configúralo luego con:  doctyp config-author'
-}
-
-# --------------------------------------------------------------------------
-# 6) PATH del usuario
-# --------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────
+# 5) PATH del usuario  [automático]
+# ──────────────────────────────────────────────────────
+Info 'PATH del usuario'
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if ($userPath -and ($userPath.Split(';') -contains $BinDir)) {
-  Ok "$BinDir ya está en el PATH del usuario."
+if ($userPath -and ($userPath.Split(';') -icontains $BinDir)) {
+  Ok "$BinDir ya está en el PATH."
 } else {
   $newPath = if ([string]::IsNullOrEmpty($userPath)) { $BinDir } else { "$userPath;$BinDir" }
   [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
   Ok "$BinDir añadido al PATH del usuario."
   Warn 'Abre una terminal nueva para que el PATH se actualice.'
+}
+
+# ──────────────────────────────────────────────────────
+# 6) Datos del autor
+# ──────────────────────────────────────────────────────
+Info 'Datos del autor'
+if ($py) {
+  if ($py.Args) { & $py.Exe $py.Args $Script 'config-author' }
+  else          { & $py.Exe        $Script 'config-author' }
+} else {
+  Warn 'Sin Python no se puede configurar el autor ahora.'
+  Warn 'Una vez instalado Python, ejecuta:  doctyp config-author'
 }
 
 Write-Host ''

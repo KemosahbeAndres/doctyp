@@ -117,16 +117,22 @@ Script en Python estándar (sin dependencias), instalado como **comando global**
 - El registro manda; como respaldo se escanea `<Documentos>/doctyp/<año>/` para no pisar un
   `.typ` ya presente con el mismo año. Nunca reutiliza un número ya usado.
 
+### Menú interactivo
+Sin argumentos, `doctyp` muestra un menú numerado con todos los comandos disponibles y el estado
+del registro (documentos registrados y próximo correlativo). Los comandos que requieren correlativo
+o mensaje los solicitan de forma interactiva desde el propio menú. Claude Code puede usar los
+subcomandos directamente por línea de comandos; el menú es para uso humano.
+
 ### Subcomandos
 ```bash
-doctyp list  [--anio 2026]                   # (alias: ls) lista documentos y el próximo correlativo
-doctyp new   "Título" [opciones]             # (alias: n)  crea (tipo INF, categoría SFW por defecto)
-doctyp save  <correlativo> --m "mensaje"     # (alias: s)  sube versión (patch) y registra el cambio
-doctyp add                                   # (alias: a)  mueve un .typ del CWD junto a la plantilla y lo registra
-doctyp compile <correlativo>                 # (alias: c)  compila a PDF (junto al .typ y copia al CWD)
-doctyp edit <correlativo>                    # (alias: code, e) abre el .typ en VS Code / editor favorito
-doctyp reset [<correlativo>]                 # fija dónde empieza el correlativo del año (def. 1)
-doctyp config-author                         # (alias: author) configura el autor global (settings.json → local.author)
+doctyp list  [--anio 2026]                   # (alias: ls)            lista documentos y el próximo correlativo
+doctyp new   "Título" [opciones]             # (alias: n)             crea (tipo INF, categoría SFW por defecto)
+doctyp save  <correlativo> --m "mensaje"     # (alias: s)             sube versión (patch) y registra el cambio
+doctyp add                                   # (alias: a)             mueve un .typ del CWD junto a la plantilla y lo registra
+doctyp compile <correlativo>                 # (alias: c)             compila a PDF (junto al .typ y copia al CWD)
+doctyp edit <correlativo>                    # (alias: code, e, open) abre el .typ con selección interactiva de editor
+doctyp reset [<correlativo>]                 #                        fija dónde empieza el correlativo del año (def. 1)
+doctyp config-author                         # (alias: author)        configura el autor global (settings.json → local.author)
 ```
 El título de `new` admite tres formas: posicional (`doctyp new "Título"`), `--t "Título"`
 o `--titulo "Título"`.
@@ -200,8 +206,9 @@ correlativos ya usados (si ya existe el 0101, el próximo seguirá siendo 0102 a
 Usa `--anio` para configurar otro año.
 
 ### Subcomando `edit`
-`doctyp edit <correlativo>` (alias `code`, `e`) abre el `.typ` del documento en un editor, en
-este orden de preferencia:
+`doctyp edit <correlativo>` (alias `code`, `e`, `open`) detecta todos los editores disponibles y
+muestra un **menú de selección interactiva** (predeterminado: el primero encontrado, que suele
+ser VS Code). Los editores se detectan en este orden:
 1. **VS Code binario** `code` en el PATH (sandbox, terminal integrada o host con `code` instalado).
 2. **VS Code / VSCodium como Flatpak** (`com.visualstudio.code` / `com.vscodium.codium`): se lanza
    con `flatpak run <id>`. Es el caso típico en Fedora, donde **no** hay binario `code` en el PATH.
@@ -209,10 +216,9 @@ este orden de preferencia:
 4. **App predeterminada del sistema**: `xdg-open` (Linux), `open` (macOS) u `os.startfile`
    (Windows). En Windows también detecta `code.cmd`.
 
-Cada opción se sondea de forma fiable por **código de salida** (`flatpak info <id>`,
-`command -v <cmd>`), porque `flatpak-spawn` no propaga el error si el comando del host falta.
-Si estamos dentro de un sandbox Flatpak, los comandos del host se ejecutan con
-`flatpak-spawn --host`; en una terminal normal del host, directos.
+Si solo se detecta un editor, se abre directamente sin preguntar. Si hay varios, se muestra la
+lista numerada y el usuario elige (Enter acepta el predeterminado). La detección usa `flatpak-spawn
+--host` dentro de un sandbox Flatpak.
 
 ### Subcomando `config-author`
 `doctyp config-author` (alias `author`) configura **globalmente** los datos del autor (nombre,
@@ -381,6 +387,6 @@ Sugerencia: deja `typst watch <archivo>.typ` corriendo (desde `SCRIPT_DIR`) dura
 1. No toques el estilo de `lib.typ` sin orden explícita.
 2. Crea informes con `doctyp new "..."` (correlativo automático; se guarda en `<Documentos>/doctyp/<año>/`).
    Sube versión con `doctyp save <correlativo> --m "..."`. Subcomandos con alias: `list/ls`,
-   `new/n`, `save/s`, `add/a`, `compile/c`.
+   `new/n`, `save/s`, `add/a`, `compile/c`, `edit/code/e/open`.
 3. Rellena los `// TODO` siguiendo la estructura canónica (§5) y la API (§8).
 4. Compila con `doctyp compile <correlativo>` tras cada cambio (§7) y reporta el `codigo-completo`.

@@ -154,15 +154,16 @@ powershell -ExecutionPolicy Bypass -File .\init.ps1
 
 `init.ps1`:
 
-1. **Comprueba Python 3 y Typst** (no los instala por ti; si faltan, indica el comando `winget`
-   correspondiente — p. ej. `winget install Python.Python.3.12` y `winget install Typst.Typst`).
-2. **Copia las fuentes oficiales** a la carpeta de fuentes por-usuario.
-3. **Crea lanzadores `.cmd`** (`doctyp`, `ty`, `tp`, `dt`) en `%USERPROFILE%\bin` que invocan
-   `python doctyp.py`. En Windows no se usan symlinks (requieren privilegios); los `.cmd` cumplen
-   la misma función y reenvían todos los argumentos.
-4. **Configura los datos del autor** (igual que en Linux: interactivo, valor actual entre
+1. **Comprueba e instala Python 3 y Typst**: si faltan, pregunta `¿Instalar? [S/n]` y los instala
+   con `winget` (predeterminado: Sí). Si ya están instalados, los omite sin actualizar.
+2. **Instala las fuentes oficiales** (Museo Sans + gobCL): pregunta antes de copiar; omite las que
+   ya estén instaladas.
+3. **Crea lanzadores `.cmd`** (`doctyp`, `ty`, `tp`, `dt`) en `%USERPROFILE%\bin` de forma
+   automática (solo los que falten). En Windows no se usan symlinks (requieren privilegios); los
+   `.cmd` cumplen la misma función y reenvían todos los argumentos.
+4. **Añade `%USERPROFILE%\bin` al `PATH` del usuario** automáticamente si no estaba.
+5. **Configura los datos del autor** (igual que en Linux: interactivo, valor actual entre
    paréntesis, en blanco se mantiene) y los guarda en `settings.json → local.author`.
-5. **Añade `%USERPROFILE%\bin` al `PATH` del usuario** si no estaba.
 
 Abre una terminal **nueva** y prueba `doctyp list`. El propio `doctyp.py` ya es multiplataforma:
 detecta Typst y el editor (`code`, `$EDITOR` o la app por defecto del sistema) en Windows, macOS
@@ -276,22 +277,51 @@ doctyp list
 
 ## Uso
 
+### Menú interactivo
+
+Sin argumentos, `doctyp` muestra un **menú interactivo** con todos los comandos disponibles y el estado del registro:
+
+```bash
+doctyp
+```
+
+```
+  doctyp  Informes Técnicos · SLEP Chinchorro (Unidad TI)
+  ──────────────────────────────────────────────────────
+
+  3 documento(s) registrado(s)  ·  próximo: 0004  (2026)
+
+  Comandos disponibles:
+
+  1  list            Lista documentos y el próximo correlativo
+  2  new             Crear un nuevo documento
+  3  save            Subir versión de un documento (patch)
+  ...
+
+  Selecciona [1-8, q=salir]:
+```
+
+Para los comandos que requieren un correlativo o mensaje, el menú los pide de forma interactiva.
+
 ### Subcomandos (con alias)
 
 ```bash
-doctyp list  [--anio 2026]                   # (ls)        lista documentos y el próximo correlativo
-doctyp new   "Título" [opciones]             # (n)         crea un informe (tipo INF, categoría SFW por defecto)
-doctyp save  <correlativo> --m "mensaje"     # (s)         sube la versión (patch) y registra el cambio
-doctyp add                                   # (a)         importa un .typ del directorio actual al registro
-doctyp compile <correlativo>                 # (c)         compila a PDF (junto al .typ y copia al CWD)
-doctyp edit  <correlativo>                   # (code, e)   abre el .typ en VS Code / editor favorito
-doctyp reset [<correlativo>]                 #             fija dónde empieza el correlativo del año (def. 1)
-doctyp config-author                         # (author)    configura el autor global (settings.json → local.author)
+doctyp list  [--anio 2026]                   # (ls)              lista documentos y el próximo correlativo
+doctyp new   "Título" [opciones]             # (n)               crea un informe (tipo INF, categoría SFW por defecto)
+doctyp save  <correlativo> --m "mensaje"     # (s)               sube la versión (patch) y registra el cambio
+doctyp add                                   # (a)               importa un .typ del directorio actual al registro
+doctyp compile <correlativo>                 # (c)               compila a PDF (junto al .typ y copia al CWD)
+doctyp edit  <correlativo>                   # (code, e, open)   abre el .typ con selección interactiva de editor
+doctyp reset [<correlativo>]                 #                   fija dónde empieza el correlativo del año (def. 1)
+doctyp config-author                         # (author)          configura el autor global (settings.json → local.author)
 ```
 
 ### Ejemplos
 
 ```bash
+# Menú interactivo (sin argumentos)
+doctyp
+
 # Crear un informe (título posicional, o --t / --titulo)
 doctyp new "Auditoría de respaldos del Centro de Datos"
 doctyp n --t "Manual de red" --tipo MAN --categoria RED
@@ -306,9 +336,9 @@ doctyp reset              # vuelve a 1
 # Subir una versión (1.0.0 → 1.0.1) y registrar el cambio
 doctyp save 1 --m "Corrige la sección de alcance"
 
-# Compilar a PDF y abrir en el editor
+# Compilar a PDF y abrir en el editor (selección interactiva)
 doctyp compile 1
-doctyp edit 1
+doctyp edit 1     # equivalente: doctyp open 1  /  doctyp code 1  /  doctyp e 1
 ```
 
 Sin `--titulo`, `new` lo pide de forma interactiva. Los **defaults de autoría** salen de
