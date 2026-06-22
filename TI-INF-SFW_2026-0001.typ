@@ -5,7 +5,7 @@
   area: "TI", tipo: "INF", categoria: "SFW",
   anio: 2026, correlativo: 1, version: "1.0.0", fecha-codigo: "20260621",
   tipo-largo: "Informe Técnico",
-  titulo: "Informe B", subtitulo: "SLEP Chinchorro",
+  titulo: "Informe de prueba", subtitulo: "SLEP Chinchorro",
   estado: "BORRADOR", clasificacion: "INTERNO",
   autor: "Andres Cubillos Salazar", cargo-autor: "Tecnico de Soporte Informático", correo-autor: "andres.cubillos@epchinchorro.cl",
 ))

@@ -47,16 +47,32 @@ Necesarias para funcionar:
 
 ---
 
-## Inicio rápido (recomendado)
+## Inicio rápido con `init` (recomendado)
 
-Clona el repositorio desde GitHub y ejecuta el instalador `init`. Detecta tu distribución,
-instala/comprueba las dependencias, instala las fuentes y crea los symlinks del comando:
+El repositorio incluye un script **`init`** que deja todo listo en un solo paso. Clónalo desde
+GitHub y ejecútalo:
 
 ```bash
-git clone https://github.com/KemosahbeAndres/informes-uti-slep-chinchorro.git
-cd informes-uti-slep-chinchorro
+git clone https://github.com/KemosahbeAndres/doctyp.git doctyp
+cd doctyp
 ./init
 ```
+
+Si el archivo no tuviera permiso de ejecución, dáselo antes con `chmod +x init` (o ejecútalo como
+`bash init`).
+
+### Qué hace `init`
+
+1. **Detecta tu distribución** (Ubuntu, Debian o Fedora) a partir de `/etc/os-release`.
+2. **Comprueba e instala las dependencias** con el gestor de tu sistema:
+   - **Python 3** (`apt`/`dnf`).
+   - **Typst** (`dnf` en Fedora; `snap` o `cargo` en Ubuntu/Debian).
+   Te pedirá la contraseña de `sudo` solo si hay que instalar algo.
+3. **Instala las fuentes oficiales** (Museo Sans y gobCL) en `~/.local/share/fonts` y refresca la
+   caché de fuentes.
+4. **Crea los symlinks** del comando en `~/.local/bin`: `doctyp` y sus alias `ty`, `tp`, `dt`.
+5. **Verifica el `PATH`**: si `~/.local/bin` no está incluido, te muestra la línea exacta para
+   añadirlo a tu `~/.bashrc`.
 
 Al terminar, abre una terminal nueva (o recarga el shell) y prueba:
 
@@ -64,8 +80,12 @@ Al terminar, abre una terminal nueva (o recarga el shell) y prueba:
 doctyp list
 ```
 
-> Si `init` avisa de que `~/.local/bin` no está en el `PATH`, añade la línea que indica a tu
-> `~/.bashrc` y reabre la terminal.
+> - Es seguro volver a ejecutar `init`: actualiza symlinks y fuentes sin duplicar nada.
+> - Si una dependencia no se pudo instalar automáticamente (p. ej. Typst en Debian/Ubuntu sin
+>   `snap`), `init` te indica el comando alternativo; consulta la
+>   [instalación manual por distribución](#instalación-manual-por-distribución).
+> - Si `init` avisa de que `~/.local/bin` no está en el `PATH`, añade la línea indicada a tu
+>   `~/.bashrc` y reabre la terminal.
 
 ---
 
