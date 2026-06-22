@@ -5,15 +5,15 @@
   area: "TI", tipo: "INF", categoria: "SFW",
   anio: 2026, correlativo: 1, version: "1.0.0", fecha-codigo: "20260621",
   tipo-largo: "Informe Técnico",
-  titulo: "Informe de prueba", subtitulo: "SLEP Chinchorro",
+  titulo: "Informe de prueba", subtitulo: "Empresa",
   estado: "BORRADOR", clasificacion: "INTERNO",
-  autor: "Andres Cubillos Salazar", cargo-autor: "Tecnico de Soporte Informático", correo-autor: "andres.cubillos@epchinchorro.cl",
+  autor: "John Doe", cargo-autor: "Tecnico", correo-autor: "john.doe@mail.com",
 ))
 #show: report.with(meta: meta)
 
 #s-ficha(meta, rama-git: "doc/TI-INF-SFW-2026-0001")
 #s-versiones((
-  ("v1.0.0", "2026-06-21", "Andres Cubillos Salazar", "Versión inicial."),
+  ("v1.0.0", "2026-06-21", "John Doe", "Versión inicial."),
 ))
 #s-distribucion((
   ("Equipo TI", "Operación documental", "Receptor principal"),
