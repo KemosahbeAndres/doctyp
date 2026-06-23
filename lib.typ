@@ -73,17 +73,18 @@
 #let meta-default = (
   // -- Código documental: AREA-TIPO-CAT_AAAA-NNNN_vX.Y_AAAAMMDD --
   area:         "TI",        // área emisora
-  tipo:         "INF",       // INF, MAN, POL, PRO, PLA, EVL, ETT, ACT
+  tipo:         "PLA",       // INF, MAN, POL, PRO, PLA, EVL, ETT, ACT
   categoria:    "GOB",       // categoría temática (3 letras): GOB, SEG, RED, PRV...
   anio:         2026,
   correlativo:  1,           // entero → 4 dígitos
   version:      "1.0",
-  fecha-codigo: "20260101",  // YYYYMMDD
+  fecha-codigo: "20260101",  // YYYYMMDD,
+  fecha: datetime.today().display(),
 
   // -- Presentación / portada --
   tipo-largo:   "Informe Técnico",   // rótulo superior izq. de portada (MANUAL, INFORME...)
   titulo:       "Título del Documento",
-  subtitulo:    "Subtítulo · SLEP Chinchorro",
+  subtitulo:    "Subtítulo",
 
   // -- Estado / clasificación --
   estado:        "BORRADOR",  // BORRADOR | EN REVISIÓN | APROBADO
@@ -108,6 +109,7 @@
 
   // -- Branding --
   logos: (
+    slepchinchorro: "Images/logo-chinchorro.png",
     slep:    "Images/logoslepch.png",      // logo color (portada + header)
     isologo: "Images/isologo_2.png",       // marca pequeña (no usada por defecto)
   ),
@@ -184,21 +186,25 @@
   )
   #v(0.5cm)
   #image(meta.logos.slep, height: 2.6cm)
+  #v(0.8fr)
 
-  #v(1fr)
-  #text(fill: white, weight: "bold", size: 38pt)[#meta.titulo]
-  #v(0.5cm)
-  #text(fill: rgb("C2CCE6"), size: 17pt)[#meta.subtitulo]
-  #v(0.7cm)
   // Badge de código
   #box(fill: rgb(255, 255, 255, 18), inset: (x: 12pt, y: 8pt), radius: 4pt)[
     #text(fill: white, weight: "bold", size: 11pt)[#codigo-base(meta)]
-    #text(fill: rgb("AEB8D6"), size: 11pt)[ · v#meta.version · #meta.fecha-codigo]
+    #text(fill: rgb("AEB8D6"), size: 11pt)[ · v#meta.version · #meta.fecha]
   ]
-  #v(1.6fr)
-
+  #v(0.5cm)
+  #upper(text(fill: white, weight: "bold", size: 38pt)[#meta.titulo]) \
+  #v(0.4cm)
+  #text(fill: rgb("C2CCE6"), size: 17pt)[#meta.subtitulo]
+  
+  #v(2fr)
+#align(center)[
   #text(fill: rgb("AEB8D6"), weight: "bold", size: 10.5pt)[#meta.unidad] \
-  #text(fill: rgb("AEB8D6"), size: 10.5pt)[#meta.subdireccion]
+  #text(fill: rgb("AEB8D6"), size: 10.5pt)[#meta.subdireccion] \
+  #text(fill: rgb("C2CCE6"), size: 12pt, weight: "bold")[#meta.institucion]
+  ]
+  #v(0.4cm)
 ]
 
 // ------------------------------------------------------------
@@ -258,7 +264,8 @@
     v(14pt)
     block(below: 6pt)[
       #text(size: 18pt, weight: "bold", fill: marino)[
-        #counter(heading).display() #h(4pt) #it.body
+        #if it.numbering != none { counter(heading).display(); h(4pt) }
+        #it.body
       ]
     ]
     line(length: 3.1cm, stroke: 2.5pt + marino)
@@ -280,13 +287,12 @@
     header: context {
       grid(
         columns: (auto, 1fr),
-        align(left + horizon)[#image(meta.logos.slep, height: 1.25cm)],
+        align(left + horizon)[#image(meta.logos.slepchinchorro, height: 1.5cm)],
         align(right + horizon)[
           #text(size: 8.5pt, fill: gris-texto, weight: "bold")[#meta.unidad] \
-          #text(size: 8.5pt, fill: gris-texto)[#meta.institucion]
+          #text(size: 8.5pt, fill: gris-texto)[#meta.subdireccion]
         ],
       )
-      v(3pt)
       line(length: 100%, stroke: 0.5pt + gris-borde)
     },
     footer: context {
@@ -408,7 +414,10 @@
 
 // --- Tabla de contenido institucional ---
 #let indice() = {
-  show outline.entry.where(level: 1): it => { v(2pt, weak: true); strong(it) }
+  show outline.entry.where(level: 1): it => { 
+    v(2pt);
+    strong(it);
+  }
   outline(title: none, indent: 1.2em, depth: 2)
 }
 
@@ -446,7 +455,7 @@
 
 // 4 · Tabla de contenido
 #let s-indice() = {
-  heading(level: 1)[Tabla de contenido]
+  heading(numbering: none, level: 1, outlined: false)[Tabla de contenido]
   indice()
 }
 
