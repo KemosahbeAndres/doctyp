@@ -275,7 +275,10 @@ def compilar_typ(out_file: Path) -> bool:
 def agregar_doctyp_json(cwd: Path, correlativo: int, anio: int,
                         nombre_archivo: str, autor: str) -> None:
     """Añade una entrada al doctyp.json del directorio cwd (lo crea si no existe).
-    Migra automáticamente el formato anterior (dict plano) a lista."""
+    Migra automáticamente el formato anterior (dict plano) a lista.
+    No hace nada si cwd es SCRIPT_DIR: el registro ya está en settings.json."""
+    if cwd.resolve() == SCRIPT_DIR.resolve():
+        return
     path = cwd / DOCTYP_JSON
     try:
         data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
@@ -808,6 +811,140 @@ def cmd_save(args):
     print(f"       Mensaje:   {mensaje}\n")
 
 
+def cmd_change(args):
+    """Cambia el correlativo de un documento registrado."""
+    registro = cargar_registro(SCRIPT_DIR)
+    anio = args.anio or datetime.date.today().year
+
+    # ── Correlativo anterior ───────────────────────────────────────────────────
+    corr_anterior = getattr(args, "correlativo_anterior", None)
+    if corr_anterior is None:
+        docs = sorted(
+            [d for d in registro["documentos"] if d.get("anio") == anio],
+            key=lambda d: d.get("correlativo", 0),
+        )
+        if not docs:
+            sys.exit(f"ERROR: no hay documentos registrados para {anio}.")
+        etiquetas = [
+            f"{d.get('correlativo', 0):04d}  {d.get('codigo_base', '')}  ·  {d.get('titulo', '')}"
+            for d in docs
+        ]
+        idx = _seleccionar(etiquetas, f"Documento a cambiar ({anio}):")
+        if idx is None:
+            print("  Cancelado.")
+            return
+        doc = docs[idx]
+        corr_anterior = doc["correlativo"]
+    else:
+        doc = buscar_doc(registro, corr_anterior, anio)
+
+    # ── Correlativo nuevo ──────────────────────────────────────────────────────
+    usados = {d["correlativo"] for d in registro["documentos"] if d.get("anio") == anio}
+    usados.discard(corr_anterior)
+
+    corr_nuevo = getattr(args, "correlativo_nuevo", None)
+    while True:
+        if corr_nuevo is None:
+            try:
+                raw = input(f"  Nuevo correlativo (actual: {corr_anterior:04d}): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return
+            if not raw.isdigit():
+                _warn("Debe ser un número entero positivo.")
+                continue
+            corr_nuevo = int(raw)
+        if corr_nuevo <= 0:
+            _warn("El correlativo debe ser >= 1.")
+            corr_nuevo = None
+            continue
+        if corr_nuevo == corr_anterior:
+            _warn("El correlativo nuevo es igual al actual. Elige otro.")
+            corr_nuevo = None
+            continue
+        if corr_nuevo in usados:
+            _warn(f"El correlativo {corr_nuevo:04d} ya está en uso. Elige otro.")
+            corr_nuevo = None
+            continue
+        break
+
+    # ── Construir nuevos nombres ───────────────────────────────────────────────
+    base_nuevo   = codigo_base(doc["area"], doc["tipo"], doc["categoria"], anio, corr_nuevo)
+    ruta_antigua = Path(doc["ruta"])
+    ruta_nueva   = ruta_antigua.parent / f"{base_nuevo}.typ"
+
+    print(f"\n  {_c(_C.BOLD, 'Cambio de correlativo')}")
+    print(f"  De: {_c(_C.DIM,              doc['codigo_base'])}")
+    print(f"  A:  {_c(_C.BOLD + _C.CYAN,  base_nuevo)}\n")
+
+    if not ruta_antigua.exists():
+        sys.exit(f"ERROR: el archivo registrado no existe: {ruta_antigua}")
+    if ruta_nueva.exists() and ruta_nueva.resolve() != ruta_antigua.resolve():
+        sys.exit(f"ERROR: ya existe un archivo en la ruta destino: {ruta_nueva}")
+
+    # ── Actualizar contenido del .typ ──────────────────────────────────────────
+    texto = ruta_antigua.read_text(encoding="utf-8")
+
+    # 1. Comentario de cabecera: // TI-INF-XXX_2026-NNNN  ·  generado por doctyp
+    texto = re.sub(
+        rf'(//\s*\S+-\S+-\S+_\d{{4}}-)({corr_anterior:04d})(\b)',
+        lambda m: f'{m.group(1)}{corr_nuevo:04d}{m.group(3)}',
+        texto, count=1,
+    )
+    # 2. Campo correlativo en crear-meta
+    texto = re.sub(
+        r'(correlativo:\s*)\d+',
+        lambda m: f'{m.group(1)}{corr_nuevo}',
+        texto, count=1,
+    )
+    # 3. rama-git en s-ficha (reemplaza el número de 4 dígitos al final del path)
+    texto = re.sub(
+        rf'(rama-git:\s*"[^"]*-)({corr_anterior:04d})(")',
+        lambda m: f'{m.group(1)}{corr_nuevo:04d}{m.group(3)}',
+        texto,
+    )
+
+    ruta_antigua.write_text(texto, encoding="utf-8")
+    ruta_antigua.rename(ruta_nueva)
+    _ok(f"Archivo: {_c(_C.DIM, ruta_antigua.name)} → {_c(_C.BOLD, ruta_nueva.name)}")
+
+    # ── Renombrar PDFs si existen (con o sin versión en el nombre) ─────────────
+    for pdf_viejo in sorted(ruta_antigua.parent.glob(f"{doc['codigo_base']}*.pdf")):
+        sufijo = pdf_viejo.name[len(doc["codigo_base"]):]   # "" o " (v1.0)"
+        pdf_nuevo = pdf_viejo.parent / f"{base_nuevo}{sufijo}"
+        pdf_viejo.rename(pdf_nuevo)
+        _ok(f"PDF:     {_c(_C.DIM, pdf_viejo.name)} → {_c(_C.BOLD, pdf_nuevo.name)}")
+
+    # ── Actualizar registro ────────────────────────────────────────────────────
+    doc["correlativo"] = corr_nuevo
+    doc["codigo_base"] = base_nuevo
+    doc["ruta"]        = str(ruta_nueva)
+    guardar_registro(SCRIPT_DIR, registro)
+    _ok(f"Registro actualizado.")
+
+    # ── Actualizar doctyp.json en el CWD si existe (no aplica en SCRIPT_DIR) ──
+    cwd = Path.cwd()
+    if cwd.resolve() != SCRIPT_DIR.resolve():
+        entradas = leer_doctyp_json(cwd)
+        if entradas:
+            modificado = False
+            for e in entradas:
+                if e.get("correlativo") == corr_anterior and e.get("anio") == anio:
+                    e["correlativo"]    = corr_nuevo
+                    e["nombre_archivo"] = ruta_nueva.name
+                    modificado = True
+            if modificado:
+                (cwd / DOCTYP_JSON).write_text(
+                    json.dumps({"documentos": entradas}, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8",
+                )
+                _ok(f"Actualizado {DOCTYP_JSON} en el directorio actual.")
+
+    print(f"\n  {_c(_C.BOLD, 'Listo.')} "
+          f"{_c(_C.DIM, f'{corr_anterior:04d}')} → "
+          f"{_c(_C.BOLD + _C.CYAN, f'{corr_nuevo:04d}')}\n")
+
+
 def cmd_compile(args):
     registro = cargar_registro(SCRIPT_DIR)
     if args.correlativo is None:
@@ -988,7 +1125,10 @@ def cmd_add(args):
 
 
 def _quitar_de_doctyp_json(cwd: Path, correlativo: int, anio: int) -> bool:
-    """Elimina la entrada del doctyp.json del directorio cwd. Devuelve True si lo modificó."""
+    """Elimina la entrada del doctyp.json del directorio cwd. Devuelve True si lo modificó.
+    No hace nada si cwd es SCRIPT_DIR: el registro ya está en settings.json."""
+    if cwd.resolve() == SCRIPT_DIR.resolve():
+        return False
     entradas = leer_doctyp_json(cwd)
     if not entradas:
         return False
@@ -1162,6 +1302,15 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--anio", type=int, help="Año del documento (por defecto, el actual).")
     ps.set_defaults(func=cmd_save)
 
+    pch = sub.add_parser("change",
+                         help="Cambia el correlativo de un documento registrado.")
+    pch.add_argument("correlativo_anterior", type=int, nargs="?", metavar="CORRELATIVO_ANTERIOR",
+                     help="Correlativo actual del documento. Si se omite, selección interactiva.")
+    pch.add_argument("correlativo_nuevo", type=int, nargs="?", metavar="CORRELATIVO_NUEVO",
+                     help="Nuevo correlativo. Si se omite, se pide interactivo.")
+    pch.add_argument("--anio", type=int, help="Año del documento (por defecto, el actual).")
+    pch.set_defaults(func=cmd_change)
+
     pa = sub.add_parser("add", aliases=["a"],
                         help="Importa al registro un documento existente del directorio actual.")
     pa.set_defaults(func=cmd_add)
@@ -1231,6 +1380,7 @@ def menu_interactivo() -> None:
         ("list",          "ls",              "Listar documentos y el próximo correlativo"),
         ("new",           "n",               "Crear un nuevo documento"),
         ("save",          "s / commit",      "Registrar nueva versión de un documento"),
+        ("change",        "",                "Cambiar el correlativo de un documento"),
         ("add",           "a",               "Importar un .typ existente al registro"),
         ("import",        "i",               "Anclar un documento del registro en doctyp.json"),
         ("delete",        "del",             "Eliminar un documento del sistema"),
