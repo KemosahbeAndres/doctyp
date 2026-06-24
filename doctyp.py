@@ -230,14 +230,14 @@ def next_correlativo_json(registro: dict, anio: int, fallback: int = 0) -> int:
 
 
 def bump_patch(version: str) -> str:
-    """Incrementa el último número de una versión semántica: 1.0.0 -> 1.0.1."""
+    """Incrementa el número menor en formato de 2 dígitos: 1.0 -> 1.1."""
     partes = version.lstrip("vV").split(".")
     nums = []
-    for x in partes:
+    for x in partes[:2]:
         if not x.isdigit():
             sys.exit(f"ERROR: versión '{version}' no es numérica; no se puede incrementar.")
         nums.append(int(x))
-    while len(nums) < 3:
+    while len(nums) < 2:
         nums.append(0)
     nums[-1] += 1
     return ".".join(str(n) for n in nums)
@@ -731,14 +731,48 @@ def buscar_doc(registro: dict, correlativo: int, anio: int) -> dict:
 def cmd_save(args):
     registro = cargar_registro(SCRIPT_DIR)
     anio = args.anio or datetime.date.today().year
-    doc = buscar_doc(registro, args.correlativo, anio)
+
+    # Correlativo: si no se pasó por CLI, selección interactiva
+    if getattr(args, "correlativo", None) is None:
+        docs = sorted(
+            [d for d in registro["documentos"] if d.get("anio") == anio],
+            key=lambda d: d.get("correlativo", 0),
+        )
+        if not docs:
+            sys.exit(f"ERROR: no hay documentos registrados para {anio}.")
+        etiquetas = []
+        for d in docs:
+            vers = d.get("versiones") or []
+            ver_str = f"v{vers[-1]['version']}" if vers else ""
+            etiquetas.append(
+                f"{d.get('correlativo', 0):04d}  {d.get('codigo_base', '')}  "
+                f"{ver_str}  ·  {d.get('titulo', '')}"
+            )
+        idx = _seleccionar(etiquetas, f"Documentos registrados ({anio}):")
+        if idx is None:
+            print("  Cancelado.")
+            return
+        doc = docs[idx]
+    else:
+        doc = buscar_doc(registro, args.correlativo, anio)
+
+    # Mensaje: si no se pasó por CLI, pedirlo interactivamente
+    mensaje = getattr(args, "mensaje", None) or ""
+    if not mensaje:
+        try:
+            mensaje = input("  Mensaje de la nueva versión: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        if not mensaje:
+            sys.exit("ERROR: el mensaje es obligatorio.")
 
     typ_path = Path(doc["ruta"])
     if not typ_path.exists():
         sys.exit(f"ERROR: el archivo registrado no existe: {typ_path}")
     texto = typ_path.read_text(encoding="utf-8")
 
-    version_actual = doc["versiones"][-1]["version"] if doc.get("versiones") else "1.0.0"
+    version_actual = doc["versiones"][-1]["version"] if doc.get("versiones") else "1.0"
     version_nueva = bump_patch(version_actual)
     hoy = datetime.date.today()
     fecha = hoy.strftime("%Y%m%d")
@@ -751,7 +785,7 @@ def cmd_save(args):
     if n == 0:
         sys.exit(f"ERROR: no se encontró el campo 'version:' en {typ_path}.")
 
-    fila = f'  ("v{version_nueva}", "{fecha_iso}", "{ty_str(autor)}", "{ty_str(args.mensaje)}"),\n'
+    fila = f'  ("v{version_nueva}", "{fecha_iso}", "{ty_str(autor)}", "{ty_str(mensaje)}"),\n'
     nuevo_texto, n = re.subn(r'(#s-versiones\(\(\n)',
                              lambda m: m.group(1) + fila,
                              nuevo_texto, count=1)
@@ -762,7 +796,7 @@ def cmd_save(args):
 
     ahora = datetime.datetime.now().isoformat(timespec="seconds")
     doc.setdefault("versiones", []).append({
-        "version": version_nueva, "fecha": fecha, "creado": ahora, "mensaje": args.mensaje,
+        "version": version_nueva, "fecha": fecha, "creado": ahora, "mensaje": mensaje,
     })
     guardar_registro(SCRIPT_DIR, registro)
 
@@ -771,7 +805,7 @@ def cmd_save(args):
         f"{_c(_C.BOLD + _C.CYAN, 'v' + version_nueva)}")
     print(f"       Documento: {_c(_C.BOLD, doc['codigo_base'])}")
     print(f"       Archivo:   {_c(_C.DIM, str(typ_path))}")
-    print(f"       Mensaje:   {args.mensaje}\n")
+    print(f"       Mensaje:   {mensaje}\n")
 
 
 def cmd_compile(args):
@@ -786,16 +820,26 @@ def cmd_compile(args):
     if not typ_path.exists():
         sys.exit(f"ERROR: el archivo registrado no existe: {typ_path}")
 
+    version = (doc.get("versiones") or [{}])[-1].get("version", "1.0")
+    pdf_versioned_name = f"{typ_path.stem} (v{version}).pdf"
+
     print(f"\n  Compilando {_c(_C.BOLD, doc['codigo_base'])} → "
-          f"{_c(_C.DIM, typ_path.with_suffix('.pdf').name)}")
+          f"{_c(_C.DIM, pdf_versioned_name)}")
     if not compilar_typ(typ_path):
         sys.exit(1)
 
     pdf = typ_path.with_suffix(".pdf")
-    destino_cwd = Path.cwd() / pdf.name
-    if pdf.exists() and destino_cwd.resolve() != pdf.resolve():
+    pdf_versioned = pdf.parent / pdf_versioned_name
+    if pdf.exists():
+        if pdf_versioned.exists():
+            pdf_versioned.unlink()
+        pdf.rename(pdf_versioned)
+        _ok(f"PDF: {_c(_C.DIM, str(pdf_versioned))}")
+
+    destino_cwd = Path.cwd() / pdf_versioned_name
+    if pdf_versioned.exists() and destino_cwd.resolve() != pdf_versioned.resolve():
         import shutil
-        shutil.copy2(pdf, destino_cwd)
+        shutil.copy2(pdf_versioned, destino_cwd)
         _ok(f"Copiado a: {_c(_C.DIM, str(destino_cwd))}\n")
 
 
@@ -1090,8 +1134,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Año (por defecto, el de --fecha o el actual).")
     pn.add_argument("--correlativo", "--code", type=int, dest="correlativo",
                     help="Forzar correlativo manualmente (por defecto: secuencial automático).")
-    pn.add_argument("--version", default="1.0.0",
-                    help="Versión inicial (semántica). Por defecto: 1.0.0")
+    pn.add_argument("--version", default="1.0",
+                    help="Versión inicial. Por defecto: 1.0")
     pn.add_argument("--fecha", help="Fecha AAAAMMDD. Por defecto: hoy.")
     pn.add_argument("--tipo-largo", dest="tipo_largo",
                     help="Rótulo de portada (por defecto, según --tipo).")
@@ -1108,12 +1152,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Sobrescribir si el archivo ya existe.")
     pn.set_defaults(func=cmd_nuevo)
 
-    ps = sub.add_parser("save", aliases=["s"],
-                        help="Sube la versión de un documento (bump del patch) y registra el cambio.")
-    ps.add_argument("correlativo", type=int, metavar="CORRELATIVO",
-                    help="Número correlativo del documento a versionar.")
-    ps.add_argument("--mensaje", "--m", dest="mensaje", required=True,
-                    help="Mensaje descriptivo de la nueva versión.")
+    ps = sub.add_parser("save", aliases=["s", "commit"],
+                        help="Registra una nueva versión de un documento (bump del número menor).")
+    ps.add_argument("correlativo", type=int, nargs="?", metavar="CORRELATIVO",
+                    help="Número correlativo del documento a versionar. "
+                         "Si se omite, se muestra selección interactiva.")
+    ps.add_argument("--mensaje", "--m", dest="mensaje",
+                    help="Mensaje descriptivo de la nueva versión. Si se omite, se pide interactivo.")
     ps.add_argument("--anio", type=int, help="Año del documento (por defecto, el actual).")
     ps.set_defaults(func=cmd_save)
 
@@ -1185,7 +1230,7 @@ def menu_interactivo() -> None:
     CMDS = [
         ("list",          "ls",              "Listar documentos y el próximo correlativo"),
         ("new",           "n",               "Crear un nuevo documento"),
-        ("save",          "s",               "Subir versión de un documento (patch)"),
+        ("save",          "s / commit",      "Registrar nueva versión de un documento"),
         ("add",           "a",               "Importar un .typ existente al registro"),
         ("import",        "i",               "Anclar un documento del registro en doctyp.json"),
         ("delete",        "del",             "Eliminar un documento del sistema"),
