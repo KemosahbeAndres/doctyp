@@ -3,7 +3,7 @@
 
 #let meta = crear-meta((
   area: "TI", tipo: "INF", categoria: "RED",
-  anio: 2026, correlativo: 39, version: "1.0.0", fecha-codigo: "20260623",
+  anio: 2026, correlativo: 39, version: "1.1", fecha-codigo: "20260623",
   tipo-largo: "Informe Técnico",
   titulo: "Propuesta de Mejora y Ampliación de Red",
   subtitulo: "Escuela Carlos Condell de la Haza (G-8)",
@@ -16,9 +16,21 @@
 #pagebreak()
 
 = Resumen ejecutivo
-Con fecha martes 09 de junio de 2026, personal de la Unidad de Tecnologías de la Información del SLEP Chinchorro realizó una visita técnica a la Escuela Carlos Condell de la Haza (G-8) con el objetivo de evaluar el estado de la infraestructura de red inalámbrica. Durante la visita se identificaron tres problemáticas principales: (1) zonas del establecimiento sin cobertura Wi-Fi; (2) un equipo de enrutamiento principal de generación antigua cuya capacidad resulta insuficiente frente al volumen actual de dispositivos conectados; y (3) tres puntos de acceso inalámbrico (AP) en estado de deterioro que comprometen la continuidad operativa.
+El presente informe tiene por objetivo *proponer una mejora y actualización tencológica*, despues de una revisión del estado actual, de la infraestructura de red para la Escuela Carlos Condell de la Haza (G-8) garantizando la continuidad operativa del establecimiento ante el crecimiento de su parque tecnológico.
 
-El parque tecnológico de la escuela ha crecido con la incorporación reciente de tablets para uso pedagógico, que se suman a los equipos preexistentes (tablets y laptops), incrementando la demanda sobre una infraestructura de red que no ha sido dimensionada para soportar dicha carga. El presente informe describe los hallazgos de la visita y propone la renovación del equipo principal, el reemplazo de los AP deteriorados y la instalación de nuevos puntos de acceso para eliminar las zonas sin cobertura, asegurando la continuidad de las actividades administrativas y docentes del establecimiento.
+El diagnóstico realizado durante la *visita técnica del martes 09 de junio de 2026 identificó tres problemáticas* críticas:
+
+1. Zonas del establecimiento sin cobertura Wi-Fi que impiden el uso efectivo de los dispositivos pedagógicos en esas áreas.
+
+2. Router principal de generación antigua con capacidad insuficiente para la cantidad actual de dispositivos conectados, lo que genera cortes, lentitud y degradación de la conectividad a Internet.
+
+3. Tres puntos de acceso Wi-Fi (AP) en estado de deterioro físico, cuya eventual falla total implicaría la pérdida de conectividad en sectores críticos. 
+
+Estas deficiencias se agravan por la incorporación reciente de nuevas tablets de uso pedagógico, que han aumentado la demanda sobre una infraestructura no dimensionada para absorberla.
+
+Frente a este escenario, *se propone una renovación de los equipos de red actuales por unos equipos de nueva generación y de alto rendimiento*. También será necesario el reemplazo de los tres AP deteriorados y la instalación de un nuevo punto de acceso Wi-Fi para eliminar las zonas sin cobertura.
+
+El costo referencial del equipamiento, basado en precios de mercado a la fecha del informe, asciende a *\$3.445.000*. Como Unidad de Tecnologías de la Información le recomendamos realizar estas mejoras pues garantizarán una conectividad estable y dimensionada para el parque tecnológico actual y su crecimiento proyectado.
 
 #pagebreak()
 = Antecedentes
@@ -30,23 +42,58 @@ En el marco de los planes de mejoramiento del equipamiento tecnológico impulsad
 == Problema
 La visita técnica del martes 09 de junio de 2026 permitió identificar las siguientes deficiencias en la infraestructura de red inalámbrica del establecimiento:
 
-- *Zonas sin cobertura Wi-Fi:* Se detectaron sectores del establecimiento donde la señal inalámbrica es inexistente o insuficiente para operar de forma normal. Esto impide el uso efectivo de los dispositivos tecnológicos en dichas áreas, limitando el aprovechamiento del equipamiento disponible y restringiendo el desarrollo de actividades pedagógicas que requieren conectividad.
+=== Zonas sin cobertura Wi-Fi
+Se detectaron sectores del establecimiento donde la señal inalámbrica es inexistente o insuficiente para operar de forma normal. Esto impide el uso efectivo de los dispositivos tecnológicos en dichas áreas, limitando el aprovechamiento del equipamiento disponible y restringiendo el desarrollo de actividades pedagógicas que requieren conectividad.
 
-- *Equipo de enrutamiento principal obsoleto:* El router instalado corresponde a una generación anterior, con capacidades de procesamiento y de gestión de conexiones simultáneas insuficientes para la cantidad actual de dispositivos clientes. La reciente incorporación de nuevas tablets agrava esta situación, generando degradación del rendimiento y cortes de conectividad que afectan tanto a funcionarios como a docentes.
+#figure(
+  image("/img-39/zonas_sin_cobertura.png", height: 8cm, fit: "contain"),
+  caption: [Zonas sin cobertura Wi-Fi]
+)
+#pagebreak()
 
-- *Puntos de acceso inalámbrico deteriorados:* Se identificaron tres AP/repetidores que presentan desgaste físico o fallas intermitentes, comprometiendo la calidad de la señal en las zonas que cubren. La falla total de cualquiera de estos equipos implicaría la pérdida de conectividad en los sectores que dependen de ellos, afectando directamente la continuidad operativa del establecimiento.
+#figure(
+  image("/img-39/cobertura_actual.png", height: 8cm, fit: "contain"),
+  caption: [Cobertura Wi-Fi actualmente]
+)
+
+=== Equipo de enrutamiento principal obsoleto 
+El router instalado corresponde a una generación anterior, con capacidades de procesamiento y de gestión de conexiones simultáneas insuficientes para la cantidad actual de dispositivos clientes. La reciente incorporación de nuevas tablets agrava esta situación, generando degradación del rendimiento y cortes de conectividad que afectan tanto a funcionarios como a docentes.
+
+#figure(
+  image("/img-39/rack principal.jpeg", height: 10cm),
+  caption: [Rack Principal de la Escuela.]
+)
+#pagebreak()
+
+#figure(
+  image("/img-39/rack mineduc.jpeg", height:8cm),
+  caption: [Rack Internet Mineduc.]
+)
+
+=== Puntos de acceso inalámbrico deteriorados
+Se identificaron tres AP/repetidores que presentan desgaste físico o fallas intermitentes, comprometiendo la calidad de la señal en las zonas que cubren. La falla total de cualquiera de estos equipos implicaría la pérdida de conectividad en los sectores que dependen de ellos, afectando directamente la continuidad operativa del establecimiento.
+
+#figure(
+  image("img-39/consola_unifi.png", height: 8cm),
+  caption: [Consola Unifi con listado de equipos.]
+)
 
 La combinación de estos factores configura un escenario de riesgo operativo que exige atención prioritaria para garantizar el normal funcionamiento de las labores pedagógicas y administrativas de la escuela.
 
+
 #pagebreak()
 = Objetivos
+Considerando las deficienas encontradas en la infraestructura de red y para asegurar la continuidad operativa del establecimiento con su creciente parque tecnológico, se pueden establecer los siguientes objetivos:
+
 == Objetivo general
-Mejorar y ampliar la infraestructura de red inalámbrica de la Escuela Carlos Condell de la Haza (G-8) mediante la renovación del equipamiento central y la expansión de la cobertura Wi-Fi, asegurando la continuidad operativa del establecimiento y el soporte adecuado al parque tecnológico actual y su crecimiento proyectado.
+Mejorar y ampliar la infraestructura de red inalámbrica de la Escuela Carlos Condell de la Haza (G-8) mediante la renovación del equipamiento central y la expansión de la cobertura Wi-Fi.
 
 == Objetivos específicos
-- *Modernizar la base actual:* Cambiar los equipos desgastados para asegurar una conexión rápida y estable en las oficinas y salas principales, permitiendo que funcionarios y docentes operen sin interrupciones y con la capacidad suficiente para soportar la totalidad de los dispositivos del establecimiento.
-- *Ampliar el alcance:* Instalar nuevos puntos de acceso para dar cobertura Wi-Fi total a las zonas que hoy están desconectadas, habilitando el uso efectivo de los recursos tecnológicos en todo el establecimiento.
+
 - *Renovar los AP deteriorados:* Reemplazar los tres puntos de acceso en mal estado para eliminar el riesgo de pérdida de conectividad en zonas críticas y garantizar la continuidad de las actividades de docentes y funcionarios.
+
+- *Ampliar el alcance:* Instalar nuevos puntos de acceso para dar cobertura Wi-Fi total a las zonas que hoy están desconectadas.
+
 - *Escalar la red:* Implementar un equipo de enrutamiento de mayor capacidad que soporte el volumen actual de dispositivos clientes y permita absorber futuras incorporaciones de equipamiento tecnológico sin degradación del servicio.
 
 #pagebreak()
@@ -59,30 +106,53 @@ Para dar respuesta a las problemáticas identificadas, se propone la adquisició
   ("#", "Descripción", "Cantidad", "Prioridad"),
   (
     ("1", "UDM-PRO — Router de alto rendimiento Unifi Dream Machine Pro, compatible con UNIFI.", "1", "Alta"),
-    ("2", "U6-PRO — Access Point Indoor Wi-Fi 6 similar a UBIQUITI U6-PRO, compatible con UNIFI.", "4", "Alta"),
-    ("3", "LOCO5AC — Antena PtP 5 GHz 13 dBi con RJ45 y PoE 24 V, similar a UBIQUITI LOCO 5AC (NS-5ACL).", "2", "Alta"),
-    ("4", "UB-AM — Soporte universal abatible 50 cm para muro, similar a UBIQUITI UB-AM. (Uno por AP instalado.)", "2", "Alta"),
-    ("5", "WUP-01 — Patchcord 10 cm CAT6 RJ45 blanco, similar a UBIQUITI WUP-01.", "40", "Media"),
-    ("6", "UDC-0 — Cable directo 50 cm SFP+ 10 Gbps, similar a UBIQUITI UACC-DAC-SFP10-0.5M.", "1", "Media"),
-    ("7", "PP624L — Patch panel 24 puertos RJ45 CAT6 UTP 1U certificado UL, similar a LINKMADE PP624L.", "1", "Media"),
-    ("8", "RG8CH — PDU 8 tomas Schuko 10 A Rack 1U con interruptor y luz piloto, similar a LINKMADE RG8CH.", "1", "Media"),
-    ("9", "RAP-1C — Tapa ciega 1U con apertura de cepillo para rack 19\", similar a LINKMADE RAP-1C.", "1", "Baja"),
+    ("2", "U6-PRO — Access Point Indoor Wi-Fi 6 5/2,4 GHz, 1×1000-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U6-PRO.", "4", "Alta"),
+    ("3", "Access Point Exterior Wi-Fi 6 5/2,4 GHz, 1×1000-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U6-MESH-PRO.", "2", "Alta"),
+    ("4", "Antena PtP 5 GHz 13 dBi, 1×1000-RJ45, PoE 24 V, similar a UBIQUITI LOCO 5AC (NS-5ACL).", "2", "Alta"),
+    ("5", "Inyector PoE 48 VDC 15,3 W 0,32 A Gigabit 802.3af, requiere cable Trébol C5, similar a UBIQUITI.", "2", "Alta"),
+    ("6", "UPS 2200 VA, 1200 W, 2×9 Ah, 130WH, 2×C13, 4×IH-Chile, 1×C14, AVR, similar a FORZA FX-2200LCD-C.", "1", "Alta"),
+    ("7", "Cable directo 50 cm SFP+ 10 Gbps, similar a UBIQUITI UACC-DAC-SFP10-0.5M.", "2", "Media"),
+    ("8", "Soporte universal abatible 50 cm para muro, similar a UBIQUITI UB-AM.", "2", "Media"),
+    ("9", "Patchcord 10 cm CAT6 RJ45 blanco, similar a UBIQUITI WUP-01.", "40", "Media"),
+    ("10", "Tapa negra 1U con apertura de cepillo para rack 19\", similar a LINKMADE RAP-1C.", "1", "Baja"),
+    ("11", "PP624L — Patch panel 24 puertos RJ45 CAT6 UTP 1U certificado UL, similar a LINKMADE PP624L.", "1", "Media"),
   ),
+)
+
+El patch panel responde al estado del gabinete secundario del establecimiento, donde la ausencia de un punto de terminación estructurado genera un cableado desordenado que dificulta la identificación de conexiones y eleva el riesgo de errores en cualquier intervención de mantenimiento. Su instalación permitirá organizar y etiquetar correctamente los cables del nivel de acceso, facilitando la operación y el soporte futuro de la red.
+
+#pagebreak()
+
+== Topología de Red
+La arquitectura propuesta reemplaza la dependencia de repetidores inalámbricos en cascada —principal causa de la degradación actual— por un diseño donde cada AP se conecta al switch mediante cableado estructurado. El UDM-PRO centraliza la gestión de toda la red desde una única consola UNIFI, lo que simplifica la operación y permite detectar fallas con rapidez. Las antenas PtP LOCO5AC resuelven los sectores sin cableado disponible y los AP exteriores U6-MESH-PRO eliminan las zonas sin cobertura identificadas en la visita.
+
+El siguiente diagrama ilustra la topología lógica y física de la red propuesta:
+
+#figure(
+  image("img-39/topologia_propuesta.png", height: 10cm, fit:"contain"),
+  caption: [Topología de red propuesta]
+)
+#pagebreak()
+
+== Diagrama de Cobertura
+El diagrama de cobertura permite validar que la disposición propuesta de los AP elimina las zonas sin señal detectadas durante la visita, garantizando conectividad en todos los sectores del establecimiento. La cobertura estimada en banda 5 GHz —la utilizada prioritariamente para actividades pedagógicas— confirma que el diseño alcanza los espacios donde hoy no existe señal o esta es insuficiente:
+
+#figure(
+  image("img-39/cobertura_wifi_5g.png", height: 10cm),
+  caption: [Cobertura Wi-Fi estimada — banda 5 GHz]
 )
 
 #pagebreak()
 
-== Diagrama Unilineal
-La arquitectura propuesta contempla un diseño jerárquico. En el nivel central se instalará el nuevo router/firewall principal, conectado a la red WAN del establecimiento y al switch de distribución. En el nivel de acceso, los AP se distribuirán mediante cableado estructurado desde el switch, reduciendo al mínimo la dependencia de repetidores inalámbricos en cascada, los cuales degradan el rendimiento de la señal.
+== Distribución en Gabinetes
+Como parte de la propuesta, se establece una separación clara de responsabilidades entre los dos gabinetes del establecimiento. *El gabinete de Mineduc albergará exclusivamente el módem del Proyecto CpE2030 del Mineduc*, sin ningún otro equipo ni cableado adicional; su función es únicamente proveer el enlace de Internet institucional y no debe intervenirse ni compartirse con equipamiento de la red interna del establecimiento. Todo el equipamiento activo y el cableado estructurado de la red interna —incluyendo el UDM-PRO, el switch, los patch panels y la UPS— se centralizarán en el rack principal, que operará como el único punto de gestión y distribución de la red. Esta centralización simplifica el mantenimiento, reduce los puntos de falla y permite al personal de TI intervenir la infraestructura desde un único lugar.
 
-Los tres AP de reemplazo se ubicarán en las posiciones de los equipos deteriorados, garantizando la continuidad de la cobertura existente. Los AP adicionales se instalarán en los sectores sin cobertura identificados en la visita.
+El diagrama siguiente muestra la distribución propuesta de los equipos dentro del rack principal:
 
-#aviso(tipo: "advertencia", titulo: "Diagrama pendiente", [El diagrama unilineal definitivo se incluirá en la siguiente versión de este informe, una vez completado el levantamiento de la infraestructura del establecimiento.])
-
-== Diagrama de Cobertura
-Durante la visita se identificaron visualmente las zonas sin cobertura Wi-Fi. El plano de cobertura definitivo se elaborará a partir de los planos del establecimiento y de los resultados del _site survey_, el cual determinará la ubicación óptima de los nuevos puntos de acceso para lograr cobertura continua en todos los sectores del edificio.
-
-#aviso(tipo: "advertencia", titulo: "Plano pendiente", [El plano de cobertura Wi-Fi se incorporará en la siguiente versión del informe, previo levantamiento de planos y realización del _site survey_.])
+#figure(
+  image("img-39/distribucion_rack.png", height: 14cm),
+  caption: [Distribución planificada en Rack Principal]
+)
 
 #pagebreak()
 
@@ -93,29 +163,32 @@ Los valores presentados a continuación son referenciales y se basan en precios 
   columns: (auto, 1fr, auto, auto, auto),
   ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
   (
-    ("1", "UDM-PRO — Router Unifi Dream Machine Pro", "1", "$750.000", "$750.000"),
-    ("2", "U6-PRO — AP Indoor Wi-Fi 6", "4", "$290.000", "$1.160.000"),
-    ("4", "LOCO5AC — Antena PtP 5 GHz 13 dBi", "1", "$80.000", "$80.000"),
-    ("5", "PP624L — Patch panel 24p RJ45 CAT6 UTP 1U", "1", "$38.000", "$38.000"),
-    ("6", "RG8CH — PDU 8 tomas Schuko Rack 1U", "1", "$33.000", "$33.000"),
-    ("7", "UDC-0 — Cable directo 50 cm SFP+ 10 Gbps", "1", "$29.000", "$29.000"),
-    ("8", "RAP-1C — Tapa ciega 1U con cepillo para rack", "1", "$13.000", "$13.000"),
-    ("9", "UB-AM — Soporte abatible para muro (por AP)", "Por definir", "$12.000", "Por definir"),
-    ("10", "WUP-01 — Patchcord 10 cm CAT6 RJ45 blanco", "40", "$4.000", "$160.000"),
-    ("", "*Subtotal (cantidades fijas)*", "", "", "*$1.973.000*"),
-    ("", "*Total proyecto*", "", "", "*Por definir*"),
+    ("1", "Router Unifi Dream Machine Pro", "1", "$750.000", "$750.000"),
+    ("2", "AP Indoor Wi-Fi 6", "4", "$290.000", "$1.160.000"),
+    ("3", "AP Exterior Wi-Fi 6", "2", "$381.000", "$762.000"),
+    ("4", "Antena PtP 5 GHz 13 dBi", "2", "$80.000", "$160.000"),
+    ("5", "Inyector PoE 48 VDC Gigabit 802.3af", "2", "$15.000", "$30.000"),
+    ("6", "UPS 2200 VA / 1200 W AVR", "1", "$290.000", "$290.000"),
+    ("7", "Cable directo 50 cm SFP+ 10 Gbps", "2", "$29.000", "$58.000"),
+    ("8", "Soporte abatible 50 cm para muro", "2", "$12.000", "$24.000"),
+    ("9", "Patchcord 10 cm CAT6 RJ45 blanco", "40", "$4.000", "$160.000"),
+    ("10", "Tapa negra 1U con cepillo para rack 19\"", "1", "$13.000", "$13.000"),
+    ("11", "Patch panel 24p RJ45 CAT6 UTP 1U certificado UL", "1", "$38.000", "$38.000"),
+    ("", "*Total proyecto*", "", "", "*$3.445.000*"),
   ),
 )
 
 #aviso(tipo: "info", titulo: "Precios de Mercado", [Los costos expresados en esta tabla son precios de mercado obtenidos por un análisis de proveedores especializados en tecnología.])
 
+#aviso(tipo: "warning", titulo: "Solicitud de Compra", [Antes de realizar o subir una solicitud de compra por favor solicitar a la Unidad de Tecnologías de la Información las Especificaciones Técnicas de los items a travez del correo: *soporte.informatica\@epchinchorro.cl*.])
+
 #pagebreak()
 = Conclusiones
-La visita técnica realizada al establecimiento confirmó la existencia de deficiencias en la infraestructura de red inalámbrica que representan un riesgo concreto para la continuidad operativa. El crecimiento del parque tecnológico de usuario final —impulsado por la incorporación de nuevas tablets— ha superado la capacidad del equipamiento instalado, evidenciando la urgencia de una intervención oportuna.
+La red inalámbrica de la Escuela Carlos Condell de la Haza presenta deficiencias concretas que ya están afectando la operación del establecimiento: zonas sin cobertura, un router que no da abasto con los dispositivos actuales y tres AP en mal estado que pueden fallar en cualquier momento. La incorporación de nuevas tablets no hizo más que acelerar un problema que el equipamiento instalado no está en condiciones de absorber.
 
-La modernización del router principal y la renovación de los tres AP deteriorados constituyen acciones de carácter prioritario: su omisión puede derivar en interrupciones del servicio que afecten directamente a docentes y funcionarios en sus actividades cotidianas. La expansión de cobertura hacia las zonas actualmente sin señal complementa esta intervención, permitiendo el aprovechamiento efectivo de los recursos tecnológicos ya adquiridos por el establecimiento.
+La propuesta presentada en este informe resuelve cada uno de estos puntos con equipamiento de nueva generación, centraliza la gestión en un único rack principal y libera el gabinete de Mineduc de cualquier uso distinto al enlace institucional. El costo total referencial asciende a \$3.445.000 y contempla además la organización del cableado mediante un patch panel, aspecto que hoy también representa un riesgo operativo.
 
-La red del establecimiento se encuentra en una fase de crecimiento activo junto con el parque de equipamiento de usuario final. Abordar este proyecto en el corto plazo permitirá dotar al establecimiento de una infraestructura dimensionada para soportar la demanda actual y con capacidad para absorber las incorporaciones futuras de dispositivos, sin comprometer la calidad del servicio prestado.
+Ejecutar este proyecto en el corto plazo es la acción correcta: los equipos actuales no tienen margen de mejora y cualquier falla adicional tendrá impacto directo en docentes y funcionarios.
 
 #pagebreak()
 = Recomendaciones
@@ -141,16 +214,17 @@ La red del establecimiento se encuentra en una fase de crecimiento activo junto 
   ),
 )
 #pagebreak()
-#s-ficha(meta, rama-git: "doc/TI-INF-RED-2026-0039")
+#s-ficha(meta)
 #pagebreak()
 #s-versiones((
-  ("v1.0.0", "2026-06-23", "Andres Cubillos Salazar", "Versión inicial. Cotización base de equipamiento sin instalación."),
+  ("v1.1", "2026-06-25", "Andres Cubillos Salazar", "Ampliación del proyecto a provisión e instalación."),
+  ("v1.0", "2026-06-23", "Andres Cubillos Salazar", "Versión inicial. Cotización base de equipamiento sin instalación."),
 ))
 #pagebreak()
-/*#s-distribucion((
+
+#s-distribucion((
   ("Establecimiento", "Beneficiario", "Receptor principal"),
   ("Subdirección de Planificación y Control de Gestión", "Supervisión", "Copia informativa"),
   ("Unidad TI", "Custodia", "Archivo institucional"),
 ))
-#pagebreak()
-*/
+

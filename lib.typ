@@ -56,9 +56,9 @@
 // Colores de bloques de aviso  (borde, fondo, acento)
 #let _aviso-cfg = (
   info:           (azul-acento, rgb("EEF3FB"), azul-acento,        "ℹ"),
-  advertencia:    (rgb("E0A100"), rgb("FBF4DD"), rgb("B7860B"),    "⚠"),
-  riesgo:         (rgb("D64541"), rgb("FBECEC"), rgb("B0322F"),    "⛔"),
-  recomendacion:  (verde, rgb("EDF6EE"), rgb("2E7D34"),            "✓"),
+  warning:    (rgb("E0A100"), rgb("FBF4DD"), rgb("B7860B"),    "⚠"),
+  danger:         (rgb("D64541"), rgb("FBECEC"), rgb("B0322F"),    "⛔"),
+  success:  (verde, rgb("EDF6EE"), rgb("2E7D34"),            "✓"),
 )
 // Colores de prioridad (para tablas de recomendaciones)
 #let prio = (
