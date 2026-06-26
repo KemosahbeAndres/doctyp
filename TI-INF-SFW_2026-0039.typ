@@ -5,7 +5,7 @@
   area: "TI", tipo: "INF", categoria: "RED",
   anio: 2026, correlativo: 39, version: "1.1", fecha-codigo: "20260623",
   tipo-largo: "Informe Técnico",
-  titulo: "Propuesta de Mejora y Ampliación de Red",
+  titulo: "Propuesta de Mejora y Ampliación de Red de datos",
   subtitulo: "Escuela Carlos Condell de la Haza (G-8)",
   estado: "BORRADOR", clasificacion: "INTERNO",
   autor: "Andrés Cubillos Salazar", cargo-autor: "Tecnico de Soporte Informático", correo-autor: "andres.cubillos@epchinchorro.cl",
@@ -28,9 +28,9 @@ El diagnóstico realizado durante la *visita técnica del martes 09 de junio de 
 
 Estas deficiencias se agravan por la incorporación reciente de nuevas tablets de uso pedagógico, que han aumentado la demanda sobre una infraestructura no dimensionada para absorberla.
 
-Frente a este escenario, *se propone una renovación de los equipos de red actuales por unos equipos de nueva generación y de alto rendimiento*. También será necesario el reemplazo de los tres AP deteriorados y la instalación de un nuevo punto de acceso Wi-Fi para eliminar las zonas sin cobertura.
+Frente a este escenario, *se propone un proyecto de provisión e instalación de equipamiento de red de nueva generación*. Esto incluye el reemplazo de los AP deteriorados, la cobertura de las zonas sin señal y la integración del router UDM-Pro y demás equipos ya adquiridos mediante el proyecto GORE (BIP 40065439-0). Dado que la Unidad TI no dispone del personal para ejecutar la instalación en el plazo requerido, se propone externalizar esta tarea a un proveedor especializado bajo supervisión técnica del área.
 
-El costo referencial del equipamiento, basado en precios de mercado a la fecha del informe, asciende a *\$3.445.000*. Como Unidad de Tecnologías de la Información le recomendamos realizar estas mejoras pues garantizarán una conectividad estable y dimensionada para el parque tecnológico actual y su crecimiento proyectado.
+El costo referencial del equipamiento a adquirir, basado en precios de mercado a la fecha del informe, asciende a *\$1.719.000*. Este monto no incluye el equipamiento ya financiado por el proyecto GORE. Como Unidad de Tecnologías de la Información le recomendamos realizar estas mejoras pues garantizarán una conectividad estable y dimensionada para el parque tecnológico actual y su crecimiento proyectado.
 
 #pagebreak()
 = Antecedentes
@@ -90,34 +90,62 @@ Mejorar y ampliar la infraestructura de red inalámbrica de la Escuela Carlos Co
 
 == Objetivos específicos
 
-- *Renovar los AP deteriorados:* Reemplazar los tres puntos de acceso en mal estado para eliminar el riesgo de pérdida de conectividad en zonas críticas y garantizar la continuidad de las actividades de docentes y funcionarios.
+- *Renovar y ampliar la cobertura Wi-Fi:* Reemplazar los tres puntos de acceso en mal estado e instalar nuevos AP en las zonas sin señal, garantizando cobertura total del establecimiento y eliminando el riesgo de pérdida de conectividad en zonas críticas.
 
-- *Ampliar el alcance:* Instalar nuevos puntos de acceso para dar cobertura Wi-Fi total a las zonas que hoy están desconectadas.
+- *Escalar la red:* Integrar el router Ubiquiti UDM-Pro (disponible mediante el proyecto GORE BIP 40065439-0) como equipo central de la red, garantizando la capacidad necesaria para el volumen actual de dispositivos y las incorporaciones futuras.
 
-- *Escalar la red:* Implementar un equipo de enrutamiento de mayor capacidad que soporte el volumen actual de dispositivos clientes y permita absorber futuras incorporaciones de equipamiento tecnológico sin degradación del servicio.
+- *Externalizar la instalación:* Contratar a un proveedor especializado para ejecutar la instalación completa del equipamiento, reduciendo los tiempos de implementación y liberando a la Unidad TI de tareas operativas que exceden su capacidad disponible.
 
 #pagebreak()
 = Propuesta técnica
-== Itemizado del Equipamiento
+== Equipamiento
 Para dar respuesta a las problemáticas identificadas, se propone la adquisición e instalación del siguiente equipamiento:
 
 #tabla(
   columns: (auto, 1fr, auto, auto),
   ("#", "Descripción", "Cantidad", "Prioridad"),
   (
-    ("1", "UDM-PRO — Router de alto rendimiento Unifi Dream Machine Pro, compatible con UNIFI.", "1", "Alta"),
-    ("2", "U6-PRO — Access Point Indoor Wi-Fi 6 5/2,4 GHz, 1×1000-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U6-PRO.", "4", "Alta"),
-    ("3", "Access Point Exterior Wi-Fi 6 5/2,4 GHz, 1×1000-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U6-MESH-PRO.", "2", "Alta"),
-    ("4", "Antena PtP 5 GHz 13 dBi, 1×1000-RJ45, PoE 24 V, similar a UBIQUITI LOCO 5AC (NS-5ACL).", "2", "Alta"),
-    ("5", "Inyector PoE 48 VDC 15,3 W 0,32 A Gigabit 802.3af, requiere cable Trébol C5, similar a UBIQUITI.", "2", "Alta"),
-    ("6", "UPS 2200 VA, 1200 W, 2×9 Ah, 130WH, 2×C13, 4×IH-Chile, 1×C14, AVR, similar a FORZA FX-2200LCD-C.", "1", "Alta"),
-    ("7", "Cable directo 50 cm SFP+ 10 Gbps, similar a UBIQUITI UACC-DAC-SFP10-0.5M.", "2", "Media"),
-    ("8", "Soporte universal abatible 50 cm para muro, similar a UBIQUITI UB-AM.", "2", "Media"),
-    ("9", "Patchcord 10 cm CAT6 RJ45 blanco, similar a UBIQUITI WUP-01.", "40", "Media"),
-    ("10", "Tapa negra 1U con apertura de cepillo para rack 19\", similar a LINKMADE RAP-1C.", "1", "Baja"),
-    ("11", "PP624L — Patch panel 24 puertos RJ45 CAT6 UTP 1U certificado UL, similar a LINKMADE PP624L.", "1", "Media"),
+    ("1", "Access Point Indoor Wi-Fi 6 5/2,4 GHz, 1×1000-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U6-PRO.", "3", "Alta"),
+    ("2", "Access Point Exterior Wi-Fi 6 5/2,4 GHz, 1×1000-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U6-MESH-PRO.", "1", "Alta"),
+    ("3", "Antena PtP 5 GHz 13 dBi, 1×1000-RJ45, PoE 24 V, similar a UBIQUITI LOCO 5AC (NS-5ACL).", "2", "Alta"),
+    ("4", "Inyector PoE 48VDC 15,3W Gigabit 802.3af, requiere cable Trébol C5, similar a UBIQUITI.", "1", "Alta"),
+    ("5", "Cable directo 50 cm SFP+ 10 Gbps, similar a UBIQUITI UACC-DAC-SFP10-0.5M.", "2", "Media"),
+    ("6", "Soporte universal abatible 50 cm para muro, similar a UBIQUITI UB-AM.", "2", "Media"),
+    ("7", "Patchcord 10 cm CAT6 RJ45 blanco, similar a UBIQUITI WUP-01.", "40", "Media"),
+    ("8", "Tapa negra 1U con apertura de cepillo para rack 19\", similar a LINKMADE RAP-1C.", "1", "Baja"),
+    ("9", "Patch panel 24 puertos RJ45 CAT6 UTP 1U certificado UL, similar a LINKMADE PP624L.", "1", "Media"),
   ),
 )
+
+== Equipamiento Aportado por Proyecto GORE (BIP 40065439-0)
+El siguiente equipamiento ya fue adquirido en el marco del proyecto del Gobierno Regional (GORE), código BIP 40065439-0, y será incorporado a este proyecto sin costo adicional:
+
+#tabla(
+  columns: (auto, 1fr, auto),
+  ("#", "Descripción", "Cantidad"),
+  (
+    ("1", "Access Point Indoor Wi-Fi 6, UBIQUITI U6-PRO.", "1"),
+    ("2", "Access Point Exterior Wi-Fi 6, UBIQUITI UAP-AC-MESH-PRO.", "1"),
+    ("3", "Router Unifi Dream Machine Pro (UDM-Pro).", "1"),
+    ("4", "UPS 1000 VA.", "1"),
+    ("5", "Switch Ubiquiti 16 puertos PoE.", "1"),
+  ),
+)
+
+#aviso(tipo: "info", titulo: "Equipamiento GORE", [Los equipos listados en esta tabla no se incluyen en el costo estimado del proyecto, ya que fueron financiados mediante el proyecto GORE BIP 40065439-0 y están disponibles para su instalación.])
+
+== Alcance del Proyecto: Provisión e Instalación
+Este proyecto contempla tanto la *provisión* (adquisición) del equipamiento detallado en la sección anterior, como su *instalación* completa en las dependencias del establecimiento. Dado que la Unidad de Tecnologías de la Información no cuenta con los recursos de personal ni el tiempo disponible para ejecutar la instalación en el plazo requerido, se propone *externalizar la instalación* mediante la contratación de un proveedor especializado que ejecute el trabajo de forma oportuna y bajo supervisión técnica de la Unidad TI.
+
+El proveedor contratado será responsable de:
+
+- Montaje físico de los equipos activos en rack y en los puntos de acceso definidos en la topología.
+- Tendido y certificación del cableado estructurado necesario.
+- Configuración inicial de los equipos bajo los parámetros entregados por la Unidad TI.
+- Integración de los equipos aportados por el proyecto GORE (BIP 40065439-0) al sistema UNIFI.
+- Pruebas de funcionamiento y entrega formal a la Unidad TI.
+
+La supervisión técnica, la validación de la configuración y la recepción conforme del proyecto quedarán a cargo de la Unidad de Tecnologías de la Información del SLEP Chinchorro.
 
 El patch panel responde al estado del gabinete secundario del establecimiento, donde la ausencia de un punto de terminación estructurado genera un cableado desordenado que dificulta la identificación de conexiones y eleva el riesgo de errores en cualquier intervención de mantenimiento. Su instalación permitirá organizar y etiquetar correctamente los cables del nivel de acceso, facilitando la operación y el soporte futuro de la red.
 
@@ -163,18 +191,16 @@ Los valores presentados a continuación son referenciales y se basan en precios 
   columns: (auto, 1fr, auto, auto, auto),
   ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
   (
-    ("1", "Router Unifi Dream Machine Pro", "1", "$750.000", "$750.000"),
-    ("2", "AP Indoor Wi-Fi 6", "4", "$290.000", "$1.160.000"),
-    ("3", "AP Exterior Wi-Fi 6", "2", "$381.000", "$762.000"),
-    ("4", "Antena PtP 5 GHz 13 dBi", "2", "$80.000", "$160.000"),
-    ("5", "Inyector PoE 48 VDC Gigabit 802.3af", "2", "$15.000", "$30.000"),
-    ("6", "UPS 2200 VA / 1200 W AVR", "1", "$290.000", "$290.000"),
-    ("7", "Cable directo 50 cm SFP+ 10 Gbps", "2", "$29.000", "$58.000"),
-    ("8", "Soporte abatible 50 cm para muro", "2", "$12.000", "$24.000"),
-    ("9", "Patchcord 10 cm CAT6 RJ45 blanco", "40", "$4.000", "$160.000"),
-    ("10", "Tapa negra 1U con cepillo para rack 19\"", "1", "$13.000", "$13.000"),
-    ("11", "Patch panel 24p RJ45 CAT6 UTP 1U certificado UL", "1", "$38.000", "$38.000"),
-    ("", "*Total proyecto*", "", "", "*$3.445.000*"),
+    ("1", "AP Indoor Wi-Fi 6", "3", "$290.000", "$870.000"),
+    ("2", "AP Exterior Wi-Fi 6", "1", "$381.000", "$381.000"),
+    ("3", "Antena PtP 5 GHz 13 dBi", "2", "$80.000", "$160.000"),
+    ("4", "Inyector PoE 48 VDC Gigabit 802.3af", "1", "$15.000", "$15.000"),
+    ("5", "Cable directo 50 cm SFP+ 10 Gbps", "2", "$29.000", "$58.000"),
+    ("6", "Soporte abatible 50 cm para muro", "2", "$12.000", "$24.000"),
+    ("7", "Patchcord 10 cm CAT6 RJ45 blanco", "40", "$4.000", "$160.000"),
+    ("8", "Tapa negra 1U con cepillo para rack 19\"", "1", "$13.000", "$13.000"),
+    ("9", "Patch panel 24p RJ45 CAT6 UTP 1U certificado UL", "1", "$38.000", "$38.000"),
+    ("", "*Total proyecto*", "", "", "*$1.719.000*"),
   ),
 )
 
@@ -186,17 +212,17 @@ Los valores presentados a continuación son referenciales y se basan en precios 
 = Conclusiones
 La red inalámbrica de la Escuela Carlos Condell de la Haza presenta deficiencias concretas que ya están afectando la operación del establecimiento: zonas sin cobertura, un router que no da abasto con los dispositivos actuales y tres AP en mal estado que pueden fallar en cualquier momento. La incorporación de nuevas tablets no hizo más que acelerar un problema que el equipamiento instalado no está en condiciones de absorber.
 
-La propuesta presentada en este informe resuelve cada uno de estos puntos con equipamiento de nueva generación, centraliza la gestión en un único rack principal y libera el gabinete de Mineduc de cualquier uso distinto al enlace institucional. El costo total referencial asciende a \$3.445.000 y contempla además la organización del cableado mediante un patch panel, aspecto que hoy también representa un riesgo operativo.
+La propuesta presentada en este informe resuelve cada uno de estos puntos mediante un proyecto de *provisión e instalación* que combina el equipamiento a adquirir con los equipos ya disponibles del proyecto GORE (BIP 40065439-0). La solución centraliza la gestión en un único rack principal y libera el gabinete de Mineduc de cualquier uso distinto al enlace institucional. El costo total referencial del equipamiento a adquirir asciende a \$1.719.000 y contempla además la organización del cableado mediante un patch panel, aspecto que hoy también representa un riesgo operativo.
 
-Ejecutar este proyecto en el corto plazo es la acción correcta: los equipos actuales no tienen margen de mejora y cualquier falla adicional tendrá impacto directo en docentes y funcionarios.
+Externalizar la instalación es la vía correcta para ejecutar este proyecto en el menor tiempo posible: permite aprovechar el equipamiento GORE ya disponible, reduce la carga operativa sobre la Unidad TI y garantiza una implementación técnica que la dotación actual de personal no puede absorber sin afectar otras labores del área.
 
 #pagebreak()
 = Recomendaciones
 #tabla-prioridad((
-  ("1", "Reemplazar el router principal por equipo adquirido (Ubiquiti UDM Pro).", "Alta", "Unidad TI"),
-  ("2", "Instalar nuevos AP Wi-Fi en las zonas sin cobertura identificadas.", "Alta", "Unidad TI"),
-  ("3", "Renovar los tres AP Wi-Fi deteriorados en zonas críticas del establecimiento.", "Media", "Unidad TI"),
-
+  ("1", "Contratar proveedor especializado para la provisión e instalación del equipamiento propuesto.", "Alta", "Unidad TI / Adquisiciones"),
+  ("2", "Integrar el equipamiento GORE (UDM-Pro, switch, UPS, AP) al sistema UNIFI durante la instalación.", "Alta", "Proveedor / Unidad TI"),
+  ("3", "Instalar AP Wi-Fi en las zonas sin cobertura y reemplazar los tres AP deteriorados.", "Alta", "Proveedor / Unidad TI"),
+  ("4", "Organizar el cableado del gabinete principal mediante la instalación del patch panel.", "Media", "Proveedor / Unidad TI"),
 ))
 #pagebreak()
 

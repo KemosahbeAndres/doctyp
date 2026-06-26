@@ -455,7 +455,7 @@
 
 // 4 · Tabla de contenido
 #let s-indice() = {
-  heading(numbering: none, level: 1, outlined: false)[Tabla de contenido]
+  heading(numbering: none, level: 1, outlined: false)[Contenido]
   indice()
 }
 
