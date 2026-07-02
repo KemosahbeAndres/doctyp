@@ -194,15 +194,19 @@
     #text(fill: rgb("AEB8D6"), size: 11pt)[ · v#meta.version · #meta.fecha]
   ]
   #v(0.5cm)
-  #upper(text(fill: white, weight: "bold", size: 38pt)[#meta.titulo]) \
+  #upper[
+    #text(fill: white, weight: "bold", size: 38pt, hyphenate: true)[
+      #meta.titulo
+    ]
+  ] \
   #v(0.4cm)
   #text(fill: rgb("C2CCE6"), size: 17pt)[#meta.subtitulo]
   
   #v(2fr)
-#align(center)[
-  #text(fill: rgb("AEB8D6"), weight: "bold", size: 10.5pt)[#meta.unidad] \
-  #text(fill: rgb("AEB8D6"), size: 10.5pt)[#meta.subdireccion] \
-  #text(fill: rgb("C2CCE6"), size: 12pt, weight: "bold")[#meta.institucion]
+  #align(center)[
+    #text(fill: rgb("AEB8D6"), weight: "bold", size: 10.5pt)[#meta.unidad] \
+    #text(fill: rgb("AEB8D6"), size: 10.5pt)[#meta.subdireccion] \
+    #text(fill: rgb("C2CCE6"), size: 12pt, weight: "bold")[#meta.institucion]
   ]
   #v(0.4cm)
 ]

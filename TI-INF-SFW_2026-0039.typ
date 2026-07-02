@@ -4,8 +4,8 @@
 #let meta = crear-meta((
   area: "TI", tipo: "INF", categoria: "RED",
   anio: 2026, correlativo: 39, version: "1.1", fecha-codigo: "20260623",
-  tipo-largo: "Informe Técnico",
-  titulo: "Propuesta de Mejora y Ampliación de Red de datos",
+  tipo-largo: "Propuesta",
+  titulo: "Propuesta de mejora y ampliación de infraestructura tecnológica",
   subtitulo: "Escuela Carlos Condell de la Haza (G-8)",
   estado: "BORRADOR", clasificacion: "INTERNO",
   autor: "Andrés Cubillos Salazar", cargo-autor: "Tecnico de Soporte Informático", correo-autor: "andres.cubillos@epchinchorro.cl",
@@ -16,19 +16,17 @@
 #pagebreak()
 
 = Resumen ejecutivo
-El presente informe tiene por objetivo *proponer una mejora y actualización tencológica*, despues de una revisión del estado actual, de la infraestructura de red para la Escuela Carlos Condell de la Haza (G-8) garantizando la continuidad operativa del establecimiento ante el crecimiento de su parque tecnológico.
+El presente informe tiene por objetivo *proponer una mejora y actualización tecnológica*, despues de una revisión del estado actual, de la infraestructura de red para la Escuela Carlos Condell de la Haza (G-8) garantizando la continuidad operativa del establecimiento ante el crecimiento de su parque tecnológico.
 
 El diagnóstico realizado durante la *visita técnica del martes 09 de junio de 2026 identificó tres problemáticas* críticas:
 
 1. Zonas del establecimiento sin cobertura Wi-Fi que impiden el uso efectivo de los dispositivos pedagógicos en esas áreas.
-
 2. Router principal de generación antigua con capacidad insuficiente para la cantidad actual de dispositivos conectados, lo que genera cortes, lentitud y degradación de la conectividad a Internet.
-
 3. Tres puntos de acceso Wi-Fi (AP) en estado de deterioro físico, cuya eventual falla total implicaría la pérdida de conectividad en sectores críticos. 
 
 Estas deficiencias se agravan por la incorporación reciente de nuevas tablets de uso pedagógico, que han aumentado la demanda sobre una infraestructura no dimensionada para absorberla.
 
-Frente a este escenario, *se propone un proyecto de provisión e instalación de equipamiento de red de nueva generación*. Esto incluye el reemplazo de los AP deteriorados, la cobertura de las zonas sin señal y la integración del router UDM-Pro y demás equipos ya adquiridos mediante el proyecto GORE (BIP 40065439-0). Dado que la Unidad TI no dispone del personal para ejecutar la instalación en el plazo requerido, se propone externalizar esta tarea a un proveedor especializado bajo supervisión técnica del área.
+Frente a este escenario, *se propone un proyecto de provisión e instalación de equipamiento de red de nueva generación*. Esto incluye el reemplazo de los AP deteriorados, la cobertura de las zonas sin señal y la integración del router UDM-Pro y demás equipos ya adquiridos mediante el proyecto GORE (*BIP 40065439-0*). Dado que la Unidad TI no dispone del personal para ejecutar la instalación en el plazo requerido, se propone externalizar esta tarea a un proveedor especializado bajo supervisión técnica del área.
 
 El costo referencial del equipamiento a adquirir, basado en precios de mercado a la fecha del informe, asciende a *\$1.719.000*. Este monto no incluye el equipamiento ya financiado por el proyecto GORE. Como Unidad de Tecnologías de la Información le recomendamos realizar estas mejoras pues garantizarán una conectividad estable y dimensionada para el parque tecnológico actual y su crecimiento proyectado.
 
@@ -98,24 +96,33 @@ Mejorar y ampliar la infraestructura de red inalámbrica de la Escuela Carlos Co
 
 #pagebreak()
 = Propuesta técnica
-== Equipamiento
+== Alcance del Proyecto: Provisión e Instalación
+Este proyecto contempla tanto la *provisión* (adquisición) del equipamiento detallado en las secciones siguientes, como su *instalación* completa en las dependencias del establecimiento.
+
+Dado que la Unidad de Tecnologías de la Información no cuenta con los recursos de personal ni el tiempo disponible para ejecutar la instalación en el plazo requerido, se propone *externalizar la instalación* mediante la contratación de un proveedor especializado que ejecute el trabajo de forma oportuna y bajo supervisión técnica de la Unidad TI.
+
+La supervisión técnica, la validación de la configuración y la recepción conforme del proyecto quedarán a cargo de la Unidad de Tecnologías de la Información del SLEP Chinchorro.
+
+== Equipamiento a Adquirir
 Para dar respuesta a las problemáticas identificadas, se propone la adquisición e instalación del siguiente equipamiento:
 
 #tabla(
-  columns: (auto, 1fr, auto, auto),
-  ("#", "Descripción", "Cantidad", "Prioridad"),
+  columns: (auto, 1fr, auto),
+  ("#", "Descripción", "Cantidad"),
   (
-    ("1", "Access Point Indoor Wi-Fi 6 5/2,4 GHz, 1×1000-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U6-PRO.", "3", "Alta"),
-    ("2", "Access Point Exterior Wi-Fi 6 5/2,4 GHz, 1×1000-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U6-MESH-PRO.", "1", "Alta"),
-    ("3", "Antena PtP 5 GHz 13 dBi, 1×1000-RJ45, PoE 24 V, similar a UBIQUITI LOCO 5AC (NS-5ACL).", "2", "Alta"),
-    ("4", "Inyector PoE 48VDC 15,3W Gigabit 802.3af, requiere cable Trébol C5, similar a UBIQUITI.", "1", "Alta"),
-    ("5", "Cable directo 50 cm SFP+ 10 Gbps, similar a UBIQUITI UACC-DAC-SFP10-0.5M.", "2", "Media"),
-    ("6", "Soporte universal abatible 50 cm para muro, similar a UBIQUITI UB-AM.", "2", "Media"),
-    ("7", "Patchcord 10 cm CAT6 RJ45 blanco, similar a UBIQUITI WUP-01.", "40", "Media"),
-    ("8", "Tapa negra 1U con apertura de cepillo para rack 19\", similar a LINKMADE RAP-1C.", "1", "Baja"),
-    ("9", "Patch panel 24 puertos RJ45 CAT6 UTP 1U certificado UL, similar a LINKMADE PP624L.", "1", "Media"),
+    ("1", "Access Point Indoor Wi-Fi 6 5/2,4 GHz, 1×Gigabit-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U6-PRO.", "3"),
+    ("2", "Access Point Exterior Wi-Fi 6 5/2,4 GHz, 1×Gigabit-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U6-MESH-PRO.", "1"),
+    ("3", "Antena PtP 5GHz 13dBi Gigabit PoE24V (airMAXac compatible) similar a UBIQUITI LOCO 5AC.", "2"),
+    ("4", "Inyector PoE 24VDC 7W Gigabit 0,3A (cable poder trebol incluido) similar a UBIQUITI POE-24-7W.", "2"),
+    ("5", "Cable directo 50cm SFP+ 10 Gbps, similar a UBIQUITI UACC-DAC-SFP10-0.5M.", "2"),
+    ("6", "Soporte universal abatible 50cm para muro, similar a UBIQUITI UB-AM.", "2"),
+    ("7", "Patchcord 10cm CAT6 RJ45 blanco, similar a UBIQUITI WUP-01.", "40"),
+    ("8", "Tapa negra 1U con apertura de cepillo para rack 19\", similar a LINKMADE RAP-1C.", "1"),
+    ("9", "Patch panel 24 puertos RJ45 CAT6 UTP 1U certificado UL, similar a LINKMADE PP624L.", "1"),
   ),
 )
+
+#pagebreak()
 
 == Equipamiento Aportado por Proyecto GORE (BIP 40065439-0)
 El siguiente equipamiento ya fue adquirido en el marco del proyecto del Gobierno Regional (GORE), código BIP 40065439-0, y será incorporado a este proyecto sin costo adicional:
@@ -127,32 +134,46 @@ El siguiente equipamiento ya fue adquirido en el marco del proyecto del Gobierno
     ("1", "Access Point Indoor Wi-Fi 6, UBIQUITI U6-PRO.", "1"),
     ("2", "Access Point Exterior Wi-Fi 6, UBIQUITI UAP-AC-MESH-PRO.", "1"),
     ("3", "Router Unifi Dream Machine Pro (UDM-Pro).", "1"),
-    ("4", "UPS 1000 VA.", "1"),
+    ("4", "UPS de respaldo 1KVA.", "1"),
     ("5", "Switch Ubiquiti 16 puertos PoE.", "1"),
+    ("6", "Cámara IP de seguridad interior.", "4"),
+    ("7", "Grabador NVR con disco duro (HDD).", "1"),
+    ("8", "Proyector ultracorto Epson EB-685W con Wi-Fi.", "10"),
   ),
 )
 
 #aviso(tipo: "info", titulo: "Equipamiento GORE", [Los equipos listados en esta tabla no se incluyen en el costo estimado del proyecto, ya que fueron financiados mediante el proyecto GORE BIP 40065439-0 y están disponibles para su instalación.])
 
-== Alcance del Proyecto: Provisión e Instalación
-Este proyecto contempla tanto la *provisión* (adquisición) del equipamiento detallado en la sección anterior, como su *instalación* completa en las dependencias del establecimiento. Dado que la Unidad de Tecnologías de la Información no cuenta con los recursos de personal ni el tiempo disponible para ejecutar la instalación en el plazo requerido, se propone *externalizar la instalación* mediante la contratación de un proveedor especializado que ejecute el trabajo de forma oportuna y bajo supervisión técnica de la Unidad TI.
+== Trabajos a Realizar
+El proveedor contratado ejecutará los siguientes trabajos bajo supervisión técnica de la Unidad TI:
 
-El proveedor contratado será responsable de:
-
-- Montaje físico de los equipos activos en rack y en los puntos de acceso definidos en la topología.
-- Tendido y certificación del cableado estructurado necesario.
-- Configuración inicial de los equipos bajo los parámetros entregados por la Unidad TI.
-- Integración de los equipos aportados por el proyecto GORE (BIP 40065439-0) al sistema UNIFI.
+=== Red de datos e infraestructura Wi-Fi
+- Montaje físico del equipamiento activo (UDM-Pro, switch, UPS y patch panel) en rack principal.
+- Tendido y certificación de cableado estructurado CAT6 a los puntos de acceso definidos en la topología.
+- Instalación de AP Indoor en las zonas sin cobertura identificadas.
+- Reemplazo de los tres AP Indoor deteriorados.
+- Instalación del AP Exterior en la zona exterior identificada.
+- Despliegue y alineación de antenas PtP para los sectores sin cableado disponible.
+- Integración de los equipos aportados por el proyecto GORE (UDM-Pro, switch, UPS, AP) al sistema UNIFI.
+- Organización y etiquetado del cableado existente en rack principal mediante el patch panel.
 - Pruebas de funcionamiento y entrega formal a la Unidad TI.
 
-La supervisión técnica, la validación de la configuración y la recepción conforme del proyecto quedarán a cargo de la Unidad de Tecnologías de la Información del SLEP Chinchorro.
+=== Sistema de vigilancia
+- Instalación de 4 cámaras IP en los puntos definidos por la Unidad TI.
+- Tendido de cableado de red CAT6 desde el grabador NVR a cada cámara.
+- Instalación y configuración del grabador NVR con disco duro (HDD).
 
-El patch panel responde al estado del gabinete secundario del establecimiento, donde la ausencia de un punto de terminación estructurado genera un cableado desordenado que dificulta la identificación de conexiones y eleva el riesgo de errores en cualquier intervención de mantenimiento. Su instalación permitirá organizar y etiquetar correctamente los cables del nivel de acceso, facilitando la operación y el soporte futuro de la red.
+=== Proyectores de sala
+- Instalación de 10 proyectores ultracortos Epson EB-685W con Wi-Fi.
+- Tendido y certificación de punto de red CAT6 por sala de proyección (donde el equipo lo requiera).
+- Configuración de conectividad de red de los proyectores según los parámetros de la Unidad TI.
 
 #pagebreak()
 
 == Topología de Red
-La arquitectura propuesta reemplaza la dependencia de repetidores inalámbricos en cascada —principal causa de la degradación actual— por un diseño donde cada AP se conecta al switch mediante cableado estructurado. El UDM-PRO centraliza la gestión de toda la red desde una única consola UNIFI, lo que simplifica la operación y permite detectar fallas con rapidez. Las antenas PtP LOCO5AC resuelven los sectores sin cableado disponible y los AP exteriores U6-MESH-PRO eliminan las zonas sin cobertura identificadas en la visita.
+La arquitectura propuesta reemplaza la dependencia de repetidores inalámbricos en cascada —principal causa de la degradación actual— por un diseño donde cada AP se conecta al switch mediante cableado estructurado. 
+
+El UDM-PRO centraliza la gestión de toda la red desde una única consola UNIFI, lo que simplifica la operación y permite detectar fallas con rapidez. Las antenas PtP LOCO5AC resuelven los sectores sin cableado disponible y los AP exteriores U6-MESH-PRO eliminan las zonas sin cobertura identificadas en la visita.
 
 El siguiente diagrama ilustra la topología lógica y física de la red propuesta:
 
@@ -163,7 +184,9 @@ El siguiente diagrama ilustra la topología lógica y física de la red propuest
 #pagebreak()
 
 == Diagrama de Cobertura
-El diagrama de cobertura permite validar que la disposición propuesta de los AP elimina las zonas sin señal detectadas durante la visita, garantizando conectividad en todos los sectores del establecimiento. La cobertura estimada en banda 5 GHz —la utilizada prioritariamente para actividades pedagógicas— confirma que el diseño alcanza los espacios donde hoy no existe señal o esta es insuficiente:
+El diagrama de cobertura permite validar que la disposición propuesta de los AP elimina las zonas sin señal detectadas durante la visita, garantizando conectividad en todos los sectores del establecimiento. 
+
+La cobertura estimada en banda 5 GHz —la utilizada prioritariamente para actividades pedagógicas— confirma que el diseño alcanza los espacios donde hoy no existe señal o esta es insuficiente:
 
 #figure(
   image("img-39/cobertura_wifi_5g.png", height: 10cm),
