@@ -28,7 +28,7 @@ Estas deficiencias se agravan por la incorporación reciente de nuevas tablets d
 
 Frente a este escenario, *se propone un proyecto de provisión e instalación de equipamiento de red de nueva generación*. Esto incluye el reemplazo de los AP deteriorados, la cobertura de las zonas sin señal y la integración del router UDM-Pro y demás equipos ya adquiridos mediante el proyecto GORE (*BIP 40065439-0*). Dado que la Unidad TI no dispone del personal para ejecutar la instalación en el plazo requerido, se propone externalizar esta tarea a un proveedor especializado bajo supervisión técnica del área.
 
-El costo referencial del equipamiento a adquirir, basado en precios de mercado a la fecha del informe, asciende a *\$1.719.000*. Este monto no incluye el equipamiento ya financiado por el proyecto GORE. Como Unidad de Tecnologías de la Información le recomendamos realizar estas mejoras pues garantizarán una conectividad estable y dimensionada para el parque tecnológico actual y su crecimiento proyectado.
+El costo referencial del equipamiento a adquirir, basado en precios de mercado a la fecha del informe, asciende a *\$1.888.811*. Este monto no incluye el equipamiento ya financiado por el proyecto GORE. Como Unidad de Tecnologías de la Información le recomendamos realizar estas mejoras pues garantizarán una conectividad estable y dimensionada para el parque tecnológico actual y su crecimiento proyectado.
 
 #pagebreak()
 = Antecedentes
@@ -119,8 +119,11 @@ Para dar respuesta a las problemáticas identificadas, se propone la adquisició
     ("7", "Patchcord 10cm CAT6 RJ45 blanco, similar a UBIQUITI WUP-01.", "40"),
     ("8", "Tapa negra 1U con apertura de cepillo para rack 19\", similar a LINKMADE RAP-1C.", "1"),
     ("9", "Patch panel 24 puertos RJ45 CAT6 UTP 1U certificado UL, similar a LINKMADE PP624L.", "1"),
+    ("10", "Cámara IP de seguridad interior 5MP, PoE, IP67, IK10, similar a DAHUA DH-IPC-HFW5859T (compatible con el NVR y las cámaras aportadas por el proyecto GORE).", "1"),
   ),
 )
+
+#aviso(tipo: "info", titulo: "Cámara adicional", [Las 4 cámaras IP interiores aportadas por el proyecto GORE resultan insuficientes para cubrir los puntos críticos definidos en la sección "Distribución de Cámaras de seguridad". Se incorpora 1 cámara adicional, compatible con el NVR y las demás cámaras del sistema, con cargo al presupuesto de este proyecto.])
 
 #pagebreak()
 
@@ -134,10 +137,10 @@ El siguiente equipamiento ya fue adquirido en el marco del proyecto del Gobierno
     ("1", "Access Point Indoor Wi-Fi 6, UBIQUITI U6-PRO.", "1"),
     ("2", "Access Point Exterior Wi-Fi 6, UBIQUITI UAP-AC-MESH-PRO.", "1"),
     ("3", "Router Unifi Dream Machine Pro (UDM-Pro).", "1"),
-    ("4", "UPS de respaldo 1KVA.", "1"),
+    ("4", "UPS de respaldo 1KVA, ENERSAVE ESOL RTH-C 1KVA.", "1"),
     ("5", "Switch Ubiquiti 16 puertos PoE.", "1"),
-    ("6", "Cámara IP de seguridad interior.", "4"),
-    ("7", "Grabador NVR con disco duro (HDD).", "1"),
+    ("6", "Cámara IP de seguridad interior, DAHUA DH-IPC-HFW5859T.", "4"),
+    ("7", "Grabador NVR con disco duro (HDD), DAHUA DHI-NVR4108HS-8P-4KS3.", "1"),
     ("8", "Proyector ultracorto Epson EB-685W con Wi-Fi.", "10"),
   ),
 )
@@ -165,10 +168,12 @@ El proveedor contratado ejecutará los siguientes trabajos bajo supervisión té
 
 === Proyectores de sala
 - Instalación de 10 proyectores ultracortos Epson EB-685W con Wi-Fi.
+- Fabricación e instalación del sistema de fijación estructural del proyector en cada sala, conforme a lo indicado en el aviso siguiente.
+- Instalación integral (canalizada) de cableado HDMI y de energía eléctrica desde el punto de alimentación más cercano hasta la ubicación del proyector sobre la pizarra, dado que al ser equipos de tiro ultracorto se montan en altura y no cuentan con dichos puntos disponibles en esa posición.
 - Tendido y certificación de punto de red CAT6 por sala de proyección (donde el equipo lo requiera).
 - Configuración de conectividad de red de los proyectores según los parámetros de la Unidad TI.
 
-#pagebreak()
+#aviso(tipo: "warning", titulo: "Fijación en muros de material ligero", [Los muros del establecimiento donde se instalarán los proyectores son de vulcanita u otro material ligero, por lo que no admiten un anclaje directo del equipo ni de su soporte. El proveedor deberá fabricar e instalar, según las condiciones particulares de cada sala, una placa metálica pasante que sujete el muro por ambas caras (interior y exterior) o un soporte de techo fabricado en metal que sostenga el equipo de forma segura. La solución estructural aplicada en cada sala queda a criterio y responsabilidad del proveedor al momento de la instalación.])
 
 == Topología de Red
 La arquitectura propuesta reemplaza la dependencia de repetidores inalámbricos en cascada —principal causa de la degradación actual— por un diseño donde cada AP se conecta al switch mediante cableado estructurado. 
@@ -183,7 +188,7 @@ El siguiente diagrama ilustra la topología lógica y física de la red propuest
 )
 #pagebreak()
 
-== Diagrama de Cobertura
+== Diagrama de Cobertura Wi-Fi
 El diagrama de cobertura permite validar que la disposición propuesta de los AP elimina las zonas sin señal detectadas durante la visita, garantizando conectividad en todos los sectores del establecimiento. 
 
 La cobertura estimada en banda 5 GHz —la utilizada prioritariamente para actividades pedagógicas— confirma que el diseño alcanza los espacios donde hoy no existe señal o esta es insuficiente:
@@ -200,10 +205,42 @@ Como parte de la propuesta, se establece una separación clara de responsabilida
 
 El diagrama siguiente muestra la distribución propuesta de los equipos dentro del rack principal:
 
+
 #figure(
-  image("img-39/distribucion_rack.png", height: 14cm),
+  image("img-39/rack_propuesto_1.1.png", height: 14cm),
   caption: [Distribución planificada en Rack Principal]
 )
+
+#pagebreak()
+
+
+== Distribución de Cámaras de seguridad
+La ubicación de las 4 cámaras IP interiores DAHUA DH-IPC-HFW5859T aportadas por el proyecto GORE se definió priorizando los accesos principales, los pasillos de mayor tránsito y los sectores donde se concentra equipamiento tecnológico sensible, con el objetivo de resguardar tanto la integridad de los usuarios como la del parque tecnológico del establecimiento. Cada cámara se conectará mediante cableado estructurado CAT6 al grabador NVR DAHUA DHI-NVR4108HS-8P-4KS3, que centralizará el almacenamiento y la gestión del sistema de vigilancia. La disposición final de los puntos de cámara, validada junto a la dirección del establecimiento, se ilustra en el siguiente diagrama:
+
+#figure(
+  image("img-39/distribucion_camaras.png"),
+  caption: [Distribución de cámaras de seguridad]
+)
+
+== Instalación de Proyectores
+
+=== Distribución de proyectores
+
+Los 10 proyectores ultracortos Epson EB-685W con Wi-Fi aportados por el proyecto GORE se distribuirán en las salas de clases definidas por la dirección del establecimiento, priorizando aquellas con mayor uso pedagógico diario. Dada su naturaleza de tiro ultracorto, cada equipo se monta en altura, sobre la pizarra de la sala respectiva, lo que minimiza las sombras proyectadas por el docente y optimiza el aprovechamiento del espacio disponible. La conectividad de red de cada proyector se gestionará vía Wi-Fi según los parámetros definidos por la Unidad TI. Las particularidades constructivas de las salas —detalladas en la sección "Trabajos a Realizar"— condicionan tanto la fijación del equipo como el tendido de energía y HDMI hasta su ubicación final. La disposición específica por sala se muestra en el siguiente diagrama:
+
+#figure(
+  image("img-39/distribucion-proyectores.png", height: 8cm),
+  caption: [Distribución de proyectores]
+)
+
+=== Posición en aulas
+Los proyectores deben quedar ubicados según la ilustración a continuación.
+
+#figure(
+  image("img-39/ilustracion_proyector.png", height: 8cm),
+  caption: [Ilustración generada con Gemini Pro Nano Banana 2.]
+)
+
 
 #pagebreak()
 
@@ -223,7 +260,8 @@ Los valores presentados a continuación son referenciales y se basan en precios 
     ("7", "Patchcord 10 cm CAT6 RJ45 blanco", "40", "$4.000", "$160.000"),
     ("8", "Tapa negra 1U con cepillo para rack 19\"", "1", "$13.000", "$13.000"),
     ("9", "Patch panel 24p RJ45 CAT6 UTP 1U certificado UL", "1", "$38.000", "$38.000"),
-    ("", "*Total proyecto*", "", "", "*$1.719.000*"),
+    ("10", "Cámara IP interior 5MP PoE IP67 IK10", "1", "$169.811", "$169.811"),
+    ("", "*Total proyecto*", "", "", "*$1.888.811*"),
   ),
 )
 
@@ -235,7 +273,7 @@ Los valores presentados a continuación son referenciales y se basan en precios 
 = Conclusiones
 La red inalámbrica de la Escuela Carlos Condell de la Haza presenta deficiencias concretas que ya están afectando la operación del establecimiento: zonas sin cobertura, un router que no da abasto con los dispositivos actuales y tres AP en mal estado que pueden fallar en cualquier momento. La incorporación de nuevas tablets no hizo más que acelerar un problema que el equipamiento instalado no está en condiciones de absorber.
 
-La propuesta presentada en este informe resuelve cada uno de estos puntos mediante un proyecto de *provisión e instalación* que combina el equipamiento a adquirir con los equipos ya disponibles del proyecto GORE (BIP 40065439-0). La solución centraliza la gestión en un único rack principal y libera el gabinete de Mineduc de cualquier uso distinto al enlace institucional. El costo total referencial del equipamiento a adquirir asciende a \$1.719.000 y contempla además la organización del cableado mediante un patch panel, aspecto que hoy también representa un riesgo operativo.
+La propuesta presentada en este informe resuelve cada uno de estos puntos mediante un proyecto de *provisión e instalación* que combina el equipamiento a adquirir con los equipos ya disponibles del proyecto GORE (BIP 40065439-0). La solución centraliza la gestión en un único rack principal y libera el gabinete de Mineduc de cualquier uso distinto al enlace institucional. El costo total referencial del equipamiento a adquirir asciende a \$1.888.811 y contempla además la organización del cableado mediante un patch panel, aspecto que hoy también representa un riesgo operativo.
 
 Externalizar la instalación es la vía correcta para ejecutar este proyecto en el menor tiempo posible: permite aprovechar el equipamiento GORE ya disponible, reduce la carga operativa sobre la Unidad TI y garantiza una implementación técnica que la dotación actual de personal no puede absorber sin afectar otras labores del área.
 
