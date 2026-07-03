@@ -28,7 +28,7 @@ Estas deficiencias se agravan por la incorporación reciente de nuevas tablets d
 
 Frente a este escenario, *se propone un proyecto de provisión e instalación de equipamiento de red de nueva generación*. Esto incluye el reemplazo de los AP deteriorados, la cobertura de las zonas sin señal y la integración del router UDM-Pro y demás equipos ya adquiridos mediante el proyecto GORE (*BIP 40065439-0*). Dado que la Unidad TI no dispone del personal para ejecutar la instalación en el plazo requerido, se propone externalizar esta tarea a un proveedor especializado bajo supervisión técnica del área.
 
-El costo referencial del equipamiento a adquirir, basado en precios de mercado a la fecha del informe, asciende a *\$1.888.811*. Este monto no incluye el equipamiento ya financiado por el proyecto GORE. Como Unidad de Tecnologías de la Información le recomendamos realizar estas mejoras pues garantizarán una conectividad estable y dimensionada para el parque tecnológico actual y su crecimiento proyectado.
+El costo referencial del equipamiento a adquirir, basado en precios de mercado a la fecha del informe, asciende a *\$1.888.811*, mientras que el costo de instalación (cableado, canalización, mano de obra y puntos eléctricos/HDMI de los proyectores) asciende a *\$4.698.100*, para un *total general de \$6.586.911*. Estos montos no incluyen el equipamiento ya financiado por el proyecto GORE. Como Unidad de Tecnologías de la Información le recomendamos realizar estas mejoras pues garantizarán una conectividad estable y dimensionada para el parque tecnológico actual y su crecimiento proyectado.
 
 #pagebreak()
 = Antecedentes
@@ -123,8 +123,6 @@ Para dar respuesta a las problemáticas identificadas, se propone la adquisició
   ),
 )
 
-#aviso(tipo: "info", titulo: "Cámara adicional", [Las 4 cámaras IP interiores aportadas por el proyecto GORE resultan insuficientes para cubrir los puntos críticos definidos en la sección "Distribución de Cámaras de seguridad". Se incorpora 1 cámara adicional, compatible con el NVR y las demás cámaras del sistema, con cargo al presupuesto de este proyecto.])
-
 #pagebreak()
 
 == Equipamiento Aportado por Proyecto GORE (BIP 40065439-0)
@@ -183,18 +181,17 @@ El UDM-PRO centraliza la gestión de toda la red desde una única consola UNIFI,
 El siguiente diagrama ilustra la topología lógica y física de la red propuesta:
 
 #figure(
-  image("img-39/topologia_propuesta.png", height: 10cm, fit:"contain"),
+  image("img-39/topologia_propuesta.png", height: 8cm, fit:"contain"),
   caption: [Topología de red propuesta]
 )
-#pagebreak()
 
 == Diagrama de Cobertura Wi-Fi
 El diagrama de cobertura permite validar que la disposición propuesta de los AP elimina las zonas sin señal detectadas durante la visita, garantizando conectividad en todos los sectores del establecimiento. 
 
-La cobertura estimada en banda 5 GHz —la utilizada prioritariamente para actividades pedagógicas— confirma que el diseño alcanza los espacios donde hoy no existe señal o esta es insuficiente:
+La cobertura estimada en banda 5 GHz (utilizada para actividades pedagógicas) confirma que el diseño alcanza los espacios donde hoy no existe señal o esta es insuficiente:
 
 #figure(
-  image("img-39/cobertura_wifi_5g.png", height: 10cm),
+  image("img-39/cobertura_wifi_5g.png", height: 8cm),
   caption: [Cobertura Wi-Fi estimada — banda 5 GHz]
 )
 
@@ -238,15 +235,16 @@ Los proyectores deben quedar ubicados según la ilustración a continuación.
 
 #figure(
   image("img-39/ilustracion_proyector.png", height: 8cm),
-  caption: [Ilustración generada con Gemini Pro Nano Banana 2.]
+  caption: [Ilustración generada con Nano Banana 2.]
 )
 
 
 #pagebreak()
 
 = Costos estimados
-Los valores presentados a continuación son referenciales y se basan en precios de mercado a la fecha del informe. Los montos definitivos estarán sujetos al proceso de adquisición que corresponda.
+Los valores presentados a continuación son referenciales y se basan en precios de mercado a la fecha del informe. Los montos definitivos estarán sujetos al proceso de adquisición y contratación que corresponda. El presupuesto se organiza en dos componentes: el *costo de equipamiento* a adquirir y el *costo de instalación* (materiales y mano de obra) necesario para dejar el proyecto completamente operativo.
 
+== Costo de Equipamiento
 #tabla(
   columns: (auto, 1fr, auto, auto, auto),
   ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
@@ -261,11 +259,104 @@ Los valores presentados a continuación son referenciales y se basan en precios 
     ("8", "Tapa negra 1U con cepillo para rack 19\"", "1", "$13.000", "$13.000"),
     ("9", "Patch panel 24p RJ45 CAT6 UTP 1U certificado UL", "1", "$38.000", "$38.000"),
     ("10", "Cámara IP interior 5MP PoE IP67 IK10", "1", "$169.811", "$169.811"),
-    ("", "*Total proyecto*", "", "", "*$1.888.811*"),
+    ("", "*Subtotal equipamiento*", "", "", "*$1.888.811*"),
   ),
 )
 
 #aviso(tipo: "info", titulo: "Precios de Mercado", [Los costos expresados en esta tabla son precios de mercado obtenidos por un análisis de proveedores especializados en tecnología.])
+
+== Costo de Instalación
+La instalación fue dimensionada según el diseño de red elaborado en Unifi Design, que determinó los metrajes de cableado y canalización requeridos para interconectar cámaras, puntos de acceso y antenas, y según estimaciones de la Unidad TI para la mano de obra y los puntos de conexión de los proyectores.
+
+=== Cableado y canalización de datos
+Según el diseño de red (Unifi Design), la interconexión de cámaras, puntos de acceso y antenas requiere 420 metros de cable UTP Cat6 LSZH (libre de halógeno) 100% cobre y 130 metros de canalización metálica EMT para la protección y el ordenamiento del cableado.
+
+#tabla(
+  columns: (auto, 1fr, auto, auto, auto),
+  ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
+  (
+    ("1", "Cable UTP Cat6 LSZH (libre de halógeno) 100% cobre", "420 m", "$700", "$294.000"),
+    ("2", "Canalización metálica EMT con accesorios (uniones, conectores, fijaciones)", "130 m", "$5.000", "$650.000"),
+    ("", "*Subtotal material cableado y canalización*", "", "", "*$944.000*"),
+  ),
+)
+
+#aviso(tipo: "info", titulo: "Referencia de precio", [El precio del cable UTP Cat6 LSZH 100% cobre (\$700 el metro) y de la canalización EMT (\$5.000 el metro, con accesorios) corresponden a valores entregados directamente por la Unidad TI y se cobran de forma independiente entre sí.])
+
+=== Mano de obra — Canalización y cableado de datos
+El tendido del cableado UTP no se cobra por separado: al instalar la canalización EMT, el cableado se pasa en la misma intervención, ahorrando tiempo de instalación. Por esto, la mano de obra se calcula únicamente sobre los 130 metros de canalización EMT, a \$8.000 el metro, incorporando un 30% de margen de error (169 metros equivalentes) para imprevistos de trazado.
+
+#tabla(
+  columns: (auto, 1fr, auto, auto, auto),
+  ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
+  (
+    ("1", "Instalación de canalización EMT (incluye tendido simultáneo del cableado UTP), 130 m + 30% margen", "169 m", "$8.000", "$1.352.000"),
+    ("", "*Subtotal mano de obra cableado de datos*", "", "", "*$1.352.000*"),
+  ),
+)
+
+=== Mano de obra — Instalación de equipos
+Se estima \$41.000 por unidad para la instalación física (montaje, fijación y puesta en servicio) de los equipos que requieren manipulación individual: las antenas PtP con su soporte, los puntos de acceso interiores y exteriores (Mesh), y los proyectores. Este valor es independiente del costo de cableado y canalización de las secciones anteriores.
+
+#tabla(
+  columns: (auto, 1fr, auto, auto, auto),
+  ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
+  (
+    ("1", "Instalación de antena PtP con soporte", "2", "$41.000", "$82.000"),
+    ("2", "Instalación de AP interior", "4", "$41.000", "$164.000"),
+    ("3", "Instalación de AP exterior (Mesh)", "2", "$41.000", "$82.000"),
+    ("4", "Instalación de proyector ultracorto", "10", "$41.000", "$410.000"),
+    ("", "*Subtotal mano de obra instalación de equipos*", "", "", "*$738.000*"),
+  ),
+)
+
+=== Puntos eléctricos para proyectores
+Cada uno de los 10 proyectores requiere un punto de energía dedicado, ya que se instalan en altura sobre la pizarra sin un punto eléctrico cercano disponible. Se considera un trazado de 20 metros de canalización EMT por proyector, con 3 conductores EVAFlex (fase, neutro y tierra) libres de halógeno de 2,5 mm² y el enchufe embutido correspondiente.
+
+#tabla(
+  columns: (auto, 1fr, auto, auto, auto),
+  ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
+  (
+    ("1", "Canalización EMT con accesorios (20 m x 10 proyectores)", "200 m", "$5.000", "$1.000.000"),
+    ("2", "Cable EVAFlex libre de halógeno 2,5 mm² (3 conductores x 20 m x 10 proyectores)", "600 m", "$500", "$300.000"),
+    ("3", "Enchufe embutido con placa", "10", "$3.990", "$39.900"),
+    ("", "*Subtotal puntos eléctricos (10 proyectores)*", "", "", "*$1.339.900*"),
+  ),
+)
+
+#aviso(tipo: "info", titulo: "Referencia de precio — Cable EVAFlex", [El valor del cable EVAFlex libre de halógeno 2,5 mm² (\$500 el metro, IVA incluido) se estimó en base a precios de mercado nacional (cable H07Z1-K 2,5 mm² desde \$424 a \$535 el metro según formato). El enchufe embutido con placa (\$3.990) corresponde a un valor de mercado para tomacorrientes tipo Bticino o equivalente.])
+
+=== Puntos HDMI para proyectores
+Al ser proyectores de tiro ultracorto instalados sobre la pizarra, cada sala requiere un punto HDMI dedicado. Se considera una canaleta Legrand de 10 metros por proyector para la conducción visible del cableado, un cable HDMI de 10 metros tendido dentro de la canaleta, un módulo HDMI (keystone) en el punto de conexión y un cable HDMI de 3 metros para la conexión del equipo del docente.
+
+#tabla(
+  columns: (auto, 1fr, auto, auto, auto),
+  ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
+  (
+    ("1", "Canaleta Legrand 20x12 mm (10 m x 10 proyectores)", "100 m", "$1.145", "$114.500"),
+    ("2", "Cable HDMI 10 m (tendido en canaleta)", "10", "$9.990", "$99.900"),
+    ("3", "Módulo HDMI (keystone) para punto de conexión", "10", "$6.990", "$69.900"),
+    ("4", "Cable HDMI 3 m (conexión del equipo del docente)", "10", "$3.990", "$39.900"),
+    ("", "*Subtotal puntos HDMI (10 proyectores)*", "", "", "*$324.200*"),
+  ),
+)
+
+#aviso(tipo: "info", titulo: "Referencia de precio — Canaleta y HDMI", [Precios de mercado nacional: canaleta Legrand 20x12 mm desde \$1.145 el metro, cable HDMI 10 m desde \$9.990, módulo HDMI keystone desde \$6.990 y cable HDMI 3 m desde \$3.990.])
+
+== Costo Total del Proyecto
+#tabla(
+  columns: (auto, 1fr, auto),
+  ("#", "Componente", "Total (c/IVA)"),
+  (
+    ("1", "Equipamiento a adquirir", "$1.888.811"),
+    ("2", "Material cableado y canalización de datos", "$944.000"),
+    ("3", "Mano de obra — canalización y cableado de datos", "$1.352.000"),
+    ("4", "Mano de obra — instalación de equipos", "$738.000"),
+    ("5", "Puntos eléctricos para proyectores (material)", "$1.339.900"),
+    ("6", "Puntos HDMI para proyectores (material)", "$324.200"),
+    ("", "*Total general del proyecto*", "*$6.586.911*"),
+  ),
+)
 
 #aviso(tipo: "warning", titulo: "Solicitud de Compra", [Antes de realizar o subir una solicitud de compra por favor solicitar a la Unidad de Tecnologías de la Información las Especificaciones Técnicas de los items a travez del correo: *soporte.informatica\@epchinchorro.cl*.])
 
@@ -273,7 +364,7 @@ Los valores presentados a continuación son referenciales y se basan en precios 
 = Conclusiones
 La red inalámbrica de la Escuela Carlos Condell de la Haza presenta deficiencias concretas que ya están afectando la operación del establecimiento: zonas sin cobertura, un router que no da abasto con los dispositivos actuales y tres AP en mal estado que pueden fallar en cualquier momento. La incorporación de nuevas tablets no hizo más que acelerar un problema que el equipamiento instalado no está en condiciones de absorber.
 
-La propuesta presentada en este informe resuelve cada uno de estos puntos mediante un proyecto de *provisión e instalación* que combina el equipamiento a adquirir con los equipos ya disponibles del proyecto GORE (BIP 40065439-0). La solución centraliza la gestión en un único rack principal y libera el gabinete de Mineduc de cualquier uso distinto al enlace institucional. El costo total referencial del equipamiento a adquirir asciende a \$1.888.811 y contempla además la organización del cableado mediante un patch panel, aspecto que hoy también representa un riesgo operativo.
+La propuesta presentada en este informe resuelve cada uno de estos puntos mediante un proyecto de *provisión e instalación* que combina el equipamiento a adquirir con los equipos ya disponibles del proyecto GORE (BIP 40065439-0). La solución centraliza la gestión en un único rack principal y libera el gabinete de Mineduc de cualquier uso distinto al enlace institucional. El costo total referencial del proyecto asciende a \$6.586.911, compuesto por \$1.888.811 de equipamiento y \$4.698.100 de instalación (cableado y canalización de datos, mano de obra de montaje y puesta en servicio, y los puntos eléctricos y HDMI dedicados de cada proyector), y contempla además la organización del cableado mediante un patch panel, aspecto que hoy también representa un riesgo operativo.
 
 Externalizar la instalación es la vía correcta para ejecutar este proyecto en el menor tiempo posible: permite aprovechar el equipamiento GORE ya disponible, reduce la carga operativa sobre la Unidad TI y garantiza una implementación técnica que la dotación actual de personal no puede absorber sin afectar otras labores del área.
 
