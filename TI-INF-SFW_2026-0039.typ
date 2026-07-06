@@ -28,7 +28,7 @@ Estas deficiencias se agravan por la incorporación reciente de nuevas tablets d
 
 Frente a este escenario, *se propone un proyecto de provisión e instalación de equipamiento de red de nueva generación*. Esto incluye el reemplazo de los AP deteriorados, la cobertura de las zonas sin señal y la integración del router UDM-Pro y demás equipos ya adquiridos mediante el proyecto GORE (*BIP 40065439-0*). Dado que la Unidad TI no dispone del personal para ejecutar la instalación en el plazo requerido, se propone externalizar esta tarea a un proveedor especializado bajo supervisión técnica del área.
 
-El costo referencial del equipamiento a adquirir, basado en precios de mercado a la fecha del informe, asciende a *\$1.888.811*, mientras que el costo de instalación (cableado, canalización, mano de obra y puntos eléctricos/HDMI de los proyectores) asciende a *\$4.698.100*, para un *total general de \$6.586.911*. Estos montos no incluyen el equipamiento ya financiado por el proyecto GORE. Como Unidad de Tecnologías de la Información le recomendamos realizar estas mejoras pues garantizarán una conectividad estable y dimensionada para el parque tecnológico actual y su crecimiento proyectado.
+El costo referencial del equipamiento a adquirir, basado en precios de mercado a la fecha del informe, asciende a *\$1.954.000*, mientras que el costo de instalación (red, CCTV y proyectores) asciende a *\$3.884.100*, para un *total general de \$5.838.100*. Estos montos no incluyen el equipamiento ya financiado por el proyecto GORE. Como Unidad de Tecnologías de la Información le recomendamos realizar estas mejoras pues garantizarán una conectividad estable y dimensionada para el parque tecnológico actual y su crecimiento proyectado.
 
 #pagebreak()
 = Antecedentes
@@ -45,13 +45,13 @@ Se detectaron sectores del establecimiento donde la señal inalámbrica es inexi
 
 #figure(
   image("/img-39/zonas_sin_cobertura.png", height: 8cm, fit: "contain"),
-  caption: [Zonas sin cobertura Wi-Fi]
+  caption: [Zonas sin cobertura Wi-Fi.]
 )
 #pagebreak()
 
 #figure(
   image("/img-39/cobertura_actual.png", height: 8cm, fit: "contain"),
-  caption: [Cobertura Wi-Fi actualmente]
+  caption: [Cobertura Wi-Fi actualmente.]
 )
 
 === Equipo de enrutamiento principal obsoleto 
@@ -65,7 +65,7 @@ El router instalado corresponde a una generación anterior, con capacidades de p
 
 #figure(
   image("/img-39/rack mineduc.jpeg", height:8cm),
-  caption: [Rack Internet Mineduc.]
+  caption: [Rack instalado por Mineduc.]
 )
 
 === Puntos de acceso inalámbrico deteriorados
@@ -119,7 +119,8 @@ Para dar respuesta a las problemáticas identificadas, se propone la adquisició
     ("7", "Patchcord 10cm CAT6 RJ45 blanco, similar a UBIQUITI WUP-01.", "40"),
     ("8", "Tapa negra 1U con apertura de cepillo para rack 19\", similar a LINKMADE RAP-1C.", "1"),
     ("9", "Patch panel 24 puertos RJ45 CAT6 UTP 1U certificado UL, similar a LINKMADE PP624L.", "1"),
-    ("10", "Cámara IP de seguridad interior 5MP, PoE, IP67, IK10, similar a DAHUA DH-IPC-HFW5859T (compatible con el NVR y las cámaras aportadas por el proyecto GORE).", "1"),
+    ("10", "Cámara IP de seguridad 8MP PoE IP67 IK10, similar a DAHUA DH-IPC-HFW5859T (compatible con el NVR y las cámaras aportadas por el proyecto GORE).", "1"),
+    ("11", "Cable HDMI 3 mts 4K 2.0 blindado", "10"),
   ),
 )
 
@@ -137,7 +138,7 @@ El siguiente equipamiento ya fue adquirido en el marco del proyecto del Gobierno
     ("3", "Router Unifi Dream Machine Pro (UDM-Pro).", "1"),
     ("4", "UPS de respaldo 1KVA, ENERSAVE ESOL RTH-C 1KVA.", "1"),
     ("5", "Switch Ubiquiti 16 puertos PoE.", "1"),
-    ("6", "Cámara IP de seguridad interior, DAHUA DH-IPC-HFW5859T.", "4"),
+    ("6", "Cámara IP de seguridad, DAHUA DH-IPC-HFW5859T.", "4"),
     ("7", "Grabador NVR con disco duro (HDD), DAHUA DHI-NVR4108HS-8P-4KS3.", "1"),
     ("8", "Proyector ultracorto Epson EB-685W con Wi-Fi.", "10"),
   ),
@@ -149,36 +150,61 @@ El siguiente equipamiento ya fue adquirido en el marco del proyecto del Gobierno
 El proveedor contratado ejecutará los siguientes trabajos bajo supervisión técnica de la Unidad TI:
 
 === Red de datos e infraestructura Wi-Fi
-- Montaje físico del equipamiento activo (UDM-Pro, switch, UPS y patch panel) en rack principal.
-- Tendido y certificación de cableado estructurado CAT6 a los puntos de acceso definidos en la topología.
-- Instalación de AP Indoor en las zonas sin cobertura identificadas.
-- Reemplazo de los tres AP Indoor deteriorados.
-- Instalación del AP Exterior en la zona exterior identificada.
+- Montaje físico del equipamiento activo en rack principal.
+- Tendido y certificación de cableado estructurado a los puntos de acceso definidos en la topología.
+- Instalación y reemplazo de los AP Indoor en las zonas identificadas en los diagramas.
+- Instalación de los AP Exterior en las zonas identificadas en los diagramas.
 - Despliegue y alineación de antenas PtP para los sectores sin cableado disponible.
-- Integración de los equipos aportados por el proyecto GORE (UDM-Pro, switch, UPS, AP) al sistema UNIFI.
 - Organización y etiquetado del cableado existente en rack principal mediante el patch panel.
 - Pruebas de funcionamiento y entrega formal a la Unidad TI.
 
 === Sistema de vigilancia
-- Instalación de 4 cámaras IP en los puntos definidos por la Unidad TI.
-- Tendido de cableado de red CAT6 desde el grabador NVR a cada cámara.
+- Instalación y fijación de las cámaras IP en los puntos definidos en los diagramas.
+- Tendido de cableado de red desde el grabador NVR a cada cámara.
 - Instalación y configuración del grabador NVR con disco duro (HDD).
 
-=== Proyectores de sala
-- Instalación de 10 proyectores ultracortos Epson EB-685W con Wi-Fi.
-- Fabricación e instalación del sistema de fijación estructural del proyector en cada sala, conforme a lo indicado en el aviso siguiente.
-- Instalación integral (canalizada) de cableado HDMI y de energía eléctrica desde el punto de alimentación más cercano hasta la ubicación del proyector sobre la pizarra, dado que al ser equipos de tiro ultracorto se montan en altura y no cuentan con dichos puntos disponibles en esa posición.
-- Tendido y certificación de punto de red CAT6 por sala de proyección (donde el equipo lo requiera).
-- Configuración de conectividad de red de los proyectores según los parámetros de la Unidad TI.
+=== Proyectores
+Cada proyector, al ser de tiro ultracorto, se monta en altura sobre la pizarra y no cuenta en esa posición con punto eléctrico ni punto de video disponible, por lo que ambos deben tenderse de forma canalizada desde el punto más cercano existente. Esta instalación incluye la fijación estructural del equipo, el punto de energía y el punto de video HDMI; no incluye mobiliario docente ni el equipo del proyector, aportado por el proyecto GORE.
 
-#aviso(tipo: "warning", titulo: "Fijación en muros de material ligero", [Los muros del establecimiento donde se instalarán los proyectores son de vulcanita u otro material ligero, por lo que no admiten un anclaje directo del equipo ni de su soporte. El proveedor deberá fabricar e instalar, según las condiciones particulares de cada sala, una placa metálica pasante que sujete el muro por ambas caras (interior y exterior) o un soporte de techo fabricado en metal que sostenga el equipo de forma segura. La solución estructural aplicada en cada sala queda a criterio y responsabilidad del proveedor al momento de la instalación.])
+Por tratarse de instalaciones más sensibles que el resto del proyecto, deben cumplir como mínimo:
+
+- *Energía:* circuito dedicado con protección termomagnética y diferencial, puesta a tierra verificada, conductor libre de halógeno y enchufe embutido con placa homologada; sin empalmes expuestos.
+- *Video:* canalización separada de la línea de energía para evitar interferencia electromagnética, conector/keystone certificado, respeto del radio de curvatura mínimo del cable y verificación de señal (sin pérdida ni parpadeo) antes de la entrega.
+
+#aviso(tipo: "danger", titulo: "Fijación en muros de material ligero", [
+  Los muros del establecimiento donde se instalarán los proyectores pueden ser de adobe, madera, vulcanita u otro material ligero, por lo que no admiten un anclaje directo y firme del equipo ni de su soporte.
+
+  El proveedor deberá fabricar e instalar, según las condiciones particulares de cada sala, una placa metálica o de madera pasante que sujete el muro por ambas caras (interior y exterior), un soporte de techo fabricado en metal que sostenga el equipo de forma segura si la estructura del edificio lo permite o cualquier tipo de anclaje que asegure la sujeción y evite posibles caidas o desprendimiento de los equipos.
+
+  *La solución estructural aplicada en cada sala queda a criterio y responsabilidad del proveedor al momento de la instalación.*
+])
+
+#aviso(tipo: "info", titulo: "Configuración de los equipos", [
+  La Unidad de Tecnologias de la Información del SLEP Chinchorro se encargara de la configuración de los equipos instalados (UDM-Pro, switch, UPS, AP, proyectores) al sistema UNIFI y/o a la red de datos del establecimiento.
+])
+
+== Cableado y Canalización
+Todo el cableado de cámaras, puntos de acceso, antenas y proyectores (energía y video) debe quedar canalizado con tubos metálicos EMT en exteriores y canaleta blanca en interiores, según las normas de canalizado eléctrico y de corrientes débiles vigentes. Según el diseño de red (Unifi Design), la interconexión de cámaras, puntos de acceso y antenas requiere las siguientes cantidades apróximadas de cable UTP Cat6 LSZH (libre de halógeno) 100% cobre y de canalización metálica EMT:
+
+#tabla(
+  columns: (auto, 1fr, auto),
+  ("#", "Descripción", "Cantidad"),
+  (
+    ("1", "Cable UTP Cat6 LSZH (libre de halógeno) 100% cobre", "420 mts."),
+    ("2", "Canalización metálica EMT con accesorios (uniones, conectores, fijaciones)", "200 mts."),
+  ),
+)
+
+#aviso(tipo: "warning", titulo: "Separación de canalizaciones", [
+  La canalización de datos (cámaras, AP, antenas) y la de energía/video de los proyectores deben tenderse en tubos o canaletas independientes, evitando compartir un mismo ducto entre corrientes fuertes y corrientes débiles.
+])
 
 == Topología de Red
 La arquitectura propuesta reemplaza la dependencia de repetidores inalámbricos en cascada —principal causa de la degradación actual— por un diseño donde cada AP se conecta al switch mediante cableado estructurado. 
 
-El UDM-PRO centraliza la gestión de toda la red desde una única consola UNIFI, lo que simplifica la operación y permite detectar fallas con rapidez. Las antenas PtP LOCO5AC resuelven los sectores sin cableado disponible y los AP exteriores U6-MESH-PRO eliminan las zonas sin cobertura identificadas en la visita.
+El UDM-PRO centraliza la gestión de toda la red desde una única consola UNIFI, lo que simplifica la operación y permite detectar fallas con rapidez. Las antenas PtP LOCO5AC resuelven los sectores de dificil acceso para cablear y los AP exteriores U6-MESH-PRO eliminan las zonas sin cobertura identificadas en la visita.
 
-El siguiente diagrama ilustra la topología lógica y física de la red propuesta:
+El siguiente diagrama ilustra la topología lógica de la red propuesta:
 
 #figure(
   image("img-39/topologia_propuesta.png", height: 8cm, fit:"contain"),
@@ -212,7 +238,7 @@ El diagrama siguiente muestra la distribución propuesta de los equipos dentro d
 
 
 == Distribución de Cámaras de seguridad
-La ubicación de las 4 cámaras IP interiores DAHUA DH-IPC-HFW5859T aportadas por el proyecto GORE se definió priorizando los accesos principales, los pasillos de mayor tránsito y los sectores donde se concentra equipamiento tecnológico sensible, con el objetivo de resguardar tanto la integridad de los usuarios como la del parque tecnológico del establecimiento. Cada cámara se conectará mediante cableado estructurado CAT6 al grabador NVR DAHUA DHI-NVR4108HS-8P-4KS3, que centralizará el almacenamiento y la gestión del sistema de vigilancia. La disposición final de los puntos de cámara, validada junto a la dirección del establecimiento, se ilustra en el siguiente diagrama:
+La ubicación de las 5 cámaras IP DAHUA DH-IPC-HFW5859T aportadas se definió priorizando los accesos principales, los pasillos de mayor tránsito y los sectores donde se concentra equipamiento tecnológico sensible, con el objetivo de resguardar tanto la integridad de los usuarios como la del parque tecnológico del establecimiento. Cada cámara se conectará mediante cableado estructurado CAT6 al grabador NVR DAHUA DHI-NVR4108HS-8P-4KS3, que centralizará el almacenamiento y la gestión del sistema de vigilancia. La disposición final de los puntos de cámara, validada junto a la dirección del establecimiento, se ilustra en el siguiente diagrama:
 
 #figure(
   image("img-39/distribucion_camaras.png"),
@@ -231,10 +257,10 @@ Los 10 proyectores ultracortos Epson EB-685W con Wi-Fi aportados por el proyecto
 )
 
 === Posición en aulas
-Los proyectores deben quedar ubicados según la ilustración a continuación.
+Los proyectores deben quedar ubicados según la ilustración a continuación. El punto de conexión de video para el profesor debe quedar en una ubicación cómoda para él y que no interfiera con el desarrollo de sus clases. Esta imagen es solo de referencia pues cada sala de clases es diferente.
 
 #figure(
-  image("img-39/ilustracion_proyector.png", height: 8cm),
+  image("img-39/ilustracion_proyector.png", height: 9cm),
   caption: [Ilustración generada con Nano Banana 2.]
 )
 
@@ -252,83 +278,81 @@ Los valores presentados a continuación son referenciales y se basan en precios 
     ("1", "AP Indoor Wi-Fi 6", "3", "$290.000", "$870.000"),
     ("2", "AP Exterior Wi-Fi 6", "1", "$381.000", "$381.000"),
     ("3", "Antena PtP 5 GHz 13 dBi", "2", "$80.000", "$160.000"),
-    ("4", "Inyector PoE 48 VDC Gigabit 802.3af", "1", "$15.000", "$15.000"),
+    ("4", "Inyector PoE 24VDC Gigabit 802.3af", "2", "$15.000", "$30.000"),
     ("5", "Cable directo 50 cm SFP+ 10 Gbps", "2", "$29.000", "$58.000"),
     ("6", "Soporte abatible 50 cm para muro", "2", "$12.000", "$24.000"),
     ("7", "Patchcord 10 cm CAT6 RJ45 blanco", "40", "$4.000", "$160.000"),
     ("8", "Tapa negra 1U con cepillo para rack 19\"", "1", "$13.000", "$13.000"),
     ("9", "Patch panel 24p RJ45 CAT6 UTP 1U certificado UL", "1", "$38.000", "$38.000"),
-    ("10", "Cámara IP interior 5MP PoE IP67 IK10", "1", "$169.811", "$169.811"),
-    ("", "*Subtotal equipamiento*", "", "", "*$1.888.811*"),
+    ("10", "Cámara IP interior 8MP PoE IP67 IK10", "1", "$170.000", "$170.000"),
+    ("", "SUBTOTAL", "", "", "*$1.904.000*"),
   ),
 )
 
-#aviso(tipo: "info", titulo: "Precios de Mercado", [Los costos expresados en esta tabla son precios de mercado obtenidos por un análisis de proveedores especializados en tecnología.])
+#aviso(tipo: "info", titulo: "Precios de Mercado", [Los costos expresados en esta tabla son precios de mercado obtenidos por un análisis de proveedores especializados en tecnología como LinkStore (https://www.lk.cl).])
 
 == Costo de Instalación
-La instalación fue dimensionada según el diseño de red elaborado en Unifi Design, que determinó los metrajes de cableado y canalización requeridos para interconectar cámaras, puntos de acceso y antenas, y según estimaciones de la Unidad TI para la mano de obra y los puntos de conexión de los proyectores.
+La instalación fue dimensionada según el diseño de red elaborado en Unifi Design, que determinó los metrajes de cableado y canalización requeridos, y según estimaciones de la Unidad TI para la mano de obra y los puntos de conexión de los proyectores. El costo de instalación incorpora los materiales de canalizado y cableado sin individualizarlos por tramo, salvo el material de datos indicado más abajo, y se organiza en tres frentes: red, CCTV y proyectores.
 
-=== Cableado y canalización de datos
-Según el diseño de red (Unifi Design), la interconexión de cámaras, puntos de acceso y antenas requiere 420 metros de cable UTP Cat6 LSZH (libre de halógeno) 100% cobre y 130 metros de canalización metálica EMT para la protección y el ordenamiento del cableado.
-
-#tabla(
-  columns: (auto, 1fr, auto, auto, auto),
-  ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
-  (
-    ("1", "Cable UTP Cat6 LSZH (libre de halógeno) 100% cobre", "420 m", "$700", "$294.000"),
-    ("2", "Canalización metálica EMT con accesorios (uniones, conectores, fijaciones)", "130 m", "$5.000", "$650.000"),
-    ("", "*Subtotal material cableado y canalización*", "", "", "*$944.000*"),
-  ),
-)
-
-#aviso(tipo: "info", titulo: "Referencia de precio", [El precio del cable UTP Cat6 LSZH 100% cobre (\$700 el metro) y de la canalización EMT (\$5.000 el metro, con accesorios) corresponden a valores entregados directamente por la Unidad TI y se cobran de forma independiente entre sí.])
-
-=== Mano de obra — Canalización y cableado de datos
-El tendido del cableado UTP no se cobra por separado: al instalar la canalización EMT, el cableado se pasa en la misma intervención, ahorrando tiempo de instalación. Por esto, la mano de obra se calcula únicamente sobre los 130 metros de canalización EMT, a \$8.000 el metro, incorporando un 30% de margen de error (169 metros equivalentes) para imprevistos de trazado.
+=== Red de datos e infraestructura Wi-Fi
+Comprende la canalización y el cableado de datos (cámaras, AP y antenas) y el montaje de los equipos activos que requieren manipulación individual. No incluye el montaje de los proyectores, que se presenta en su propia sección.
 
 #tabla(
   columns: (auto, 1fr, auto, auto, auto),
   ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
   (
-    ("1", "Instalación de canalización EMT (incluye tendido simultáneo del cableado UTP), 130 m + 30% margen", "169 m", "$8.000", "$1.352.000"),
-    ("", "*Subtotal mano de obra cableado de datos*", "", "", "*$1.352.000*"),
+    ("1", "Mano de obra — instalación de canalización EMT y tendido del cable UTP", "200 m", "$8.000", "$1.600.000"),
+    ("2", "Material — cable UTP Cat6 LSZH y canalización EMT con accesorios", "420 m + 200 m", "—", "$1.300.000"),
+    ("", "*SUBTOTAL*", "", "", "*$2.900.000*"),
   ),
 )
-
-=== Mano de obra — Instalación de equipos
-Se estima \$41.000 por unidad para la instalación física (montaje, fijación y puesta en servicio) de los equipos que requieren manipulación individual: las antenas PtP con su soporte, los puntos de acceso interiores y exteriores (Mesh), y los proyectores. Este valor es independiente del costo de cableado y canalización de las secciones anteriores.
 
 #tabla(
   columns: (auto, 1fr, auto, auto, auto),
   ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
   (
-    ("1", "Instalación de antena PtP con soporte", "2", "$41.000", "$82.000"),
-    ("2", "Instalación de AP interior", "4", "$41.000", "$164.000"),
-    ("3", "Instalación de AP exterior (Mesh)", "2", "$41.000", "$82.000"),
-    ("4", "Instalación de proyector ultracorto", "10", "$41.000", "$410.000"),
-    ("", "*Subtotal mano de obra instalación de equipos*", "", "", "*$738.000*"),
+    ("1", "Instalación de antena PtP con soporte", "2", "$60.000", "$120.000"),
+    ("2", "Instalación de AP interior", "4", "$40.000", "$160.000"),
+    ("3", "Instalación de AP exterior (Mesh)", "2", "$40.000", "$80.000"),
+    ("", "*SUBTOTAL*", "", "", "*$360.000*"),
   ),
 )
 
-=== Puntos eléctricos para proyectores
-Cada uno de los 10 proyectores requiere un punto de energía dedicado, ya que se instalan en altura sobre la pizarra sin un punto eléctrico cercano disponible. Se considera un trazado de 20 metros de canalización EMT por proyector, con 3 conductores EVAFlex (fase, neutro y tierra) libres de halógeno de 2,5 mm² y el enchufe embutido correspondiente.
+#tabla-kv((
+  ("Canalización y cableado", "$2.900.000"),
+  ("Instalación de equipos", "$360.000"),
+  ("*SUBTOTAL*", "*$3.260.000*"),
+))
+
+=== Cámaras de Seguridad (CCTV)
+Corresponde a la fijación y puesta en servicio de las cámaras IP; su cableado ya está considerado en el material de datos de la sección Red, al compartir la misma canalización.
 
 #tabla(
   columns: (auto, 1fr, auto, auto, auto),
   ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
   (
-    ("1", "Canalización EMT con accesorios (20 m x 10 proyectores)", "200 m", "$5.000", "$1.000.000"),
-    ("2", "Cable EVAFlex libre de halógeno 2,5 mm² (3 conductores x 20 m x 10 proyectores)", "600 m", "$500", "$300.000"),
-    ("3", "Enchufe embutido con placa", "10", "$3.990", "$39.900"),
-    ("", "*Subtotal puntos eléctricos (10 proyectores)*", "", "", "*$1.339.900*"),
+    ("1", "Instalación y fijación de cámara IP", "5", "$40.000", "$200.000"),
+    ("2", "Instalación NVR con disco duro (HDD)", "1", "$40.000", "$40.000"),
+    ("", "*SUBTOTAL*", "", "", "*$240.000*"),
   ),
 )
 
-#aviso(tipo: "info", titulo: "Referencia de precio — Cable EVAFlex", [El valor del cable EVAFlex libre de halógeno 2,5 mm² (\$500 el metro, IVA incluido) se estimó en base a precios de mercado nacional (cable H07Z1-K 2,5 mm² desde \$424 a \$535 el metro según formato). El enchufe embutido con placa (\$3.990) corresponde a un valor de mercado para tomacorrientes tipo Bticino o equivalente.])
+#pagebreak()
 
-=== Puntos HDMI para proyectores
-Al ser proyectores de tiro ultracorto instalados sobre la pizarra, cada sala requiere un punto HDMI dedicado. Se considera una canaleta Legrand de 10 metros por proyector para la conducción visible del cableado, un cable HDMI de 10 metros tendido dentro de la canaleta, un módulo HDMI (keystone) en el punto de conexión y un cable HDMI de 3 metros para la conexión del equipo del docente.
+=== Proyectores
+Incluye el montaje del equipo, el punto de energía y el punto de video HDMI de cada proyector, con los requisitos indicados en "Trabajos a Realizar". No incluye el proyector en sí (aportado por el proyecto GORE) ni el equipo del docente.
 
+#tabla(
+  columns: (auto, 1fr, auto, auto, auto),
+  ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
+  (
+    ("1", "Instalación y fijación de proyector ultracorto", "10", "$40.000", "$400.000"),
+    ("1", "Instalación Punto de energía para proyector", "10", "$40.000", "$400.000"),
+    ("", "*Subtotal montaje de proyectores*", "", "", "*$800.000*"),
+  ),
+)
+
+Además de la instalación de un punto eléctrico se debe considerar la instalación del punto de video para cada profesor con su cableado correspondiente.
 #tabla(
   columns: (auto, 1fr, auto, auto, auto),
   ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
@@ -337,24 +361,27 @@ Al ser proyectores de tiro ultracorto instalados sobre la pizarra, cada sala req
     ("2", "Cable HDMI 10 m (tendido en canaleta)", "10", "$9.990", "$99.900"),
     ("3", "Módulo HDMI (keystone) para punto de conexión", "10", "$6.990", "$69.900"),
     ("4", "Cable HDMI 3 m (conexión del equipo del docente)", "10", "$3.990", "$39.900"),
-    ("", "*Subtotal puntos HDMI (10 proyectores)*", "", "", "*$324.200*"),
+    ("", "*Subtotal punto HDMI*", "", "", "*$324.200*"),
   ),
 )
 
 #aviso(tipo: "info", titulo: "Referencia de precio — Canaleta y HDMI", [Precios de mercado nacional: canaleta Legrand 20x12 mm desde \$1.145 el metro, cable HDMI 10 m desde \$9.990, módulo HDMI keystone desde \$6.990 y cable HDMI 3 m desde \$3.990.])
+
+#tabla-kv((
+  ("Montaje de proyectores", "$410.000"),
+  ("Punto eléctrico", "$364.900"),
+  ("Punto HDMI", "$324.200"),
+  ("*Subtotal Proyectores*", "*$1.099.100*"),
+))
 
 == Costo Total del Proyecto
 #tabla(
   columns: (auto, 1fr, auto),
   ("#", "Componente", "Total (c/IVA)"),
   (
-    ("1", "Equipamiento a adquirir", "$1.888.811"),
-    ("2", "Material cableado y canalización de datos", "$944.000"),
-    ("3", "Mano de obra — canalización y cableado de datos", "$1.352.000"),
-    ("4", "Mano de obra — instalación de equipos", "$738.000"),
-    ("5", "Puntos eléctricos para proyectores (material)", "$1.339.900"),
-    ("6", "Puntos HDMI para proyectores (material)", "$324.200"),
-    ("", "*Total general del proyecto*", "*$6.586.911*"),
+    ("1", "Costo de equipamiento", "$1.954.000"),
+    ("2", "Costo de instalación (red, CCTV y proyectores)", "$3.884.100"),
+    ("", "*Total general del proyecto*", "*$5.838.100*"),
   ),
 )
 
@@ -364,7 +391,7 @@ Al ser proyectores de tiro ultracorto instalados sobre la pizarra, cada sala req
 = Conclusiones
 La red inalámbrica de la Escuela Carlos Condell de la Haza presenta deficiencias concretas que ya están afectando la operación del establecimiento: zonas sin cobertura, un router que no da abasto con los dispositivos actuales y tres AP en mal estado que pueden fallar en cualquier momento. La incorporación de nuevas tablets no hizo más que acelerar un problema que el equipamiento instalado no está en condiciones de absorber.
 
-La propuesta presentada en este informe resuelve cada uno de estos puntos mediante un proyecto de *provisión e instalación* que combina el equipamiento a adquirir con los equipos ya disponibles del proyecto GORE (BIP 40065439-0). La solución centraliza la gestión en un único rack principal y libera el gabinete de Mineduc de cualquier uso distinto al enlace institucional. El costo total referencial del proyecto asciende a \$6.586.911, compuesto por \$1.888.811 de equipamiento y \$4.698.100 de instalación (cableado y canalización de datos, mano de obra de montaje y puesta en servicio, y los puntos eléctricos y HDMI dedicados de cada proyector), y contempla además la organización del cableado mediante un patch panel, aspecto que hoy también representa un riesgo operativo.
+La propuesta presentada en este informe resuelve cada uno de estos puntos mediante un proyecto de *provisión e instalación* que combina el equipamiento a adquirir con los equipos ya disponibles del proyecto GORE (BIP 40065439-0). La solución centraliza la gestión en un único rack principal y libera el gabinete de Mineduc de cualquier uso distinto al enlace institucional. El costo total referencial del proyecto asciende a \$5.838.100, compuesto por \$1.954.000 de equipamiento y \$3.884.100 de instalación (red, CCTV y proyectores, incluyendo materiales de cableado y canalización, mano de obra de montaje y puesta en servicio, y los puntos eléctricos y HDMI dedicados de cada proyector), y contempla además la organización del cableado mediante un patch panel, aspecto que hoy también representa un riesgo operativo.
 
 Externalizar la instalación es la vía correcta para ejecutar este proyecto en el menor tiempo posible: permite aprovechar el equipamiento GORE ya disponible, reduce la carga operativa sobre la Unidad TI y garantiza una implementación técnica que la dotación actual de personal no puede absorber sin afectar otras labores del área.
 
