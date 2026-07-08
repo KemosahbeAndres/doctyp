@@ -492,7 +492,7 @@ def build_typ(f: dict, lib_import: str) -> str:
 #show: report.with(meta: meta)
 
 #s-ficha(meta, rama-git: "{rama}")
-#s-versiones((
+#s-versiones(meta, (
   ("v{f["version"]}", "{fecha_iso}", "{ty_str(f["autor"])}", "Versión inicial."),
 ))
 #s-distribucion((
@@ -892,11 +892,13 @@ def realizar_save(doc: dict, mensaje: str) -> tuple[str, str]:
         sys.exit(f"ERROR: no se encontró el campo 'version:' en {typ_path}.")
 
     fila = f'  ("v{version_nueva}", "{fecha_iso}", "{ty_str(autor)}", "{ty_str(mensaje)}"),\n'
-    nuevo_texto, n = re.subn(r'(#s-versiones\(\(\n)',
+    nuevo_texto, n = re.subn(r'(#s-versiones\(\s*meta\s*,\s*\(\n)',
                              lambda m: m.group(1) + fila,
                              nuevo_texto, count=1)
     if n == 0:
-        sys.exit(f"ERROR: no se encontró el bloque '#s-versiones((' en {typ_path}.")
+        sys.exit(f"ERROR: no se encontró el bloque '#s-versiones(meta, (' en {typ_path}. "
+                 f"¿El documento usa la firma antigua '#s-versiones((...))'? Actualízalo a "
+                 f"'#s-versiones(meta, (...))' (agrega el tag git a la tabla de versiones).")
 
     typ_path.write_text(nuevo_texto, encoding="utf-8")
 

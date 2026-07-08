@@ -81,7 +81,7 @@ doctyp save 1 --m "Corrige la sección de alcance"   # 1 = correlativo del docum
 #show: report.with(meta: meta)
 
 #s-ficha(meta, rama-git: "doc/TI-INF-SEG-2026-0023")
-#s-versiones(( ("v1.0", "2026-06-01", "Nombre Apellido", "Versión inicial."), ))
+#s-versiones(meta, ( ("v1.0", "2026-06-01", "Nombre Apellido", "Versión inicial."), ))
 #s-distribucion(( ("Equipo TI", "Operación documental", "Receptor principal"), ))
 #s-indice()
 
@@ -295,7 +295,7 @@ Ya vienen por defecto (no repetir salvo cambio): `unidad`, `subdireccion`, `inst
 |---|---|---|
 | 1 | Portada | automática (`report`) |
 | 2 | Ficha de control documental | `#s-ficha(meta, rama-git: ...)` |
-| 3 | Control de versiones | `#s-versiones(filas)` |
+| 3 | Control de versiones | `#s-versiones(meta, filas)` |
 | 4 | Distribución | `#s-distribucion(filas)` |
 | 5 | Tabla de contenido | `#s-indice()` |
 | 6 | Resumen ejecutivo | `= Resumen ejecutivo` + prosa |
@@ -364,14 +364,17 @@ typst watch  TI-INF-SEG_2026-0023.typ                           # modo redacció
 **Estructura / secciones**
 - `crear-meta(dict)` — construye `meta` (defaults + overrides). Úsalo siempre.
 - `report` — `#show: report.with(meta:)`. Estilos + portada + contraportada.
-- `s-ficha(meta, rama-git: none)` · `s-versiones(filas)` · `s-distribucion(filas)` · `s-indice()`.
+- `s-ficha(meta, rama-git: none)` · `s-versiones(meta, filas)` · `s-distribucion(filas)` · `s-indice()`.
 - `firmas-estandar(meta)` — firmas tripartitas desde `meta`.
+- `tag-doc(meta, version: none)` — nombre del tag git de una versión (`doc/<anio>-<corr:04d>/v<version>`,
+  sin `version:` usa `meta.version`). Se usa solo para **mostrarlo** (fila "Tag Git" en la ficha,
+  columna bajo "Descripción" en el control de versiones); no verifica que el tag exista en git.
 
 **Componentes**
 - `tabla(columns:, headers, rows)` — tabla cebra con cabecera marino.
 - `tabla-kv(filas)` — 2 columnas etiqueta/valor (filas = lista de `(clave, valor)`).
 - `tabla-prioridad(filas)` — recomendaciones; filas = `(n, recomendación, "Alta"|"Media"|"Baja", responsable)`.
-- `ficha-control(meta, rama-git:)` — tabla de la ficha (la usa `s-ficha`).
+- `ficha-control(meta, rama-git:)` — tabla de la ficha (la usa `s-ficha`; incluye el tag git).
 - `aviso(tipo:, titulo:, cuerpo)` — `tipo` ∈ `"info"` `"advertencia"` `"riesgo"` `"recomendacion"`.
 - `firmas(lista de (rol, nombre, cargo))` — firmas personalizadas.
 - `indice()` · `badge-estado(s)` · `badge-clasificacion(c)` · `codigo-base/completo(meta)`.
@@ -406,6 +409,7 @@ Sugerencia: deja `typst watch <archivo>.typ` corriendo (desde `SCRIPT_DIR`) dura
 | Síntoma | Causa | Solución |
 |---|---|---|
 | `dictionary does not contain key "..."` | `meta` parcial pasado a un helper | Construye `meta` con `crear-meta(...)` |
+| `missing argument: filas` / error de argumentos en `s-versiones` | firma antigua `#s-versiones((...))` (sin `meta`) | Actualiza a `#s-versiones(meta, (...))` — necesita `meta` para calcular el tag git de cada fila |
 | `file not found (Images/...)` o import en rojo | el `.typ` no está junto a `lib.typ` | El documento y `lib.typ` deben estar en la misma carpeta (`SCRIPT_DIR`); el import es local `"lib.typ"` |
 | Recuadros de logo vacíos | faltan los PNG reales | Copia `logoslepch.png` (y `isologo_2.png`) a `Images/` |
 | Tipografía distinta al estándar | Museo Sans no instalada | Instálala o usa `--font-path`; fallback Liberation Sans |

@@ -3,7 +3,7 @@
 
 #let meta = crear-meta((
   area: "TI", tipo: "INF", categoria: "RED",
-  anio: 2026, correlativo: 39, version: "1.3", fecha-codigo: "20260623",
+  anio: 2026, correlativo: 39, version: "1.2", fecha-codigo: "20260623",
   tipo-largo: "Propuesta",
   titulo: "Propuesta de mejora y ampliación de infraestructura tecnológica",
   subtitulo: "Escuela Carlos Condell de la Haza (G-8)",
@@ -373,7 +373,7 @@ Externalizar la instalación es la vía correcta para ejecutar este proyecto en 
 #pagebreak()
 #s-ficha(meta)
 #pagebreak()
-#s-versiones((
+#s-versiones(meta, (
   ("v1.2", "2026-07-07", "Andres Cubillos Salazar", "Ajustes y mejoras en equipamiento. Especificación de requerimientos eléctricos."),
   ("v1.1", "2026-06-25", "Andres Cubillos Salazar", "Ampliación del proyecto a provisión e instalación."),
   ("v1.0", "2026-06-23", "Andres Cubillos Salazar", "Versión inicial. Cotización base de equipamiento sin instalación."),

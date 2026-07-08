@@ -16,8 +16,8 @@
 //   ))
 //   #show: report.with(meta: meta)            // portada + estilos (contraportada al final)
 //
-//   #s-ficha(meta, rama-git: "doc/...")       // 1. Ficha de control
-//   #s-versiones((                            // 2. Control de versiones
+//   #s-ficha(meta, rama-git: "doc/...")       // 1. Ficha de control (incluye el tag git, ver tag-doc)
+//   #s-versiones(meta, (                      // 2. Control de versiones (idem, tag por fila)
 //     ("v1.0", "2026-06-01", "Autor", "Versión inicial."),
 //   ))
 //   #s-distribucion((                         // 3. Distribución
@@ -135,6 +135,20 @@
   meta.area + "-" + meta.tipo + "-" + meta.categoria + "_" + str(meta.anio) + "-" + n
 }
 #let codigo-completo(meta) = codigo-base(meta) + "_v" + meta.version + "_" + meta.fecha-codigo
+
+// Quita un eventual prefijo "v"/"V" de una cadena de versión ("v1.2" → "1.2").
+#let _sin-v(version) = if version.starts-with("v") or version.starts-with("V") {
+  version.slice(1)
+} else { version }
+
+// Nombre del tag git de una versión (ver `doctyp git-init`/`save`, misma convención que el CLI):
+// doc/<anio>-<correlativo:04d>/v<version>. Se calcula desde `meta`, nunca se guarda aparte,
+// así que queda al día solo con que `meta.version` lo esté (lo actualiza `doctyp save`).
+#let tag-doc(meta, version: none) = {
+  let n = str(meta.correlativo)
+  while n.len() < 4 { n = "0" + n }
+  "doc/" + str(meta.anio) + "-" + n + "/v" + _sin-v(if version == none { meta.version } else { version })
+}
 
 // Badge genérico
 #let badge(txt, fondo) = box(
@@ -367,6 +381,7 @@
     ("Código completo",    raw(codigo-completo(meta))),
     ("Título",             meta.titulo),
     ("Versión",            "v" + meta.version),
+    ("Tag Git",            raw(tag-doc(meta))),
     ("Fecha de emisión",   meta.fecha-codigo),
     ("Estado",             badge-estado(meta.estado)),
     ("Clasificación",      badge-clasificacion(meta.clasificacion)),
@@ -438,12 +453,17 @@
 }
 
 // 2 · Control de versiones — filas: (versión, fecha, autor, descripción)
-#let s-versiones(filas) = {
+// El tag git de cada fila se calcula solo (misma convención que `doctyp`, ver `tag-doc`);
+// por eso `s-versiones` recibe `meta` — así queda al día sin que `doctyp save` deba tocarlo.
+#let s-versiones(meta, filas) = {
   heading(level: 1)[Control de versiones]
   tabla(
     columns: (auto, auto, 1fr, 2.4fr),
     ("Versión", "Fecha", "Autor", "Descripción del cambio"),
-    filas,
+    filas.map(((version, fecha, autor, descripcion)) => (
+      version, fecha, autor,
+      [#descripcion #linebreak() #text(size: 8pt, fill: gris-texto)[#raw(tag-doc(meta, version: version))]],
+    )),
   )
 }
 

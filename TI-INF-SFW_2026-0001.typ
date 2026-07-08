@@ -12,7 +12,7 @@
 #show: report.with(meta: meta)
 
 #s-ficha(meta, rama-git: "doc/TI-INF-SFW-2026-0001")
-#s-versiones((
+#s-versiones(meta, (
   ("v1.0.0", "2026-06-21", "John Doe", "Versión inicial."),
 ))
 #s-distribucion((
