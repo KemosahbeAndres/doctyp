@@ -97,11 +97,9 @@ Mejorar y ampliar la infraestructura de red inalámbrica de la Escuela Carlos Co
 #pagebreak()
 = Propuesta técnica
 == Alcance del Proyecto: Provisión e Instalación
-Este proyecto contempla tanto la *provisión* (adquisición) del equipamiento detallado en las secciones siguientes, como su *instalación* completa en las dependencias del establecimiento.
+Este proyecto contempla tanto la *provisión* (adquisición) del equipamiento detallado en las secciones siguientes, como su *instalación* completa en las dependencias del establecimiento bajo la supervisión técnica de la Unidad TI del SLEP Chinchorro.
 
 Dado que la Unidad de Tecnologías de la Información no cuenta con los recursos de personal ni el tiempo disponible para ejecutar la instalación en el plazo requerido, se propone *externalizar la instalación* mediante la contratación de un proveedor especializado que ejecute el trabajo de forma oportuna y bajo supervisión técnica de la Unidad TI.
-
-La supervisión técnica, la validación de la configuración y la recepción conforme del proyecto quedarán a cargo de la Unidad de Tecnologías de la Información del SLEP Chinchorro.
 
 == Equipamiento a Adquirir
 Para dar respuesta a las problemáticas identificadas, se propone la adquisición e instalación del siguiente equipamiento:
@@ -110,15 +108,15 @@ Para dar respuesta a las problemáticas identificadas, se propone la adquisició
   columns: (auto, 1fr, auto),
   ("#", "Descripción", "Cantidad"),
   (
-    ("1", "Access Point Indoor Wi-Fi6 5/2,4GHz, 1×Gigabit-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U7-PRO.", "3"),
-    ("2", "Access Point Outdoor Wi-Fi6 5/2,4GHz, 1×Gigabit-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U7-PRO-OUTDOOR.", "1"),
+    ("1", "Access Point Indoor WiFi7 9,3Gbps 2,4/5/6GHz RJ45-2.5-Gigabit PoE+ compatible con UNIFI similar a UBIQUITI [U7-PRO]", "3"),
+    ("2", "Access Point Outdoor  2,4/5/6GHz 10Gbps WiFi7 IP67 PoE+ compatible con UNIFI similar a UBIQUITI [U7-PRO-OUTDOOR]", "1"),
     ("3", "Antena PtP 5GHz 16dBi 25dBm 2xGigabit PoE-in/out (inyector 24V incluido) (airMAXac compatible) similar a UBIQUITI NS-5AC", "2"),
     ("4", "Inyector PoE Gigabit 48VDC 30W Inyector PoE+ 0,65A 802.3at similar a UBIQUITI U-POE+", "2"),
     ("5", "Cable directo 50cm SFP+ 10 Gbps, similar a UBIQUITI UACC-DAC-SFP10-0.5M.", "2"),
     ("6", "Soporte universal abatible 50cm para muro, similar a UBIQUITI UB-AM.", "2"),
     ("7", "Patchcord 10cm CAT6 RJ45 blanco, similar a UBIQUITI WUP-01.", "40"),
     ("8", "Tapa negra 1U con apertura de cepillo para rack 19\", similar a LINKMADE RAP-1C.", "1"),
-    ("9", "Patchpanel 24 puertos metal req-24-Keystone c/Soporte 1U Vacio Unloaded similar a LINKMADE PP6AFL", "1"),
+    ("9", "Patchpanel 24 puertos metal c/Soporte 1U Vacio (Unloaded) similar a LINKMADE PP6AFL", "1"),
     ("10", "Keystone Punchable Blanco Cat6 U/UTP Hembra RJ45 (compatible con PP6AFL) similar a LINKMADE KP6WL", "24"),
     ("11", "Cámara IP de seguridad 8MP PoE IP67 IK10, similar a DAHUA DH-IPC-HFW5859T (compatible con el NVR y las cámaras aportadas por el proyecto GORE).", "1"),
     ("12", "Cable HDMI 3 mts 4K 2.0 blindado", "10"),
@@ -164,15 +162,17 @@ Según el diseño de red (Unifi Design), la interconexión de cámaras, puntos d
   ),
 )
 
-#pagebreak()
 
-=== Lista de materiales
 
-Para la instalación 
 
-#aviso(tipo: "warning", titulo: "Separación de canalizaciones", [
+#aviso(tipo: "warning", [
   La canalización de datos (cámaras, AP, antenas) y la de energía/video de los proyectores deben tenderse en tubos o canaletas independientes, evitando compartir un mismo ducto entre corrientes fuertes y corrientes débiles.
 ])
+
+==== Puntos eléctricos para Proyectores
+
+Toda
+
 
 #pagebreak()
 
@@ -180,16 +180,37 @@ Para la instalación
 El proveedor contratado ejecutará los siguientes trabajos bajo supervisión técnica de la Unidad TI:
 
 - Montaje físico del equipamiento activo en rack principal.
-- Tendido y certificación de cableado estructurado a los puntos de acceso definidos en la topología.
-- Instalación y reemplazo de los AP Indoor en las zonas identificadas en los diagramas.
-- Instalación de los AP Exterior en las zonas identificadas en los diagramas.
+- Tendido del cableado estructurado a los puntos de acceso definidos en la topología.
+- Instalación de los AP Interiores en las zonas identificadas en los diagramas.
+- Instalación de los AP Exteriores en las zonas identificadas en los diagramas.
 - Despliegue y alineación de antenas PtP para los sectores sin cableado disponible.
 - Organización y etiquetado del cableado existente en rack principal mediante el patch panel.
-- Pruebas de funcionamiento y entrega formal a la Unidad TI.
+- Pruebas de funcionamiento y certificación de los puntos de red.
 
 #aviso(tipo: "info", titulo: "Configuración de los equipos", [
   La Unidad de Tecnologias de la Información del SLEP Chinchorro se encargara de la configuración de los equipos instalados (UDM-Pro, switch, UPS, AP, proyectores) al sistema UNIFI y/o a la red de datos del establecimiento.
 ])
+
+
+Todos los repetidores que se instalen deben instalarse en el techo junto a un punto de red como se muestra en la imagen a continuación:
+
+#figure(
+  image("/img-39/ap-techo.png", height: 8cm),
+  caption: [Repetidor Wi-Fi en techo junto a su punto de red.]
+)
+
+Para realizar esta instalación el proveedor debe incluir en la cotización de su servicio los siguientes materiales y accesorios, según sea necesario:
+
+- Caja chuqui metálica
+- Faceplate blanco (modulo simple)
+- Modulo Keystone RJ45 Cat6 (compatible con faceplate)
+- Tornillos para anclaje y sujeción.
+
+#aviso[Para una correcta instalación, el punto debe quedar etiquetado identificando el rack y patchpanel al que pertenece. No se aceptara otro tipo de instalación]
+
+=== Distribución de Access Point (AP)
+
+
 
 === Topología de Red
 La arquitectura propuesta reemplaza la dependencia de repetidores inalámbricos en cascada —principal causa de la degradación actual— por un diseño donde cada AP se conecta al switch mediante cableado estructurado. 
@@ -205,15 +226,19 @@ El siguiente diagrama ilustra la topología lógica de la red propuesta:
 
 #pagebreak()
 
+
+
 === Diagrama de Cobertura Wi-Fi
 El diagrama de cobertura permite validar que la disposición propuesta de los AP elimina las zonas sin señal detectadas durante la visita, garantizando conectividad en todos los sectores del establecimiento. 
 
 La cobertura estimada en banda 5 GHz (utilizada para actividades pedagógicas) confirma que el diseño alcanza los espacios donde hoy no existe señal o esta es insuficiente:
 
 #figure(
-  image("img-39/cobertura_wifi_5g.png", height: 10cm),
+  image("img-39/cobertura_wifi_5g.png", height: 8cm),
   caption: [Cobertura Wi-Fi estimada — banda 5 GHz]
 )
+
+
 
 #pagebreak()
 
