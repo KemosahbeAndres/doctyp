@@ -15,7 +15,7 @@ Uso rápido:
     doctyp new "Auditoría de respaldos"                   # título posicional + defaults de autoría
     doctyp n --t "Manual de red" --tipo MAN --categoria RED
     doctyp save 1 --m "Corrige sección de alcance"        # sube versión (1.0.0 -> 1.0.1) del doc 0001
-    doctyp compile 1                                      # compila el doc 0001 a PDF
+    doctyp compile 1                                      # sube versión (pide mensaje si falta) y compila a PDF
     doctyp edit 1                                         # elige editor de forma interactiva
     doctyp ls
 
@@ -314,8 +314,11 @@ def agregar_doctyp_json(cwd: Path, correlativo: int, anio: int,
 
 def leer_doctyp_json(cwd: Path) -> list[dict] | None:
     """Lee doctyp.json del directorio actual.
-    Devuelve la lista de entradas o None si no existe o es inválido.
+    Devuelve la lista de entradas o None si no existe, es inválido, o cwd es SCRIPT_DIR
+    (ahí el registro ya vive en settings.json; doctyp.json no se lee ni se crea).
     Migra el formato anterior (dict plano) de forma transparente."""
+    if cwd.resolve() == SCRIPT_DIR.resolve():
+        return None
     path = cwd / DOCTYP_JSON
     if not path.exists():
         return None
@@ -731,45 +734,23 @@ def buscar_doc(registro: dict, correlativo: int, anio: int) -> dict:
     return docs[0]
 
 
-def cmd_save(args):
-    registro = cargar_registro(SCRIPT_DIR)
-    anio = args.anio or datetime.date.today().year
-
-    # Correlativo: si no se pasó por CLI, selección interactiva
-    if getattr(args, "correlativo", None) is None:
-        docs = sorted(
-            [d for d in registro["documentos"] if d.get("anio") == anio],
-            key=lambda d: d.get("correlativo", 0),
-        )
-        if not docs:
-            sys.exit(f"ERROR: no hay documentos registrados para {anio}.")
-        etiquetas = []
-        for d in docs:
-            vers = d.get("versiones") or []
-            ver_str = f"v{vers[-1]['version']}" if vers else ""
-            etiquetas.append(
-                f"{d.get('correlativo', 0):04d}  {d.get('codigo_base', '')}  "
-                f"{ver_str}  ·  {d.get('titulo', '')}"
-            )
-        idx = _seleccionar(etiquetas, f"Documentos registrados ({anio}):")
-        if idx is None:
-            print("  Cancelado.")
-            return
-        doc = docs[idx]
-    else:
-        doc = buscar_doc(registro, args.correlativo, anio)
-
-    # Mensaje: si no se pasó por CLI, pedirlo interactivamente
-    mensaje = getattr(args, "mensaje", None) or ""
+def pedir_mensaje_version() -> str | None:
+    """Pide interactivamente el mensaje de una nueva versión. None si se cancela."""
+    try:
+        mensaje = input("  Mensaje de la nueva versión: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
     if not mensaje:
-        try:
-            mensaje = input("  Mensaje de la nueva versión: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            return
-        if not mensaje:
-            sys.exit("ERROR: el mensaje es obligatorio.")
+        sys.exit("ERROR: el mensaje es obligatorio.")
+    return mensaje
 
+
+def realizar_save(doc: dict, mensaje: str) -> tuple[str, str]:
+    """Sube el patch de versión de `doc`: actualiza el .typ (campo `version:` y
+    tabla `#s-versiones`) y añade la entrada al registro en memoria (`doc["versiones"]`).
+    No persiste el registro en disco; el llamador debe hacer `guardar_registro(...)`.
+    Devuelve (version_actual, version_nueva)."""
     typ_path = Path(doc["ruta"])
     if not typ_path.exists():
         sys.exit(f"ERROR: el archivo registrado no existe: {typ_path}")
@@ -801,13 +782,52 @@ def cmd_save(args):
     doc.setdefault("versiones", []).append({
         "version": version_nueva, "fecha": fecha, "creado": ahora, "mensaje": mensaje,
     })
+    return version_actual, version_nueva
+
+
+def cmd_save(args):
+    registro = cargar_registro(SCRIPT_DIR)
+    anio = args.anio or datetime.date.today().year
+
+    # Correlativo: si no se pasó por CLI, selección interactiva
+    if getattr(args, "correlativo", None) is None:
+        docs = sorted(
+            [d for d in registro["documentos"] if d.get("anio") == anio],
+            key=lambda d: d.get("correlativo", 0),
+        )
+        if not docs:
+            sys.exit(f"ERROR: no hay documentos registrados para {anio}.")
+        etiquetas = []
+        for d in docs:
+            vers = d.get("versiones") or []
+            ver_str = f"v{vers[-1]['version']}" if vers else ""
+            etiquetas.append(
+                f"{d.get('correlativo', 0):04d}  {d.get('codigo_base', '')}  "
+                f"{ver_str}  ·  {d.get('titulo', '')}"
+            )
+        idx = _seleccionar(etiquetas, f"Documentos registrados ({anio}):")
+        if idx is None:
+            print("  Cancelado.")
+            return
+        doc = docs[idx]
+    else:
+        doc = buscar_doc(registro, args.correlativo, anio)
+
+    # Mensaje: si no se pasó por CLI, pedirlo interactivamente
+    mensaje = getattr(args, "mensaje", None) or ""
+    if not mensaje:
+        mensaje = pedir_mensaje_version()
+        if mensaje is None:
+            return
+
+    version_actual, version_nueva = realizar_save(doc, mensaje)
     guardar_registro(SCRIPT_DIR, registro)
 
     print()
     _ok(f"Versión actualizada: {_c(_C.DIM, 'v' + version_actual)} → "
         f"{_c(_C.BOLD + _C.CYAN, 'v' + version_nueva)}")
     print(f"       Documento: {_c(_C.BOLD, doc['codigo_base'])}")
-    print(f"       Archivo:   {_c(_C.DIM, str(typ_path))}")
+    print(f"       Archivo:   {_c(_C.DIM, str(Path(doc['ruta'])))}")
     print(f"       Mensaje:   {mensaje}\n")
 
 
@@ -957,7 +977,19 @@ def cmd_compile(args):
     if not typ_path.exists():
         sys.exit(f"ERROR: el archivo registrado no existe: {typ_path}")
 
-    version = (doc.get("versiones") or [{}])[-1].get("version", "1.0")
+    # Commit de versión implícito: cada compilación sube el patch antes de generar el PDF,
+    # así el documento (portada, ficha, tabla de versiones) siempre refleja la versión compilada.
+    mensaje = getattr(args, "mensaje", None) or ""
+    if not mensaje:
+        mensaje = pedir_mensaje_version()
+        if mensaje is None:
+            return
+
+    version_actual, version = realizar_save(doc, mensaje)
+    guardar_registro(SCRIPT_DIR, registro)
+    _ok(f"Versión actualizada: {_c(_C.DIM, 'v' + version_actual)} → "
+        f"{_c(_C.BOLD + _C.CYAN, 'v' + version)}")
+
     pdf_versioned_name = f"{typ_path.stem} (v{version}).pdf"
 
     print(f"\n  Compilando {_c(_C.BOLD, doc['codigo_base'])} → "
@@ -1332,10 +1364,13 @@ def build_parser() -> argparse.ArgumentParser:
     pi.set_defaults(func=cmd_import)
 
     pc = sub.add_parser("compile", aliases=["c"],
-                        help="Compila un documento a PDF (queda junto al .typ).")
+                        help="Sube versión (commit implícito) y compila el documento a PDF.")
     pc.add_argument("correlativo", type=int, nargs="?", metavar="CORRELATIVO",
                     help="Número correlativo del documento a compilar. "
                          "Si se omite, se lee de doctyp.json en el directorio actual.")
+    pc.add_argument("--mensaje", "--m", dest="mensaje",
+                    help="Mensaje de la nueva versión que se sube antes de compilar. "
+                         "Si se omite, se pide interactivo.")
     pc.add_argument("--anio", type=int, help="Año del documento (por defecto, el actual).")
     pc.set_defaults(func=cmd_compile)
 
@@ -1384,7 +1419,7 @@ def menu_interactivo() -> None:
         ("add",           "a",               "Importar un .typ existente al registro"),
         ("import",        "i",               "Anclar un documento del registro en doctyp.json"),
         ("delete",        "del",             "Eliminar un documento del sistema"),
-        ("compile",       "c",               "Compilar un documento a PDF"),
+        ("compile",       "c",               "Subir versión y compilar un documento a PDF"),
         ("edit",          "code / e / open", "Abrir un documento en el editor"),
         ("reset",         "",                "Fijar el inicio del correlativo del año"),
         ("config-author", "author",          "Configurar el autor global"),

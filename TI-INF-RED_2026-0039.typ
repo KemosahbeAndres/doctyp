@@ -3,7 +3,7 @@
 
 #let meta = crear-meta((
   area: "TI", tipo: "INF", categoria: "RED",
-  anio: 2026, correlativo: 39, version: "1.1", fecha-codigo: "20260623",
+  anio: 2026, correlativo: 39, version: "1.3", fecha-codigo: "20260623",
   tipo-largo: "Propuesta",
   titulo: "Propuesta de mejora y ampliación de infraestructura tecnológica",
   subtitulo: "Escuela Carlos Condell de la Haza (G-8)",
@@ -28,7 +28,7 @@ Estas deficiencias se agravan por la incorporación reciente de nuevas tablets d
 
 Frente a este escenario, *se propone un proyecto de provisión e instalación de equipamiento de red de nueva generación*. Esto incluye el reemplazo de los AP deteriorados, la cobertura de las zonas sin señal y la integración del router UDM-Pro y demás equipos ya adquiridos mediante el proyecto GORE (*BIP 40065439-0*). Dado que la Unidad TI no dispone del personal para ejecutar la instalación en el plazo requerido, se propone externalizar esta tarea a un proveedor especializado bajo supervisión técnica del área.
 
-El costo referencial del equipamiento a adquirir, basado en precios de mercado a la fecha del informe, asciende a *\$1.954.000*, mientras que el costo de instalación (red, CCTV y proyectores) asciende a *\$3.884.100*, para un *total general de \$5.838.100*. Estos montos no incluyen el equipamiento ya financiado por el proyecto GORE. Como Unidad de Tecnologías de la Información le recomendamos realizar estas mejoras pues garantizarán una conectividad estable y dimensionada para el parque tecnológico actual y su crecimiento proyectado.
+El costo referencial del equipamiento a adquirir, basado en precios de mercado a la fecha del informe, asciende a *\$2.546.000*, mientras que el costo de instalación (red, CCTV y proyectores) asciende a *\$5.060.000*, para un *total general de \$7.606.000*. Estos montos no incluyen el equipamiento ya financiado por el proyecto GORE. Como Unidad de Tecnologías de la Información le recomendamos realizar estas mejoras pues garantizarán una conectividad estable y dimensionada para el parque tecnológico actual y su crecimiento proyectado.
 
 #pagebreak()
 = Antecedentes
@@ -110,21 +110,20 @@ Para dar respuesta a las problemáticas identificadas, se propone la adquisició
   columns: (auto, 1fr, auto),
   ("#", "Descripción", "Cantidad"),
   (
-    ("1", "Access Point Indoor Wi-Fi 6 5/2,4 GHz, 1×Gigabit-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U6-PRO.", "3"),
-    ("2", "Access Point Exterior Wi-Fi 6 5/2,4 GHz, 1×Gigabit-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U6-MESH-PRO.", "1"),
-    ("3", "Antena PtP 5GHz 13dBi Gigabit PoE24V (airMAXac compatible) similar a UBIQUITI LOCO 5AC.", "2"),
-    ("4", "Inyector PoE 24VDC 7W Gigabit 0,3A (cable poder trebol incluido) similar a UBIQUITI POE-24-7W.", "2"),
+    ("1", "Access Point Indoor Wi-Fi6 5/2,4GHz, 1×Gigabit-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U7-PRO.", "3"),
+    ("2", "Access Point Outdoor Wi-Fi6 5/2,4GHz, 1×Gigabit-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U7-PRO-OUTDOOR.", "1"),
+    ("3", "Antena PtP 5GHz 16dBi 25dBm 2xGigabit PoE-in/out (inyector 24V incluido) (airMAXac compatible) similar a UBIQUITI NS-5AC", "2"),
+    ("4", "Inyector PoE Gigabit 48VDC 30W Inyector PoE+ 0,65A 802.3at similar a UBIQUITI U-POE+", "2"),
     ("5", "Cable directo 50cm SFP+ 10 Gbps, similar a UBIQUITI UACC-DAC-SFP10-0.5M.", "2"),
     ("6", "Soporte universal abatible 50cm para muro, similar a UBIQUITI UB-AM.", "2"),
     ("7", "Patchcord 10cm CAT6 RJ45 blanco, similar a UBIQUITI WUP-01.", "40"),
     ("8", "Tapa negra 1U con apertura de cepillo para rack 19\", similar a LINKMADE RAP-1C.", "1"),
-    ("9", "Patch panel 24 puertos RJ45 CAT6 UTP 1U certificado UL, similar a LINKMADE PP624L.", "1"),
-    ("10", "Cámara IP de seguridad 8MP PoE IP67 IK10, similar a DAHUA DH-IPC-HFW5859T (compatible con el NVR y las cámaras aportadas por el proyecto GORE).", "1"),
-    ("11", "Cable HDMI 3 mts 4K 2.0 blindado", "10"),
+    ("9", "Patchpanel 24 puertos metal req-24-Keystone c/Soporte 1U Vacio Unloaded similar a LINKMADE PP6AFL", "1"),
+    ("10", "Keystone Punchable Blanco Cat6 U/UTP Hembra RJ45 (compatible con PP6AFL) similar a LINKMADE KP6WL", "24"),
+    ("11", "Cámara IP de seguridad 8MP PoE IP67 IK10, similar a DAHUA DH-IPC-HFW5859T (compatible con el NVR y las cámaras aportadas por el proyecto GORE).", "1"),
+    ("12", "Cable HDMI 3 mts 4K 2.0 blindado", "10"),
   ),
 )
-
-#pagebreak()
 
 == Equipamiento Aportado por Proyecto GORE (BIP 40065439-0)
 El siguiente equipamiento ya fue adquirido en el marco del proyecto del Gobierno Regional (GORE), código BIP 40065439-0, y será incorporado a este proyecto sin costo adicional:
@@ -146,6 +145,37 @@ El siguiente equipamiento ya fue adquirido en el marco del proyecto del Gobierno
 
 #aviso(tipo: "info", titulo: "Equipamiento GORE", [Los equipos listados en esta tabla no se incluyen en el costo estimado del proyecto, ya que fueron financiados mediante el proyecto GORE BIP 40065439-0 y están disponibles para su instalación.])
 
+
+== Especificaciones Generales
+
+=== Cableado y canalización
+
+Según el diseño de red (Unifi Design), la interconexión de cámaras, puntos de acceso y antenas requiere las siguientes cantidades apróximadas de cable UTP CAT6 LSZH (libre de halógeno) 100% cobre y de canalización metálica EMT:
+
+#tabla(
+  columns: (auto, 1fr, auto),
+  ("#", "Descripción", "Cantidad"),
+  (
+    ("1", "Cable UTP Cat6 LSZH (libre de halógeno) 100% cobre", "360 mts."),
+    ("2", "Canalización metálica EMT con accesorios (uniones, conectores, fijaciones)", "210 mts."),
+    ("3", "Cable HDMI 4K 2.0", "50 mts."),
+    ("3", "Cable EVAFlex 2.5mm (50m rojo, 50m verde, 50m blanco)", "150 mts."),
+    ("4", "Canaleta blanca 20x12", "50 mts."),
+  ),
+)
+
+#pagebreak()
+
+=== Lista de materiales
+
+Para la instalación 
+
+#aviso(tipo: "warning", titulo: "Separación de canalizaciones", [
+  La canalización de datos (cámaras, AP, antenas) y la de energía/video de los proyectores deben tenderse en tubos o canaletas independientes, evitando compartir un mismo ducto entre corrientes fuertes y corrientes débiles.
+])
+
+#pagebreak()
+
 == Instalación de la Infraestructura de Red
 El proveedor contratado ejecutará los siguientes trabajos bajo supervisión técnica de la Unidad TI:
 
@@ -161,22 +191,6 @@ El proveedor contratado ejecutará los siguientes trabajos bajo supervisión té
   La Unidad de Tecnologias de la Información del SLEP Chinchorro se encargara de la configuración de los equipos instalados (UDM-Pro, switch, UPS, AP, proyectores) al sistema UNIFI y/o a la red de datos del establecimiento.
 ])
 
-=== Cableado y Canalización
-Todo el cableado de cámaras, puntos de acceso, antenas y proyectores (energía y video) debe quedar canalizado con tubos metálicos EMT en exteriores y canaleta blanca en interiores, según las normas de canalizado eléctrico y de corrientes débiles vigentes. Según el diseño de red (Unifi Design), la interconexión de cámaras, puntos de acceso y antenas requiere las siguientes cantidades apróximadas de cable UTP Cat6 LSZH (libre de halógeno) 100% cobre y de canalización metálica EMT:
-
-#tabla(
-  columns: (auto, 1fr, auto),
-  ("#", "Descripción", "Cantidad"),
-  (
-    ("1", "Cable UTP Cat6 LSZH (libre de halógeno) 100% cobre", "220 mts."),
-    ("2", "Canalización metálica EMT con accesorios (uniones, conectores, fijaciones)", "180 mts."),
-  ),
-)
-
-#aviso(tipo: "warning", titulo: "Separación de canalizaciones", [
-  La canalización de datos (cámaras, AP, antenas) y la de energía/video de los proyectores deben tenderse en tubos o canaletas independientes, evitando compartir un mismo ducto entre corrientes fuertes y corrientes débiles.
-])
-
 === Topología de Red
 La arquitectura propuesta reemplaza la dependencia de repetidores inalámbricos en cascada —principal causa de la degradación actual— por un diseño donde cada AP se conecta al switch mediante cableado estructurado. 
 
@@ -185,7 +199,7 @@ El UDM-PRO centraliza la gestión de toda la red desde una única consola UNIFI,
 El siguiente diagrama ilustra la topología lógica de la red propuesta:
 
 #figure(
-  image("img-39/topologia_propuesta.png", height: 10cm, fit:"contain"),
+  image("img-39/topologia_propuesta.png", height: 8cm, fit:"contain"),
   caption: [Topología de red propuesta]
 )
 
@@ -225,6 +239,14 @@ La ubicación de las 5 cámaras IP DAHUA DH-IPC-HFW5859T aportadas se definió p
   caption: [Distribución de cámaras de seguridad]
 )
 
+#aviso(tipo: "info", titulo: "Consideraciones", [
+  Los equipos deben ser instalados y configurados según las instrucciones de la unidad de Tecnologías de la Información para segurar un correcto flujo de datos y evitar posibles saturaciones de la red.
+
+  Cada cámara debe estar cableada directamente al NVR ubicado en el rack principal. No se acepta la conexión de switch ni equipos intermedios a la red de datos o de cámaras.
+])
+
+#pagebreak()
+
 == Instalación de Proyectores
 
 === Tareas
@@ -249,9 +271,10 @@ Por tratarse de instalaciones más sensibles que el resto del proyecto, deben cu
 Los 10 proyectores ultracortos Epson EB-685W con Wi-Fi aportados por el proyecto GORE se distribuirán en las salas de clases definidas por la dirección del establecimiento, priorizando aquellas con mayor uso pedagógico diario. Dada su naturaleza de tiro ultracorto, cada equipo se monta en altura, sobre la pizarra de la sala respectiva, lo que minimiza las sombras proyectadas por el docente y optimiza el aprovechamiento del espacio disponible. La conectividad de red de cada proyector se gestionará vía Wi-Fi según los parámetros definidos por la Unidad TI. Las particularidades constructivas de las salas —detalladas en la sección "Trabajos a Realizar"— condicionan tanto la fijación del equipo como el tendido de energía y HDMI hasta su ubicación final. La disposición específica por sala se muestra en el siguiente diagrama:
 
 #figure(
-  image("img-39/distribucion-proyectores.png", height: 8cm),
+  image("img-39/distribucion-proyectores.png", height: 9cm),
   caption: [Distribución de proyectores]
 )
+
 
 === Posición
 Los proyectores deben quedar ubicados según la ilustración a continuación. El punto de conexión de video para el profesor debe quedar en una ubicación cómoda para él y que no interfiera con el desarrollo de sus clases. Esta imagen es solo de referencia pues cada sala de clases es diferente.
@@ -265,42 +288,42 @@ Los proyectores deben quedar ubicados según la ilustración a continuación. El
 #pagebreak()
 
 = Costos estimados
-Los valores presentados a continuación son referenciales y se basan en precios de mercado a la fecha del informe. Los montos definitivos estarán sujetos al proceso de adquisición y contratación que corresponda. El presupuesto se organiza en dos componentes: el *costo de equipamiento* a adquirir y el *costo de instalación* (materiales y mano de obra) necesario para dejar el proyecto completamente operativo.
+El presupuesto se organiza en dos componentes: el *costo de equipamiento* a adquirir y el *costo de instalación* (materiales y mano de obra) necesario para dejar el proyecto completamente operativo.
 
 == Costo de Equipamiento
 #tabla(
   columns: (auto, 1fr, auto, auto, auto),
   ("#", "Descripción", "Cant.", "Precio unit. (c/IVA)", "Total (c/IVA)"),
   (
-    ("1", "AP Indoor Wi-Fi 6", "3", "$290.000", "$870.000"),
-    ("2", "AP Exterior Wi-Fi 6", "1", "$381.000", "$381.000"),
-    ("3", "Antena PtP 5 GHz 13 dBi", "2", "$80.000", "$160.000"),
-    ("4", "Inyector PoE 24VDC Gigabit 802.3af", "2", "$15.000", "$30.000"),
-    ("5", "Cable directo 50 cm SFP+ 10 Gbps", "2", "$29.000", "$58.000"),
-    ("6", "Soporte abatible 50 cm para muro", "2", "$12.000", "$24.000"),
-    ("7", "Patchcord 10 cm CAT6 RJ45 blanco", "40", "$4.000", "$160.000"),
-    ("8", "Tapa negra 1U con cepillo para rack 19\"", "1", "$13.000", "$13.000"),
-    ("9", "Patch panel 24p RJ45 CAT6 UTP 1U certificado UL", "1", "$38.000", "$38.000"),
-    ("10", "Cámara IP interior 8MP PoE IP67 IK10", "1", "$170.000", "$170.000"),
-    ("11", "Cable HDMI 3 mts 4K 2.0 blindado", "10", "$5.000", "$50.000"),
-    ("", "SUBTOTAL", "", "", "*$1.954.000*"),
+    ("1", "Access Point Indoor Wi-Fi6 5/2,4GHz, 1×Gigabit-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U7-PRO.", "3", "$345.000", "$1.035.000"),
+    ("2", "Access Point Outdoor Wi-Fi6 5/2,4GHz, 1×Gigabit-RJ45 PoE+, compatible con UNIFI, similar a UBIQUITI U7-PRO-OUTDOOR.", "1", "$540.000", "$540.000"),
+    ("3", "Antena PtP 5GHz 16dBi 25dBm 2xGigabit PoE-in/out (inyector 24V incluido) (airMAXac compatible) similar a UBIQUITI NS-5AC", "2", "$185.000", "$370.000"),
+    ("4", "Inyector PoE Gigabit 48VDC 30W Inyector PoE+ 0,65A 802.3at similar a UBIQUITI U-POE+", "2", "$25.000", "$50.000"),
+    ("5", "Cable directo 50cm SFP+ 10 Gbps, similar a UBIQUITI UACC-DAC-SFP10-0.5M.", "2", "$29.000", "$58.000"),
+    ("6", "Soporte universal abatible 50cm para muro, similar a UBIQUITI UB-AM.", "2", "$12.000", "$24.000"),
+    ("7", "Patchcord 10cm CAT6 RJ45 blanco, similar a UBIQUITI WUP-01.", "40", "$4.000", "$160.000"),
+    ("8", "Tapa negra 1U con apertura de cepillo para rack 19\", similar a LINKMADE RAP-1C.", "1", "$13.000", "$13.000"),
+    ("9", "Patchpanel 24 puertos metal req-24-Keystone c/Soporte 1U Vacio Unloaded similar a LINKMADE PP6AFL", "1", "$16.000", "$16.000"),
+    ("10", "Keystone Punchable Blanco Cat6 U/UTP Hembra RJ45 (compatible con PP6AFL) similar a LINKMADE KP6WL", "24", "$2.500", "$60.000"),
+    ("11", "Cámara IP de seguridad 8MP PoE IP67 IK10, similar a DAHUA DH-IPC-HFW5859T.", "1", "$170.000", "$170.000"),
+    ("12", "Cable HDMI 3 mts 4K 2.0 blindado", "10", "$5.000", "$50.000"),
+    ("", "SUBTOTAL", "", "", "*$2.546.000*"),
   ),
 )
 
 #aviso(tipo: "info", titulo: "Precios de Mercado", [Los costos expresados en esta tabla son precios de mercado obtenidos por un análisis de proveedores especializados en tecnología como LinkStore (https://www.lk.cl).])
 
-#pagebreak()
-
 == Costo de Instalación
 La instalación fue dimensionada según el diseño de red elaborado en Unifi Design, que determinó los metrajes de cableado y canalización requeridos, y según estimaciones de la Unidad TI para la mano de obra y los puntos de conexión de los proyectores:
 
 #tabla-kv((
-  ("Canalización y cableado", "$3.400.000"),
+  ("Canalización y cableado (materiales)", "$1.600.000"),
+  ("Instalación de canalización y cableado", "$1.500.000"),
   ("Instalación de equipos de Red", "$360.000"),
-  ("Instalación sistema de videovigilancia ", "$240.000"),
-  ("Montaje de proyectores", "$410.000"),
+  ("Instalación sistema de videovigilancia ", "$400.000"),
+  ("Montaje de proyectores", "$500.000"),
   ("Puntos eléctricos y de video para proyectores", "$700.000"),
-  ("*SUBTOTAL*", "*$5.110.000*"),
+  ("*SUBTOTAL*", "*$5.060.000*"),
 ))
 
 == Costo Total del Proyecto
@@ -308,9 +331,9 @@ La instalación fue dimensionada según el diseño de red elaborado en Unifi Des
   columns: (auto, 1fr, auto),
   ("#", "Item", "Total (c/IVA)"),
   (
-    ("1", "Costo de equipamiento", "$1.954.000"),
-    ("2", "Costo de instalación (red, CCTV y proyectores)", "$5.110.000"),
-    ("", "*Total general del proyecto*", "*$7.064.000*"),
+    ("1", "Costo de equipamiento", "$2.546.000"),
+    ("2", "Costo de instalación (red, CCTV y proyectores)", "$5.060.000"),
+    ("", "*Total general del proyecto*", "*$7.606.000*"),
   ),
 )
 
@@ -320,7 +343,7 @@ La instalación fue dimensionada según el diseño de red elaborado en Unifi Des
 = Conclusiones
 La red inalámbrica de la Escuela Carlos Condell de la Haza presenta deficiencias concretas que ya están afectando la operación del establecimiento: zonas sin cobertura, un router que no da abasto con los dispositivos actuales y tres AP en mal estado que pueden fallar en cualquier momento. La incorporación de nuevas tablets no hizo más que acelerar un problema que el equipamiento instalado no está en condiciones de absorber.
 
-La propuesta presentada en este informe resuelve cada uno de estos puntos mediante un proyecto de *provisión e instalación* que combina el equipamiento a adquirir con los equipos ya disponibles del proyecto GORE (BIP 40065439-0). La solución centraliza la gestión en un único rack principal y libera el gabinete de Mineduc de cualquier uso distinto al enlace institucional. El costo total referencial del proyecto asciende a \$5.838.100, compuesto por \$1.954.000 de equipamiento y \$3.884.100 de instalación (red, CCTV y proyectores, incluyendo materiales de cableado y canalización, mano de obra de montaje y puesta en servicio, y los puntos eléctricos y HDMI dedicados de cada proyector), y contempla además la organización del cableado mediante un patch panel, aspecto que hoy también representa un riesgo operativo.
+La propuesta presentada en este informe resuelve cada uno de estos puntos mediante un proyecto de *provisión e instalación* que combina el equipamiento a adquirir con los equipos ya disponibles del proyecto GORE (BIP 40065439-0). La solución centraliza la gestión en un único rack principal y libera el gabinete de Mineduc de cualquier uso distinto al enlace institucional. El costo total referencial del proyecto asciende a \$7.606.000, compuesto por \$2.546.000 de equipamiento y \$5.060.000 de instalación (red, CCTV y proyectores, incluyendo materiales de cableado y canalización, mano de obra de montaje y puesta en servicio, y los puntos eléctricos y HDMI dedicados de cada proyector), y contempla además la organización del cableado mediante un patch panel, aspecto que hoy también representa un riesgo operativo.
 
 Externalizar la instalación es la vía correcta para ejecutar este proyecto en el menor tiempo posible: permite aprovechar el equipamiento GORE ya disponible, reduce la carga operativa sobre la Unidad TI y garantiza una implementación técnica que la dotación actual de personal no puede absorber sin afectar otras labores del área.
 
@@ -351,6 +374,8 @@ Externalizar la instalación es la vía correcta para ejecutar este proyecto en 
 #s-ficha(meta)
 #pagebreak()
 #s-versiones((
+  ("v1.3", "2026-07-08", "Andres Cubillos Salazar", "Uniforma nombres y descripciones de items entre el itemizado y la lista de costos"),
+  ("v1.2", "2026-07-07", "Andres Cubillos Salazar", "Ajustes y mejoras en equipamiento. Especificación de requerimientos eléctricos."),
   ("v1.1", "2026-06-25", "Andres Cubillos Salazar", "Ampliación del proyecto a provisión e instalación."),
   ("v1.0", "2026-06-23", "Andres Cubillos Salazar", "Versión inicial. Cotización base de equipamiento sin instalación."),
 ))

@@ -15,7 +15,9 @@
 - **El correlativo NUNCA se inventa:** es secuencial automático. Genera los documentos con
   `doctyp` (§3) o, si creas el archivo a mano, calcula el siguiente con `doctyp list`.
   La fuente de verdad del correlativo y de las versiones es `settings.json` (junto al script).
-- Tras cada cambio, **compila y verifica** (§7). No afirmar que algo funciona sin compilarlo.
+- **No compiles automáticamente.** La compilación (§7) la hace el usuario de forma manual;
+  no ejecutes `doctyp compile` salvo que lo pida explícitamente. Edita el `.typ` y avisa que
+  queda listo para compilar. No afirmes que algo "compila" o "funciona" si no lo compilaste tú.
 - Diffs mínimos; una sola fuente de verdad (todo dato en `meta`); sin hardcodear estilos.
 
 ---
@@ -231,7 +233,7 @@ Lo invocan `init` (Linux/macOS) e `init.ps1` (Windows); volver a ejecutarlos per
 1. Ejecuta `doctyp list` para conocer el próximo correlativo (informativo).
 2. Ejecuta `doctyp new "..."` (ajusta `--tipo`/`--categoria`/autoría si hace falta).
 3. Abre el `.typ` creado y **rellena las secciones marcadas `// TODO`** con el contenido del usuario.
-4. Compila con `doctyp compile <correlativo>` (§7) e itera.
+4. Deja el documento listo; **no compiles** (§0, §7) — el usuario compila manualmente cuando quiera revisar el PDF.
 
 > El script localiza `lib.typ` junto a sí mismo (resolviendo el symlink). No usa `--root`.
 > Instalación: `for n in doctyp ty tp dt; do ln -sf "$(pwd)/doctyp.py" ~/.local/bin/$n; done`
@@ -301,10 +303,14 @@ Patrón: `AREA-TIPO-CAT_AAAA-NNNN_vX.Y_AAAAMMDD` → p. ej. `TI-INF-SEG_2026-002
 
 ---
 
-## 7. Compilar  (hazlo tras cada edición)
+## 7. Compilar  (lo hace el usuario, de forma manual)
+
+**Claude Code no ejecuta esto por su cuenta** (§0) salvo que el usuario lo pida explícitamente;
+la compilación queda a criterio del usuario, que la corre cuando quiere revisar el PDF.
 
 **Recomendado:** `doctyp compile <correlativo>` — localiza el documento por el registro, le pasa
-`--font-path` automáticamente y deja el PDF junto al `.typ` (§3, subcomando `compile`).
+`--font-path` automáticamente, deja el PDF junto al `.typ` y sube la versión (commit implícito;
+§3, subcomando `compile`).
 
 ```bash
 doctyp compile 23                            # vía el generador (maneja fuentes y entorno)
@@ -358,9 +364,12 @@ Cuando el usuario diga “redactemos un informe sobre X”:
    `doctyp new "<título>"` (ajusta `--tipo`/`--categoria`/autoría solo si difieren de los defaults).
 3. **Rellena las secciones `// TODO`** del archivo con el contenido del usuario, siguiendo la
    estructura canónica (§5). Usa `aviso(...)` para estados/riesgos y `tabla(...)`/`tabla-prioridad(...)` para datos.
-4. **Compila** con `doctyp compile <correlativo>` (§7) y revisa el PDF; corrige e **itera** sección por sección.
-5. Al cerrar una versión: `doctyp save <correlativo> --m "<qué cambió>"` sube el patch, actualiza
-   el `version:` del `.typ` y añade la fila a `s-versiones` automáticamente. Reporta el `codigo-completo`.
+4. **No compiles tú** (§0, §7): deja el `.typ` listo y avisa. El usuario compila manualmente con
+   `doctyp compile <correlativo>` cuando quiere revisar el PDF; corrige e **itera** sección por
+   sección según su feedback.
+5. Si el usuario pide subir versión sin compilar: `doctyp save <correlativo> --m "<qué cambió>"`
+   sube el patch, actualiza el `version:` del `.typ` y añade la fila a `s-versiones`
+   automáticamente. Reporta el `codigo-completo`.
 
 Sugerencia: deja `typst watch <archivo>.typ` corriendo (desde `SCRIPT_DIR`) durante la redacción.
 
@@ -389,4 +398,5 @@ Sugerencia: deja `typst watch <archivo>.typ` corriendo (desde `SCRIPT_DIR`) dura
    Sube versión con `doctyp save <correlativo> --m "..."`. Subcomandos con alias: `list/ls`,
    `new/n`, `save/s`, `add/a`, `compile/c`, `edit/code/e/open`.
 3. Rellena los `// TODO` siguiendo la estructura canónica (§5) y la API (§8).
-4. Compila con `doctyp compile <correlativo>` tras cada cambio (§7) y reporta el `codigo-completo`.
+4. **No compiles automáticamente** (§0, §7): el usuario compila manualmente. Reporta el
+   `codigo-completo` tras cada cambio.
