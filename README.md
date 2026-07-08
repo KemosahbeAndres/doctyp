@@ -17,6 +17,8 @@ central, evitando números repetidos o saltados.
 - **Correlativo secuencial anual**, con punto de inicio configurable (`reset`).
 - **Gestión centralizada**: todos los documentos viven junto a la plantilla (`lib.typ`).
 - **Versionado semántico** del documento y de su tabla de control de versiones (`save`).
+- **Snapshots de versión con git**: cada `new`/`save`/`add` crea un commit y un tag anotado
+  recuperable con `history`/`restore` (opcional; se degrada sin errores si no hay git).
 - **Compilación a PDF** con resolución correcta de plantilla y fuentes.
 - **Apertura en el editor** (VS Code o el favorito del sistema).
 - Sin dependencias de Python externas (solo biblioteca estándar).
@@ -314,6 +316,9 @@ doctyp compile <correlativo>                 # (c)               compila a PDF (
 doctyp edit  <correlativo>                   # (code, e, open)   abre el .typ con selección interactiva de editor
 doctyp reset [<correlativo>]                 #                   fija dónde empieza el correlativo del año (def. 1)
 doctyp config-author                         # (author)          configura el autor global (settings.json → local.author)
+doctyp git-init                              #                   inicializa/migra el repo git para snapshots (idempotente)
+doctyp history <doc-ref>                     # (h, log)          versiones de un documento y si tienen snapshot
+doctyp restore <doc-ref> [--pdf] [--stdout]  #                   extrae una versión anterior desde su snapshot git
 ```
 
 ### Ejemplos
@@ -381,6 +386,65 @@ Patrón: `AREA-TIPO-CAT_AAAA-NNNN_vX.Y.Z_AAAAMMDD` → p. ej. `TI-INF-SFW_2026-0
   EVL Evaluación · ETT Esp. Técnica · ACT Acta.
 - **Categorías:** SEG, RED, HRW, SFW, DAT, SRV, PRV, GOB, USR, CPD, BCK, PRY, CAP.
 - **NNNN** es el correlativo secuencial global anual (4 dígitos), asignado automáticamente.
+
+---
+
+## Snapshots con Git
+
+`doctyp` guarda, **opcionalmente**, el contenido de cada versión de un documento en git: una
+sola rama (nunca crea ramas por documento) + **un tag anotado por versión**, con el patrón
+`doc/<año>-<correlativo:04d>/v<versión>` (p. ej. `doc/2026-0039/v1.2`). El registro de
+correlativos y versiones sigue viviendo en `settings.json`; git solo añade la posibilidad de
+**recuperar el contenido** de una versión anterior, que de otro modo se pierde al sobrescribir
+el `.typ` en cada `save`/`compile`.
+
+### Activarlo
+
+```bash
+doctyp git-init
+```
+
+Es **idempotente** (puedes correrlo varias veces sin duplicar nada): inicializa el repositorio si
+no existe, agrega `*.pdf` y `__pycache__/` al `.gitignore`, ofrece configurar la identidad git
+local con los datos de `settings.json → local.author` si falta, hace un commit inicial si hay
+cambios pendientes y crea **tags retroactivos** para la **última** versión de cada documento ya
+registrado (las versiones intermedias guardadas antes de activar esto no tienen contenido
+recuperable).
+
+A partir de ahí, cada `doctyp new`, `doctyp save` y `doctyp compile` crea automáticamente un
+commit y su tag; si git no está instalado o el directorio no es un repositorio, estos comandos
+**siguen funcionando exactamente igual** (solo se imprime un aviso) — nunca se bloquean por
+falta de git.
+
+### Sintaxis doc-ref
+
+Los comandos `history` y `restore` referencian un documento y (opcionalmente) una versión con:
+
+```
+<correlativo>[:<version>][@<año>]
+```
+
+| Referencia | Significado |
+|---|---|
+| `39` | doc 0039 del año actual, **última** versión |
+| `39:1.2` | doc 0039 del año actual, versión 1.2 |
+| `39:1.2@2025` | doc 0039 del año 2025, versión 1.2 |
+| `39@2025` | doc 0039 del año 2025, última versión |
+
+(`39/1.2` es equivalente a `39:1.2`; `/` y `:` son intercambiables como separador de versión.)
+
+### Ver historial y restaurar una versión
+
+```bash
+doctyp history 39            # lista las versiones y si cada una tiene snapshot (✔/–)
+doctyp restore 39:1.2        # extrae esa versión a TI-..._v1.2.typ, sin tocar el vigente
+doctyp restore 39            # sin versión: usa la anterior a la vigente
+doctyp restore 39:1.2 --pdf     # además la compila a PDF
+doctyp restore 39:1.2 --stdout  # imprime el contenido en vez de escribir un archivo
+```
+
+`restore` **nunca sobrescribe** el `.typ` vigente ni un archivo restaurado previamente: si el
+destino ya existe, se detiene con un error.
 
 ---
 

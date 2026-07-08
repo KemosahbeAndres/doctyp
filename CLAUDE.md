@@ -135,6 +135,9 @@ doctyp compile <correlativo>                 # (alias: c)             compila a 
 doctyp edit <correlativo>                    # (alias: code, e, open) abre el .typ con selección interactiva de editor
 doctyp reset [<correlativo>]                 #                        fija dónde empieza el correlativo del año (def. 1)
 doctyp config-author                         # (alias: author)        configura el autor global (settings.json → local.author)
+doctyp git-init                              #                        inicializa/migra snapshots git (idempotente)
+doctyp history <doc-ref>                     # (alias: h, log)        versiones de un doc y si tienen snapshot git
+doctyp restore <doc-ref> [--pdf] [--stdout]  #                        extrae una versión anterior desde su snapshot git
 ```
 El título de `new` admite tres formas: posicional (`doctyp new "Título"`), `--t "Título"`
 o `--titulo "Título"`.
@@ -228,6 +231,29 @@ cargo, correo) y los guarda en `settings.json → local.author`. Es interactivo:
 el valor actual entre paréntesis y, si lo dejas en blanco, se mantiene. Estos valores son el
 **default de autoría** de `doctyp new` (sobre ellos siempre ganan `--autor`/`--cargo`/`--correo`).
 Lo invocan `init` (Linux/macOS) e `init.ps1` (Windows); volver a ejecutarlos permite cambiarlos.
+
+### Snapshots de versión con git (`git-init` / `history` / `restore`)
+Opcional: rama única + **un tag anotado por versión** (`doc/<año>-<correlativo:04d>/v<version>`,
+p. ej. `doc/2026-0039/v1.2`). El registro de correlativos/versiones sigue siendo `settings.json`;
+git solo permite **recuperar el contenido** de una versión anterior (que de otro modo se pierde
+al sobrescribir el `.typ` en cada `save`/`compile`).
+
+- `doctyp git-init` — idempotente: inicializa el repo si falta, agrega `*.pdf` y `__pycache__/`
+  al `.gitignore`, ofrece configurar la identidad git local con `settings.json → local.author`,
+  hace un commit inicial si hay cambios pendientes y crea tags retroactivos para la **última**
+  versión de cada documento ya registrado (las intermedias, guardadas antes de esto, no tienen
+  contenido recuperable).
+- Cada `new`/`save`/`compile` crea después, automáticamente, un commit + su tag. **Degradación
+  elegante:** si git no está instalado o el directorio no es un repositorio, esos comandos
+  siguen funcionando exactamente igual (solo se imprime un aviso); nunca se bloquean por
+  falta de git.
+- **Doc-ref** (usado por `history`/`restore`): `<correlativo>[:<version>][@<año>]` — p. ej.
+  `39`, `39:1.2`, `39:1.2@2025`, `39@2025`. (`/` es intercambiable con `:` como separador.)
+- `doctyp history <doc-ref>` lista las versiones del documento y si cada una tiene snapshot (`✔`/`–`).
+- `doctyp restore <doc-ref> [--pdf] [--stdout]` extrae esa versión a `<código-base>_v<version>.typ`
+  **sin tocar jamás el `.typ` vigente** (si el destino ya existe, aborta). Sin versión explícita,
+  usa la anterior a la vigente. `--pdf` la compila también; `--stdout` imprime el contenido en
+  vez de escribir un archivo.
 
 ### Cómo lo usa Claude Code
 1. Ejecuta `doctyp list` para conocer el próximo correlativo (informativo).

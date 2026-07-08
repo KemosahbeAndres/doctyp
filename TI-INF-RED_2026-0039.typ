@@ -374,7 +374,6 @@ Externalizar la instalación es la vía correcta para ejecutar este proyecto en 
 #s-ficha(meta)
 #pagebreak()
 #s-versiones((
-  ("v1.3", "2026-07-08", "Andres Cubillos Salazar", "Uniforma nombres y descripciones de items entre el itemizado y la lista de costos"),
   ("v1.2", "2026-07-07", "Andres Cubillos Salazar", "Ajustes y mejoras en equipamiento. Especificación de requerimientos eléctricos."),
   ("v1.1", "2026-06-25", "Andres Cubillos Salazar", "Ampliación del proyecto a provisión e instalación."),
   ("v1.0", "2026-06-23", "Andres Cubillos Salazar", "Versión inicial. Cotización base de equipamiento sin instalación."),
