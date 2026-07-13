@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from "vue";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { typstLanguage, typstHighlighting } from "../codemirror/typst-lang.js";
@@ -14,15 +14,16 @@ const emit = defineEmits(["update:modelValue"]);
 
 const host = ref(null);
 let view = null;
+const editableCompartment = new Compartment();
 
 const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
 
 const theme = EditorView.theme({
   "&": { height: "100%", fontSize: "0.9rem" },
   ".cm-scroller": { fontFamily: "var(--mono)", lineHeight: "1.5", overflow: "auto" },
-  ".cm-content": { padding: "1em 0" },
+  ".cm-content": { padding: "1em 0", caretColor: "var(--text)" },
   ".cm-gutters": { backgroundColor: "var(--bg-panel)", color: "var(--text-dim)", border: "none" },
-});
+}, { dark: prefersDark });
 
 onMounted(() => {
   view = new EditorView({
@@ -37,7 +38,7 @@ onMounted(() => {
         typstHighlighting(prefersDark),
         EditorView.lineWrapping,
         theme,
-        EditorView.editable.of(!props.disabled),
+        editableCompartment.of(EditorView.editable.of(!props.disabled)),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             const value = update.state.doc.toString();
@@ -57,6 +58,13 @@ watch(
     if (nuevo !== actual) {
       view.dispatch({ changes: { from: 0, to: actual.length, insert: nuevo } });
     }
+  },
+);
+
+watch(
+  () => props.disabled,
+  (disabled) => {
+    view?.dispatch({ effects: editableCompartment.reconfigure(EditorView.editable.of(!disabled)) });
   },
 );
 

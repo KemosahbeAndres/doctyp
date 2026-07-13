@@ -121,8 +121,26 @@ function volverAGrid() {
   vista.value = "grid";
 }
 
+function irADocumentos() {
+  if (vista.value === "documento" && editorSucio.value
+    && !window.confirm("Tienes cambios sin guardar en el editor. ¿Salir igualmente?")) {
+    return;
+  }
+  if (vista.value === "plantilla" && plantillaEditorSucio.value
+    && !window.confirm("Tienes cambios sin guardar en la plantilla. ¿Salir igualmente?")) {
+    return;
+  }
+  vista.value = "grid";
+  cargarDocs();
+}
+
 function irAPlantillas() {
-  if (plantillaEditorSucio.value && !window.confirm("Tienes cambios sin guardar en la plantilla. ¿Salir igualmente?")) {
+  if (vista.value === "documento" && editorSucio.value
+    && !window.confirm("Tienes cambios sin guardar en el editor. ¿Salir igualmente?")) {
+    return;
+  }
+  if (vista.value === "plantilla" && plantillaEditorSucio.value
+    && !window.confirm("Tienes cambios sin guardar en la plantilla. ¿Salir igualmente?")) {
     return;
   }
   vista.value = "plantillas";
@@ -245,6 +263,7 @@ onUnmounted(() => {
           {{ a.nombre }}{{ a.activo ? " (yo)" : "" }}
         </option>
       </select>
+      <button title="Documentos" @click="irADocumentos">Documentos</button>
       <button title="Editor de plantillas" @click="irAPlantillas">Plantillas</button>
       <button title="Gestionar organización" @click="mostrarGestor = true">⚙ Organización</button>
     </div>
