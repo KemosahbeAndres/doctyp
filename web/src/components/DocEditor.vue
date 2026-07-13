@@ -3,6 +3,7 @@ import { ref, computed, watch } from "vue";
 import { getTyp, putTyp, guardarVersion, compilar } from "../api.js";
 import MetaEditorModal from "./MetaEditorModal.vue";
 import StatusBar from "./StatusBar.vue";
+import VistaPrevia from "./VistaPrevia.vue";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -139,12 +140,15 @@ function onMetaGuardado(res) {
       <div v-if="mensaje" class="estado editor-mensaje" :style="{ color: mensajeEsError ? 'var(--danger)' : undefined }">
         {{ mensaje }}
       </div>
-      <textarea
-        class="editor-textarea"
-        v-model="texto"
-        :disabled="cargando"
-        spellcheck="false"
-      ></textarea>
+      <div class="editor-preview-split">
+        <textarea
+          class="editor-textarea"
+          v-model="texto"
+          :disabled="cargando"
+          spellcheck="false"
+        ></textarea>
+        <VistaPrevia :slug="slug" :codigo="codigo" :texto="texto" />
+      </div>
       <StatusBar
         :slug="slug"
         :codigo="codigo"

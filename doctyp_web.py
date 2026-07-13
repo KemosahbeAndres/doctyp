@@ -320,6 +320,20 @@ def api_doc_miniatura(slug: str, codigo_base: str) -> Path:
     return cache
 
 
+def api_doc_vista_previa(slug: str, codigo_base: str, texto: str) -> Path:
+    """Compila el texto en edición (aún sin guardar) a un PDF temporal -- nunca toca el .typ
+    real ni cambia versión. Siempre recompila (sin cache, a diferencia de la miniatura)."""
+    org = _cargar_org_api(slug)
+    _doc_o_404(org, codigo_base)
+    dest_dir = core.doc_dir(slug, codigo_base)
+    if not dest_dir.is_dir():
+        raise ApiError(404, f"la carpeta del documento no existe: {dest_dir}")
+    pdf, error_msg = core.compilar_vista_previa(dest_dir, codigo_base, texto)
+    if pdf is None:
+        raise ApiError(422, error_msg)
+    return pdf
+
+
 def api_doc_save(slug: str, codigo_base: str, mensaje: str) -> dict:
     if not mensaje:
         raise ApiError(400, "el mensaje es obligatorio")
@@ -633,6 +647,11 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             if sub == "miniatura" and len(segs) == 5 and metodo == "GET":
                 ruta_png = api_doc_miniatura(slug, codigo_base)
                 self._binario(200, ruta_png.read_bytes(), "image/png")
+                return
+            if sub == "vista-previa" and len(segs) == 5 and metodo == "POST":
+                cuerpo = self._leer_cuerpo_json()
+                ruta_pdf = api_doc_vista_previa(slug, codigo_base, cuerpo.get("contenido", ""))
+                self._binario(200, ruta_pdf.read_bytes(), "application/pdf")
                 return
             self._error(404, "ruta de API desconocida")
             return

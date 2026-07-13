@@ -154,6 +154,26 @@ export function urlMiniatura(slug, codigo) {
   return `/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/miniatura`;
 }
 
+/** Compila el texto en edición a un PDF temporal. Devuelve un Blob (no JSON, a diferencia de
+ * request()) o lanza Error con el mensaje de typst si falla la compilación. */
+export async function compilarVistaPrevia(slug, codigo, contenido) {
+  const res = await fetch(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/vista-previa`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contenido }),
+  });
+  if (!res.ok) {
+    let mensaje = `error ${res.status}`;
+    try {
+      mensaje = (await res.json()).error || mensaje;
+    } catch {
+      // sin cuerpo JSON
+    }
+    throw new Error(mensaje);
+  }
+  return res.blob();
+}
+
 export function guardarVersion(slug, codigo, mensaje) {
   return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/save`, {
     method: "POST",

@@ -415,8 +415,9 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 5 | SPA Vue 3: CRUD de autores/equipos por org, orgs/carpetas/documentos + editor | **Completada** |
 | 6 | Generacion de snapshots propios. Las versiones futuras se almacenaran en un sistema de control de versiones propio y simple dejando de lado git. generacion de snapshots, similar a git, con algoritmo propio y sistema de gestion de versiones propio pero simple. almacenar snapshots en: 'carpeta de cada documento > .snapshots' y acceder a ellos para verlos y hacer comparaciones (funcionalidad futura).  | **Completada** |
 | 7 | Vista de documentos en formato de cuadricula como pantalla principal con una pequeña vista previa de la primera pagina de cada documento de su ultima compilacion o una compilacion temporal del documento actual. Barra de estado inferior indicando la version actual, con desplegable para seleccionar otras versiones y ver sus diferencias con la actual. Tambien la barra de estado indicara si hay cambios y tendra los botones para guardar y para hacer commit de una nueva version. Tambien indicara la cantidad de palabras y otra informacion relevante como tamaño de archivo y un boton para que typst compile. | **Completada** |
-| 8 | La vista de documento solo se dividira en dos debajo del navbar: editor y vista previa. La App Web debe mostrar una vista previa del informe/doumento generado para poder editar y visualizar directamente en la interfaz de la misma manera que la app web typst. Se debe generar un compilado fresco on-demand cada vez para mostrar la vista previa, el archivo compilado no se guardara o se guardara de manera temporal con un nombre temporal en el directorio raiz del documento. | Pendiente |
-| 9 | Editor de plantillas con CRUD completo y seleccion de plantilla con modal al crear documento nuevo. Usar vista dividida: editor y vista previa similar a typst. Al editar una plantilla se debera mostrar un documento. Explorar otras soluciones de compilado/precompilado/vistaprevia/cache. | Pendiente |
+| 8 | La vista de documento solo se dividira en dos debajo del navbar: editor y vista previa. La App Web debe mostrar una vista previa del informe/doumento generado para poder editar y visualizar directamente en la interfaz de la misma manera que la app web typst. Se debe generar un compilado fresco on-demand cada vez para mostrar la vista previa, el archivo compilado no se guardara o se guardara de manera temporal con un nombre temporal en el directorio raiz del documento. | **Completada** |
+| 9 | Editor de plantillas con CRUD completo y seleccion de plantilla en el modal al crear documento nuevo. Usar vista dividida: editor y vista previa similar a typst. Al editar una plantilla se debera mostrar un documento. Explorar otras soluciones de compilado/precompilado/vistaprevia/cache. | Pendiente |
+| 10 | Editor de texto/codigo debe mostrar en colores los codigos/funciones/variables de typst como un editor de codigo moderno. La division por colores permite una mejor edicion para el usuario. Usar la convencion de colores de Typst y/o la que usa VSCode con la extension de Typst. | Pendiente |
 
 **Nota sobre el alcance real de las Etapas 2 y 3** (decisión explícita, amplía lo descrito arriba):
 - Todos los comandos (`new`, `save`, `compile`, `edit`, `add`, `delete`, `import`, `history`,
@@ -530,6 +531,29 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 - Cantidad de palabras y tamaño de archivo se calculan en el cliente sobre el texto en
   edición (no sobre el archivo en disco), igual que el indicador de cambios sin guardar —
   quedan "vivos" mientras se escribe, sin ida y vuelta al servidor.
+
+**Nota sobre el alcance real de la Etapa 8**:
+- **No es un renderizador de Typst en WASM/navegador** (tipo `typst.ts`) — el texto del
+  roadmap describe exactamente un compilado servidor con archivo temporal ("se guardará de
+  manera temporal con un nombre temporal en el directorio raíz del documento"), así que se
+  reutiliza `typst compile` (ya dependencia del proyecto) con el mismo patrón que
+  `compilar_typ`/`generar_miniatura`.
+- `compilar_vista_previa()` (`doctyp.py`) escribe el texto en edición (incluye cambios sin
+  guardar) a un `.typ` temporal oculto junto al documento
+  (`.<código-base>.preview.typ` → `.<código-base>.preview.pdf`) — **nunca toca el `.typ` real
+  ni el PDF de "Compilar"**, y nunca cambia versión ni `org.json`. A diferencia de la
+  miniatura, no cachea: recompila "fresco" en cada llamada, tal como pide el texto. Errores de
+  compilación devuelven el `stderr` de typst tal cual (`ApiError(422, ...)`), mostrado en el
+  panel de vista previa en vez de dejarlo en blanco.
+- Gatillo de recompilación (decisión del usuario): **ambos** — debounce automático (~1.2s sin
+  escribir, `VistaPrevia.vue`) y botón manual "Actualizar vista previa" que cancela el
+  debounce pendiente para evitar una compilación en carrera.
+- Render vía `<embed type="application/pdf">` con la salida real de typst (Object URL,
+  revocado en cada reemplazo y al desmontar) — sin visor de páginas por imagen ni dependencias
+  nuevas de PDF.js; el navegador se encarga del scroll/zoom.
+- `DocEditor.vue` pasa de editor a ancho completo a un split de dos columnas
+  (`.editor-preview-split`: textarea + `VistaPrevia.vue`), con `StatusBar` sin cambios,
+  abarcando el ancho completo debajo del split.
 
 ---
 
