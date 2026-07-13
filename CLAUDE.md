@@ -408,7 +408,8 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 3 | Adaptación de comandos existentes, retiro de git, ajustes de plantilla (`rama-git`), escrituras atómicas | **Completada** |
 | 4 | Backend `doctyp web`: API JSON + SSE + estáticos + auto-apertura del navegador | **Completada** |
 | 5 | SPA Vue 3: CRUD de autores/equipos por org, orgs/carpetas/documentos + editor | Pendiente |
-| 6 | Proyectos (funcionalidad futura) | Pendiente |
+| 6 | Generacion de snapshots propios. Las versiones futuras se almacenaran en un sistema de control de versiones propio y simple dejando de lado git. generacion de snapshots, similar a git, con algoritmo propio y sistema de gestion de versiones propio pero simple. almacenar snapshots en: 'carpeta de cada documento > .snapshots' y acceder a ellos para verlos y hacer comparaciones (funcionalidad futura).  | Pendiente |
+| 7 | Precompilado o Vista previa de typst en cliente web. La App Web debe mostrar una vista previa del informe/doumento generado para poder editar y visualizar directamente en la interfaz de la misma manera que la app web typst. | Pendiente |
 
 **Nota sobre el alcance real de las Etapas 2 y 3** (decisión explícita, amplía lo descrito arriba):
 - Todos los comandos (`new`, `save`, `compile`, `edit`, `add`, `delete`, `import`, `history`,

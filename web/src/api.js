@@ -25,6 +25,17 @@ export function getOrg(slug) {
   return request(`/api/orgs/${enc(slug)}`);
 }
 
+export function crearOrg(payload) {
+  return request("/api/orgs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function activarOrg(slug) {
+  return request(`/api/orgs/${enc(slug)}/activar`, { method: "POST" });
+}
+
 export function listDocs(slug) {
   return request(`/api/orgs/${enc(slug)}/documentos`);
 }
@@ -42,6 +53,58 @@ export function getTiposDocumento() {
 
 export function listPlantillas(slug) {
   return request(`/api/orgs/${enc(slug)}/plantillas`);
+}
+
+export function fijarPlantillaDefault(slug, nombre) {
+  return request(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/default`, { method: "POST" });
+}
+
+export function listEquipos(slug) {
+  return request(`/api/orgs/${enc(slug)}/equipos`);
+}
+
+export function crearEquipo(slug, payload) {
+  return request(`/api/orgs/${enc(slug)}/equipos`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function editarEquipo(slug, id, payload) {
+  return request(`/api/orgs/${enc(slug)}/equipos/${enc(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function eliminarEquipo(slug, id) {
+  return request(`/api/orgs/${enc(slug)}/equipos/${enc(id)}`, { method: "DELETE" });
+}
+
+export function listAutores(slug) {
+  return request(`/api/orgs/${enc(slug)}/autores`);
+}
+
+export function crearAutor(slug, payload) {
+  return request(`/api/orgs/${enc(slug)}/autores`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function editarAutor(slug, id, payload) {
+  return request(`/api/orgs/${enc(slug)}/autores/${enc(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function eliminarAutor(slug, id) {
+  return request(`/api/orgs/${enc(slug)}/autores/${enc(id)}`, { method: "DELETE" });
+}
+
+export function activarAutor(slug, id) {
+  return request(`/api/orgs/${enc(slug)}/autores/${enc(id)}/activar`, { method: "POST" });
 }
 
 export function getDoc(slug, codigo) {

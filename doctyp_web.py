@@ -105,6 +105,32 @@ def api_org_get(slug: str) -> dict:
     }
 
 
+def api_org_new(payload: dict) -> dict:
+    slug = (payload.get("slug") or "").strip().lower()
+    if not core._slug_valido(slug):
+        raise ApiError(400, "el slug solo admite minúsculas, dígitos y guiones (p. ej. 'mi-org')")
+    if core.org_path(slug).exists():
+        raise ApiError(400, f"ya existe una organización '{slug}'")
+    nombre = payload.get("nombre") or slug
+    org = core._org_vacia(slug, nombre)
+    core.guardar_org(slug, org)
+
+    settings = core.cargar_settings()
+    settings.setdefault("local", {})
+    if not settings["local"].get("org_activa"):
+        settings["local"]["org_activa"] = slug
+        core.guardar_settings(settings)
+    return {"slug": slug, "nombre": nombre}
+
+
+def api_org_activar(slug: str) -> dict:
+    _cargar_org_api(slug)
+    settings = core.cargar_settings()
+    settings.setdefault("local", {})["org_activa"] = slug
+    core.guardar_settings(settings)
+    return {"ok": True, "org_activa": slug}
+
+
 def api_docs_list(slug: str) -> list[dict]:
     org = _cargar_org_api(slug)
     return sorted(org["documentos"], key=lambda d: (d.get("anio", 0), d.get("correlativo", 0)))
@@ -273,12 +299,79 @@ def api_templates_list(slug: str) -> list[dict]:
     return [{"nombre": n, "default": n == default} for n in nombres]
 
 
+def api_template_default(slug: str, nombre: str) -> dict:
+    org = _cargar_org_api(slug)
+    core.plantilla_fijar_default(org, nombre)
+    core.guardar_org(slug, org)
+    return {"plantilla_default": org["config"]["plantilla_default"]}
+
+
 def api_equipos_list(slug: str) -> list[dict]:
     return _cargar_org_api(slug).get("equipos", [])
 
 
+def api_equipo_new(slug: str, payload: dict) -> dict:
+    org = _cargar_org_api(slug)
+    equipo = core.equipo_crear(org, payload.get("id", ""), payload.get("nombre"))
+    core.guardar_org(slug, org)
+    return equipo
+
+
+def api_equipo_editar(slug: str, equipo_id: str, payload: dict) -> dict:
+    org = _cargar_org_api(slug)
+    equipo = core.equipo_editar(org, equipo_id, nombre=payload.get("nombre"))
+    core.guardar_org(slug, org)
+    return equipo
+
+
+def api_equipo_eliminar(slug: str, equipo_id: str) -> dict:
+    org = _cargar_org_api(slug)
+    core.equipo_eliminar(org, equipo_id)
+    core.guardar_org(slug, org)
+    return {"ok": True}
+
+
 def api_autores_list(slug: str) -> list[dict]:
-    return _cargar_org_api(slug).get("autores", [])
+    org = _cargar_org_api(slug)
+    activo_id = core.autor_activo(org).get("id")
+    return [{**a, "activo": a.get("id") == activo_id} for a in org.get("autores", [])]
+
+
+def api_autor_new(slug: str, payload: dict) -> dict:
+    org = _cargar_org_api(slug)
+    autor = core.autor_crear(org, payload.get("nombre", ""), payload.get("cargo", ""),
+                              payload.get("correo", ""), payload.get("equipos") or [])
+    core.guardar_org(slug, org)
+    return autor
+
+
+def api_autor_editar(slug: str, autor_id: str, payload: dict) -> dict:
+    org = _cargar_org_api(slug)
+    autor = core.autor_editar(org, autor_id, nombre=payload.get("nombre"),
+                               cargo=payload.get("cargo"), correo=payload.get("correo"),
+                               equipos_ids=payload.get("equipos"))
+    core.guardar_org(slug, org)
+    return autor
+
+
+def api_autor_eliminar(slug: str, autor_id: str) -> dict:
+    org = _cargar_org_api(slug)
+    core.autor_eliminar(org, autor_id)
+    core.guardar_org(slug, org)
+    settings = core.cargar_settings()
+    if settings.get("local", {}).get("autor_activo") == autor_id:
+        del settings["local"]["autor_activo"]
+        core.guardar_settings(settings)
+    return {"ok": True}
+
+
+def api_autor_activar(slug: str, autor_id: str) -> dict:
+    org = _cargar_org_api(slug)
+    core.autor_buscar(org, autor_id)
+    settings = core.cargar_settings()
+    settings.setdefault("local", {})["autor_activo"] = autor_id
+    core.guardar_settings(settings)
+    return {"ok": True, "autor_activo": autor_id}
 
 
 # ── SSE: detección de cambios por polling de mtimes (sin inotify/watchdog) ────────────────
@@ -385,6 +478,9 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
     def do_PUT(self):
         self._despachar("PUT")
 
+    def do_DELETE(self):
+        self._despachar("DELETE")
+
     # ── Ruteo de la API ────────────────────────────────────────────────────────────────
     def _api(self, metodo: str, segs: list[str], query: dict) -> None:
         if segs and segs[0] == "tipos-documento" and len(segs) == 1 and metodo == "GET":
@@ -396,12 +492,22 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             return
 
         if len(segs) == 1:  # /api/orgs
-            self._json(200, api_orgs_list())
+            if metodo == "GET":
+                self._json(200, api_orgs_list())
+            elif metodo == "POST":
+                cuerpo = self._leer_cuerpo_json()
+                self._json(201, api_org_new(cuerpo))
+            else:
+                self._error(405, "método no soportado")
             return
 
         slug = _slug_seguro(segs[1])
         if len(segs) == 2:  # /api/orgs/<slug>
             self._json(200, api_org_get(slug))
+            return
+
+        if len(segs) == 3 and segs[2] == "activar" and metodo == "POST":
+            self._json(200, api_org_activar(slug))
             return
 
         recurso = segs[2]
@@ -447,14 +553,63 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             self._error(404, "ruta de API desconocida")
             return
 
-        if recurso == "plantillas" and len(segs) == 3:
-            self._json(200, api_templates_list(slug))
+        if recurso == "plantillas":
+            if len(segs) == 3 and metodo == "GET":
+                self._json(200, api_templates_list(slug))
+                return
+            if len(segs) == 5 and segs[4] == "default" and metodo == "POST":
+                self._json(200, api_template_default(slug, segs[3]))
+                return
+            self._error(404, "ruta de API desconocida")
             return
-        if recurso == "equipos" and len(segs) == 3:
-            self._json(200, api_equipos_list(slug))
+
+        if recurso == "equipos":
+            if len(segs) == 3:
+                if metodo == "GET":
+                    self._json(200, api_equipos_list(slug))
+                elif metodo == "POST":
+                    cuerpo = self._leer_cuerpo_json()
+                    self._json(201, api_equipo_new(slug, cuerpo))
+                else:
+                    self._error(405, "método no soportado")
+                return
+            if len(segs) == 4:
+                equipo_id = segs[3]
+                if metodo == "PUT":
+                    cuerpo = self._leer_cuerpo_json()
+                    self._json(200, api_equipo_editar(slug, equipo_id, cuerpo))
+                elif metodo == "DELETE":
+                    self._json(200, api_equipo_eliminar(slug, equipo_id))
+                else:
+                    self._error(405, "método no soportado")
+                return
+            self._error(404, "ruta de API desconocida")
             return
-        if recurso == "autores" and len(segs) == 3:
-            self._json(200, api_autores_list(slug))
+
+        if recurso == "autores":
+            if len(segs) == 3:
+                if metodo == "GET":
+                    self._json(200, api_autores_list(slug))
+                elif metodo == "POST":
+                    cuerpo = self._leer_cuerpo_json()
+                    self._json(201, api_autor_new(slug, cuerpo))
+                else:
+                    self._error(405, "método no soportado")
+                return
+            autor_id = segs[3]
+            if len(segs) == 4:
+                if metodo == "PUT":
+                    cuerpo = self._leer_cuerpo_json()
+                    self._json(200, api_autor_editar(slug, autor_id, cuerpo))
+                elif metodo == "DELETE":
+                    self._json(200, api_autor_eliminar(slug, autor_id))
+                else:
+                    self._error(405, "método no soportado")
+                return
+            if len(segs) == 5 and segs[4] == "activar" and metodo == "POST":
+                self._json(200, api_autor_activar(slug, autor_id))
+                return
+            self._error(404, "ruta de API desconocida")
             return
 
         self._error(404, "ruta de API desconocida")

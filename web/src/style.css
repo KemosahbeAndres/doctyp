@@ -92,6 +92,12 @@ button.primary {
   padding: 0.3em 0.5em;
 }
 
+.topbar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+}
+
 .main-layout {
   flex: 1;
   display: flex;
@@ -295,4 +301,114 @@ button.primary {
   display: flex;
   justify-content: flex-end;
   gap: 0.5em;
+}
+
+.modal-box-grande {
+  width: 42em;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.org-manager-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.org-manager-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.4em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5em;
+}
+
+.tabs button {
+  background: none;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  color: var(--text-dim);
+}
+
+.tabs button.activo {
+  background: var(--bg-panel);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8em;
+}
+
+.crud-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.crud-table th {
+  text-align: left;
+  color: var(--text-dim);
+  font-weight: 500;
+  padding: 0.4em;
+  border-bottom: 1px solid var(--border);
+}
+
+.crud-table td {
+  padding: 0.4em;
+  border-bottom: 1px solid var(--border);
+}
+
+.crud-table .acciones {
+  display: flex;
+  gap: 0.3em;
+  justify-content: flex-end;
+}
+
+.crud-table .acciones button {
+  padding: 0.2em 0.5em;
+  font-size: 0.8rem;
+}
+
+.badge-activo {
+  color: var(--accent);
+}
+
+.crud-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  padding: 0.8em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+}
+
+.crud-form h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.crud-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.crud-form input,
+.crud-form select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4em 0.6em;
 }

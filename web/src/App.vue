@@ -1,14 +1,18 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
-import { listOrgs, listDocs, suscribirEventos } from "./api.js";
+import { listOrgs, listDocs, listAutores, activarOrg, activarAutor, suscribirEventos } from "./api.js";
 import DocList from "./components/DocList.vue";
 import DocEditor from "./components/DocEditor.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
 import NewDocumentModal from "./components/NewDocumentModal.vue";
+import NewOrgModal from "./components/NewOrgModal.vue";
+import OrgManager from "./components/OrgManager.vue";
 
 const orgs = ref([]);
 const orgSlug = ref(null);
 const docs = ref([]);
+const autores = ref([]);
+const autorActivoId = ref(null);
 const cargandoDocs = ref(false);
 const docSeleccionado = ref(null);
 const error = ref("");
@@ -16,8 +20,13 @@ const editorSucio = ref(false);
 const restaurarPayload = ref(null);
 const refreshSignal = ref(0);
 const mostrarNuevo = ref(false);
+const mostrarNuevaOrg = ref(false);
+const mostrarGestor = ref(false);
 
 const docActivo = computed(() => docs.value.find((d) => d.codigo_base === docSeleccionado.value) || null);
+const docsFiltrados = computed(() =>
+  autorActivoId.value ? docs.value.filter((d) => d.autor_id === autorActivoId.value) : docs.value,
+);
 
 async function cargarOrgs() {
   try {
@@ -46,9 +55,26 @@ async function cargarDocs() {
   }
 }
 
-watch(orgSlug, () => {
+async function cargarAutores() {
+  if (!orgSlug.value) {
+    autores.value = [];
+    autorActivoId.value = null;
+    return;
+  }
+  try {
+    autores.value = await listAutores(orgSlug.value);
+    const activo = autores.value.find((a) => a.activo);
+    autorActivoId.value = activo ? activo.id : null;
+  } catch (e) {
+    error.value = `No se pudieron cargar los autores: ${e.message}`;
+  }
+}
+
+watch(orgSlug, (slug) => {
   docSeleccionado.value = null;
   cargarDocs();
+  cargarAutores();
+  if (slug) activarOrg(slug).catch(() => {});
 });
 
 function seleccionarDoc(codigo) {
@@ -58,6 +84,24 @@ function seleccionarDoc(codigo) {
   }
   restaurarPayload.value = null;
   docSeleccionado.value = codigo;
+}
+
+async function cambiarAutorActivo(id) {
+  if (id === autorActivoId.value) return;
+  if (editorSucio.value && !window.confirm("Tienes cambios sin guardar en el editor. ¿Descartarlos y cambiar de autor activo?")) {
+    return;
+  }
+  try {
+    await activarAutor(orgSlug.value, id);
+  } catch (e) {
+    error.value = `No se pudo activar el autor: ${e.message}`;
+    return;
+  }
+  autorActivoId.value = id;
+  if (docActivo.value && docActivo.value.autor_id !== id) {
+    restaurarPayload.value = null;
+    docSeleccionado.value = null;
+  }
 }
 
 function onCambioEnServidor() {
@@ -75,6 +119,17 @@ async function onDocumentoCreado(doc) {
   seleccionarDoc(doc.codigo_base);
 }
 
+async function onOrgCreada(org) {
+  mostrarNuevaOrg.value = false;
+  await cargarOrgs();
+  orgSlug.value = org.slug;
+}
+
+async function onCambioOrgManager() {
+  await cargarAutores();
+  await cargarDocs();
+}
+
 let cancelarEventos = null;
 
 onMounted(() => {
@@ -85,6 +140,7 @@ onMounted(() => {
       refreshSignal.value++;
     } else if (evento.tipo === "org-changed") {
       cargarOrgs();
+      cargarAutores();
     }
   });
 });
@@ -98,16 +154,25 @@ onUnmounted(() => {
   <div class="app-shell">
     <div class="topbar">
       <h1>doctyp</h1>
-      <select v-model="orgSlug">
-        <option v-for="o in orgs" :key="o.slug" :value="o.slug">
-          {{ o.nombre }}{{ o.activa ? " (activa)" : "" }}
+      <div class="topbar-group">
+        <select v-model="orgSlug">
+          <option v-for="o in orgs" :key="o.slug" :value="o.slug">
+            {{ o.nombre }}{{ o.activa ? " (activa)" : "" }}
+          </option>
+        </select>
+        <button title="Nueva organización" @click="mostrarNuevaOrg = true">+</button>
+      </div>
+      <select :value="autorActivoId" @change="cambiarAutorActivo($event.target.value)">
+        <option v-for="a in autores" :key="a.id" :value="a.id">
+          {{ a.nombre }}{{ a.activo ? " (yo)" : "" }}
         </option>
       </select>
+      <button title="Gestionar organización" @click="mostrarGestor = true">⚙ Organización</button>
     </div>
     <div v-if="error" class="error-banner">{{ error }}</div>
     <div class="main-layout">
       <DocList
-        :docs="docs"
+        :docs="docsFiltrados"
         :seleccionado="docSeleccionado"
         :cargando="cargandoDocs"
         @seleccionar="seleccionarDoc"
@@ -128,6 +193,13 @@ onUnmounted(() => {
       :slug="orgSlug"
       @creado="onDocumentoCreado"
       @cancelar="mostrarNuevo = false"
+    />
+    <NewOrgModal v-if="mostrarNuevaOrg" @creada="onOrgCreada" @cancelar="mostrarNuevaOrg = false" />
+    <OrgManager
+      v-if="mostrarGestor"
+      :slug="orgSlug"
+      @cerrar="mostrarGestor = false"
+      @cambio="onCambioOrgManager"
     />
   </div>
 </template>

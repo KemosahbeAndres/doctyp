@@ -1015,15 +1015,48 @@ def cmd_org_use(args):
     _ok(f"Organización activa: {_c(_C.BOLD, slug)}")
 
 
+def equipo_crear(org: dict, equipo_id: str, nombre: str | None) -> dict:
+    equipo_id = equipo_id.strip()
+    if not equipo_id:
+        sys.exit("ERROR: el id del equipo es obligatorio.")
+    if any(e.get("id") == equipo_id for e in org["equipos"]):
+        sys.exit(f"ERROR: ya existe el equipo '{equipo_id}' en '{org.get('slug', '')}'.")
+    equipo = {"id": equipo_id, "nombre": nombre or equipo_id}
+    org["equipos"].append(equipo)
+    return equipo
+
+
+def equipo_buscar(org: dict, equipo_id: str) -> dict:
+    for e in org["equipos"]:
+        if e.get("id") == equipo_id:
+            return e
+    sys.exit(f"ERROR: no existe el equipo '{equipo_id}' en '{org.get('slug', '')}'.")
+
+
+def equipo_editar(org: dict, equipo_id: str, nombre: str | None = None) -> dict:
+    equipo = equipo_buscar(org, equipo_id)
+    if nombre is not None:
+        equipo["nombre"] = nombre.strip() or equipo_id
+    return equipo
+
+
+def equipo_eliminar(org: dict, equipo_id: str) -> None:
+    equipo_buscar(org, equipo_id)
+    if any(d.get("equipo_id") == equipo_id for d in org["documentos"]):
+        sys.exit(f"ERROR: el equipo '{equipo_id}' tiene documentos asignados; "
+                 f"reasígnalos antes de eliminarlo.")
+    org["equipos"] = [e for e in org["equipos"] if e.get("id") != equipo_id]
+    for a in org["autores"]:
+        if equipo_id in (a.get("equipos") or []):
+            a["equipos"] = [e for e in a["equipos"] if e != equipo_id]
+
+
 def cmd_team_new(args):
     slug = org_activa_slug()
     org = cargar_org(slug)
-    equipo_id = args.id.strip()
-    if any(e.get("id") == equipo_id for e in org["equipos"]):
-        sys.exit(f"ERROR: ya existe el equipo '{equipo_id}' en '{slug}'.")
-    org["equipos"].append({"id": equipo_id, "nombre": args.nombre or equipo_id})
+    equipo = equipo_crear(org, args.id, args.nombre)
     guardar_org(slug, org)
-    _ok(f"Equipo creado: {_c(_C.BOLD, equipo_id)} en {_c(_C.CYAN, slug)}")
+    _ok(f"Equipo creado: {_c(_C.BOLD, equipo['id'])} en {_c(_C.CYAN, slug)}")
 
 
 def cmd_team_list(args):
@@ -1046,6 +1079,59 @@ def _proximo_autor_id(org: dict) -> str:
     return f"a{n}"
 
 
+def autor_crear(org: dict, nombre: str, cargo: str, correo: str, equipos_ids: list[str]) -> dict:
+    nombre = (nombre or "").strip()
+    if not nombre:
+        sys.exit("ERROR: el nombre del autor es obligatorio.")
+    equipos_existentes = {e.get("id") for e in org["equipos"]}
+    for e in equipos_ids:
+        if e not in equipos_existentes:
+            sys.exit(f"ERROR: el equipo '{e}' no existe en '{org.get('slug', '')}'.")
+    autor = {
+        "id": _proximo_autor_id(org),
+        "nombre": nombre, "cargo": cargo or "", "correo": correo or "",
+        "equipos": list(equipos_ids),
+    }
+    org["autores"].append(autor)
+    return autor
+
+
+def autor_buscar(org: dict, autor_id: str) -> dict:
+    for a in org["autores"]:
+        if a.get("id") == autor_id:
+            return a
+    sys.exit(f"ERROR: no existe el autor '{autor_id}' en '{org.get('slug', '')}'.")
+
+
+def autor_editar(org: dict, autor_id: str, nombre: str | None = None, cargo: str | None = None,
+                  correo: str | None = None, equipos_ids: list[str] | None = None) -> dict:
+    autor = autor_buscar(org, autor_id)
+    if equipos_ids is not None:
+        equipos_existentes = {e.get("id") for e in org["equipos"]}
+        for e in equipos_ids:
+            if e not in equipos_existentes:
+                sys.exit(f"ERROR: el equipo '{e}' no existe en '{org.get('slug', '')}'.")
+        autor["equipos"] = list(equipos_ids)
+    if nombre is not None:
+        nombre = nombre.strip()
+        if not nombre:
+            sys.exit("ERROR: el nombre del autor es obligatorio.")
+        autor["nombre"] = nombre
+    if cargo is not None:
+        autor["cargo"] = cargo
+    if correo is not None:
+        autor["correo"] = correo
+    return autor
+
+
+def autor_eliminar(org: dict, autor_id: str) -> None:
+    autor_buscar(org, autor_id)
+    if any(d.get("autor_id") == autor_id for d in org["documentos"]):
+        sys.exit(f"ERROR: el autor '{autor_id}' tiene documentos asignados; "
+                 f"reasígnalos antes de eliminarlo.")
+    org["autores"] = [a for a in org["autores"] if a.get("id") != autor_id]
+
+
 def cmd_author_add(args):
     slug = org_activa_slug()
     org = cargar_org(slug)
@@ -1053,22 +1139,10 @@ def cmd_author_add(args):
     nombre = args.nombre or input("  Nombre: ").strip()
     cargo = args.cargo or input("  Cargo: ").strip()
     correo = args.correo or input("  Correo: ").strip()
-    if not nombre:
-        sys.exit("ERROR: el nombre del autor es obligatorio.")
-    equipos_ids = {e.get("id") for e in org["equipos"]}
     equipos_arg = [e.strip() for e in (args.equipos or "").split(",") if e.strip()]
-    for e in equipos_arg:
-        if e not in equipos_ids:
-            sys.exit(f"ERROR: el equipo '{e}' no existe en '{slug}'.")
-
-    autor = {
-        "id": _proximo_autor_id(org),
-        "nombre": nombre, "cargo": cargo, "correo": correo,
-        "equipos": equipos_arg,
-    }
-    org["autores"].append(autor)
+    autor = autor_crear(org, nombre, cargo, correo, equipos_arg)
     guardar_org(slug, org)
-    _ok(f"Autor creado: {_c(_C.BOLD, autor['id'])} — {nombre}\n")
+    _ok(f"Autor creado: {_c(_C.BOLD, autor['id'])} — {autor['nombre']}\n")
 
 
 def cmd_author_list(args):
@@ -1130,15 +1204,20 @@ def cmd_template_list(args):
     print()
 
 
-def cmd_template_default(args):
-    slug = org_activa_slug()
-    org = cargar_org(slug)
-    nombre = args.nombre.strip()
+def plantilla_fijar_default(org: dict, nombre: str) -> None:
+    slug = org.get("slug", "")
+    nombre = nombre.strip()
     if not (plantilla_dir(slug, nombre) / "lib.typ").exists():
         sys.exit(f"ERROR: no existe la plantilla '{nombre}' en '{slug}' (o le falta lib.typ).")
     org.setdefault("config", {})["plantilla_default"] = nombre
+
+
+def cmd_template_default(args):
+    slug = org_activa_slug()
+    org = cargar_org(slug)
+    plantilla_fijar_default(org, args.nombre)
     guardar_org(slug, org)
-    _ok(f"Plantilla por defecto: {_c(_C.BOLD, nombre)}")
+    _ok(f"Plantilla por defecto: {_c(_C.BOLD, org['config']['plantilla_default'])}")
 
 
 def cmd_listar(args):
