@@ -5,11 +5,14 @@ defineProps({
   cargando: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["seleccionar"]);
+const emit = defineEmits(["seleccionar", "nuevo"]);
 </script>
 
 <template>
   <div class="panel panel-docs">
+    <div class="docs-header">
+      <button class="primary" @click="emit('nuevo')">+ Nuevo documento</button>
+    </div>
     <div v-if="cargando" class="empty-state">Cargando documentos…</div>
     <div v-else-if="!docs.length" class="empty-state">Sin documentos en esta organización.</div>
     <div

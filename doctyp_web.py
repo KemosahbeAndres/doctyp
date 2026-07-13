@@ -15,7 +15,7 @@ reutiliza exactamente compilar_typ().
 No requiere paquetes externos (solo stdlib).
 """
 from __future__ import annotations
-import json, os, queue, threading, time, webbrowser
+import datetime, json, os, queue, threading, time, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
@@ -108,6 +108,69 @@ def api_org_get(slug: str) -> dict:
 def api_docs_list(slug: str) -> list[dict]:
     org = _cargar_org_api(slug)
     return sorted(org["documentos"], key=lambda d: (d.get("anio", 0), d.get("correlativo", 0)))
+
+
+def api_tipos_documento() -> dict:
+    return {"tipos": core.TIPOS, "categorias": sorted(core.CATEGORIAS)}
+
+
+def api_doc_new(slug: str, payload: dict) -> dict:
+    """Crea un documento nuevo (equivalente web de `doctyp new`). Reutiliza las mismas
+    funciones de doctyp.py que `cmd_nuevo`, pero sin el espejo legacy en cwd (`doctyp.py`
+    solo lo escribe para uso desde la CLI; aquí el cwd del servidor no tiene relación con el
+    documento)."""
+    org = _cargar_org_api(slug)
+
+    titulo = (payload.get("titulo") or "").strip()
+    if not titulo:
+        raise ApiError(400, "el título es obligatorio")
+
+    tipo = (payload.get("tipo") or "INF").upper()
+    if tipo not in core.TIPOS:
+        raise ApiError(400, f"tipo '{tipo}' inválido. Válidos: {', '.join(core.TIPOS)}")
+    categoria = (payload.get("categoria") or "SFW").upper()
+    if categoria not in core.CATEGORIAS:
+        raise ApiError(400, f"categoría '{categoria}' inválida. Válidas: {', '.join(sorted(core.CATEGORIAS))}")
+    area = (payload.get("area") or "TI").upper()
+
+    plantilla = payload.get("plantilla") or org.get("config", {}).get("plantilla_default", "informe-ti")
+
+    hoy = datetime.date.today()
+    fecha = hoy.strftime("%Y%m%d")
+    anio = hoy.year
+    corr = core.next_correlativo_org(org, anio)
+
+    autor_org = core.autor_activo(org)
+    f = {
+        "area": area, "tipo": tipo, "categoria": categoria,
+        "anio": anio, "correlativo": corr, "version": "1.0", "fecha": fecha,
+        "tipo_largo": core.TIPOS[tipo],
+        "titulo": titulo,
+        "subtitulo": payload.get("subtitulo") or "SLEP Chinchorro",
+        "estado": "BORRADOR", "clasificacion": "INTERNO",
+        "autor": autor_org["nombre"], "cargo": autor_org["cargo"], "correo": autor_org["correo"],
+        "revisor": None, "aprobador": None,
+    }
+
+    base = core.codigo_base(area, tipo, categoria, anio, corr)
+    dest_dir = core.crear_carpeta_documento(slug, base, plantilla)
+    out_file = dest_dir / f"{base}.typ"
+    out_file.write_text(core.build_typ(f, "lib.typ"), encoding="utf-8")
+
+    ahora = datetime.datetime.now().isoformat(timespec="seconds")
+    entrada_org = {
+        "codigo_base": base,
+        "area": area, "tipo": tipo, "categoria": categoria,
+        "anio": anio, "correlativo": corr,
+        "titulo": titulo, "autor_id": autor_org.get("id"), "equipo_id": None,
+        "plantilla": plantilla,
+        "ruta": base,
+        "creado": ahora,
+        "versiones": [{"version": f["version"], "fecha": fecha, "creado": ahora}],
+    }
+    org["documentos"].append(entrada_org)
+    core.guardar_org(slug, org)
+    return entrada_org
 
 
 def api_doc_get(slug: str, codigo_base: str) -> dict:
@@ -324,6 +387,10 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
 
     # ── Ruteo de la API ────────────────────────────────────────────────────────────────
     def _api(self, metodo: str, segs: list[str], query: dict) -> None:
+        if segs and segs[0] == "tipos-documento" and len(segs) == 1 and metodo == "GET":
+            self._json(200, api_tipos_documento())
+            return
+
         if not segs or segs[0] != "orgs":
             self._error(404, "ruta de API desconocida")
             return
@@ -340,7 +407,13 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
         recurso = segs[2]
         if recurso == "documentos":
             if len(segs) == 3:  # /api/orgs/<slug>/documentos
-                self._json(200, api_docs_list(slug))
+                if metodo == "GET":
+                    self._json(200, api_docs_list(slug))
+                elif metodo == "POST":
+                    cuerpo = self._leer_cuerpo_json()
+                    self._json(201, api_doc_new(slug, cuerpo))
+                else:
+                    self._error(405, "método no soportado")
                 return
             codigo_base = segs[3]
             if len(segs) == 4:  # /api/orgs/<slug>/documentos/<codigo_base>

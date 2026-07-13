@@ -108,6 +108,15 @@ button.primary {
   background: var(--bg-panel);
 }
 
+.docs-header {
+  padding: 0.6em;
+  border-bottom: 1px solid var(--border);
+}
+
+.docs-header button {
+  width: 100%;
+}
+
 .panel-editor {
   flex: 1;
   display: flex;
@@ -235,4 +244,55 @@ button.primary {
   font-family: var(--mono);
   font-size: 0.75rem;
   white-space: pre-wrap;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.modal-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.2em;
+  width: 22em;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8em;
+}
+
+.modal-box h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.modal-box label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.modal-box input,
+.modal-box select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4em 0.6em;
+}
+
+.modal-acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5em;
 }

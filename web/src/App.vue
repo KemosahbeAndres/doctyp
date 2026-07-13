@@ -4,6 +4,7 @@ import { listOrgs, listDocs, suscribirEventos } from "./api.js";
 import DocList from "./components/DocList.vue";
 import DocEditor from "./components/DocEditor.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
+import NewDocumentModal from "./components/NewDocumentModal.vue";
 
 const orgs = ref([]);
 const orgSlug = ref(null);
@@ -14,6 +15,7 @@ const error = ref("");
 const editorSucio = ref(false);
 const restaurarPayload = ref(null);
 const refreshSignal = ref(0);
+const mostrarNuevo = ref(false);
 
 const docActivo = computed(() => docs.value.find((d) => d.codigo_base === docSeleccionado.value) || null);
 
@@ -67,6 +69,12 @@ function onCargarEnEditor(payload) {
   restaurarPayload.value = { contenido: payload.contenido, version: payload.version };
 }
 
+async function onDocumentoCreado(doc) {
+  mostrarNuevo.value = false;
+  await cargarDocs();
+  seleccionarDoc(doc.codigo_base);
+}
+
 let cancelarEventos = null;
 
 onMounted(() => {
@@ -98,7 +106,13 @@ onUnmounted(() => {
     </div>
     <div v-if="error" class="error-banner">{{ error }}</div>
     <div class="main-layout">
-      <DocList :docs="docs" :seleccionado="docSeleccionado" :cargando="cargandoDocs" @seleccionar="seleccionarDoc" />
+      <DocList
+        :docs="docs"
+        :seleccionado="docSeleccionado"
+        :cargando="cargandoDocs"
+        @seleccionar="seleccionarDoc"
+        @nuevo="mostrarNuevo = true"
+      />
       <DocEditor
         :slug="orgSlug"
         :codigo="docSeleccionado"
@@ -109,5 +123,11 @@ onUnmounted(() => {
       />
       <HistoryPanel :slug="orgSlug" :codigo="docSeleccionado" :refresh-signal="refreshSignal" @cargar-en-editor="onCargarEnEditor" />
     </div>
+    <NewDocumentModal
+      v-if="mostrarNuevo"
+      :slug="orgSlug"
+      @creado="onDocumentoCreado"
+      @cancelar="mostrarNuevo = false"
+    />
   </div>
 </template>

@@ -29,6 +29,21 @@ export function listDocs(slug) {
   return request(`/api/orgs/${enc(slug)}/documentos`);
 }
 
+export function crearDocumento(slug, payload) {
+  return request(`/api/orgs/${enc(slug)}/documentos`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getTiposDocumento() {
+  return request("/api/tipos-documento");
+}
+
+export function listPlantillas(slug) {
+  return request(`/api/orgs/${enc(slug)}/plantillas`);
+}
+
 export function getDoc(slug, codigo) {
   return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}`);
 }
