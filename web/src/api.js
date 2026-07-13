@@ -145,6 +145,15 @@ export async function getVersionContenido(slug, codigo, version) {
   return data.contenido;
 }
 
+export function getVersionDiff(slug, codigo, version) {
+  return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/historia/${enc(version)}/diff`);
+}
+
+/** URL de la miniatura (page 1) para usar directo en <img src>. */
+export function urlMiniatura(slug, codigo) {
+  return `/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/miniatura`;
+}
+
 export function guardarVersion(slug, codigo, mensaje) {
   return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/save`, {
     method: "POST",

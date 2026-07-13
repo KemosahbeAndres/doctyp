@@ -15,7 +15,7 @@ reutiliza exactamente compilar_typ().
 No requiere paquetes externos (solo stdlib).
 """
 from __future__ import annotations
-import datetime, json, os, queue, threading, time, webbrowser
+import datetime, difflib, json, os, queue, threading, time, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
@@ -286,6 +286,40 @@ def api_doc_version_contenido(slug: str, codigo_base: str, version: str) -> str:
     return snap_path.read_text(encoding="utf-8")
 
 
+def api_doc_version_diff(slug: str, codigo_base: str, version: str) -> dict:
+    """Diff línea por línea entre el snapshot de `version` y el .typ vigente, con difflib
+    (stdlib). Reusa api_doc_version_contenido/api_doc_typ_get -- no relee archivos aparte."""
+    anterior = api_doc_version_contenido(slug, codigo_base, version)
+    vigente = api_doc_typ_get(slug, codigo_base)
+    lineas_a = anterior.splitlines()
+    lineas_b = vigente.splitlines()
+    sm = difflib.SequenceMatcher(None, lineas_a, lineas_b)
+    filas = []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            filas += [{"tipo": "igual", "texto": l} for l in lineas_a[i1:i2]]
+        elif tag == "delete":
+            filas += [{"tipo": "eliminada", "texto": l} for l in lineas_a[i1:i2]]
+        elif tag == "insert":
+            filas += [{"tipo": "agregada", "texto": l} for l in lineas_b[j1:j2]]
+        elif tag == "replace":
+            filas += [{"tipo": "eliminada", "texto": l} for l in lineas_a[i1:i2]]
+            filas += [{"tipo": "agregada", "texto": l} for l in lineas_b[j1:j2]]
+    return {"version": version, "filas": filas}
+
+
+def api_doc_miniatura(slug: str, codigo_base: str) -> Path:
+    org = _cargar_org_api(slug)
+    _doc_o_404(org, codigo_base)
+    ruta = _ruta_typ_segura(slug, codigo_base)
+    if not ruta.exists():
+        raise ApiError(404, f"el archivo del documento no existe: {ruta}")
+    cache = core.generar_miniatura(ruta)
+    if cache is None:
+        raise ApiError(404, "no se pudo generar la miniatura (typst no disponible o falló la compilación)")
+    return cache
+
+
 def api_doc_save(slug: str, codigo_base: str, mensaje: str) -> dict:
     if not mensaje:
         raise ApiError(400, "el mensaje es obligatorio")
@@ -460,6 +494,13 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
     def _error(self, status: int, mensaje: str) -> None:
         self._json(status, {"error": mensaje})
 
+    def _binario(self, status: int, cuerpo: bytes, content_type: str) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(cuerpo)))
+        self.end_headers()
+        self.wfile.write(cuerpo)
+
     def _leer_cuerpo_json(self) -> dict:
         largo = int(self.headers.get("Content-Length", 0) or 0)
         if largo == 0:
@@ -577,6 +618,10 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                 version = segs[5]
                 self._json(200, {"contenido": api_doc_version_contenido(slug, codigo_base, version)})
                 return
+            if sub == "historia" and len(segs) == 7 and segs[6] == "diff" and metodo == "GET":
+                version = segs[5]
+                self._json(200, api_doc_version_diff(slug, codigo_base, version))
+                return
             if sub == "save" and len(segs) == 5 and metodo == "POST":
                 cuerpo = self._leer_cuerpo_json()
                 self._json(200, api_doc_save(slug, codigo_base, cuerpo.get("mensaje", "")))
@@ -584,6 +629,10 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             if sub == "compile" and len(segs) == 5 and metodo == "POST":
                 cuerpo = self._leer_cuerpo_json()
                 self._json(200, api_doc_compile(slug, codigo_base, cuerpo.get("mensaje")))
+                return
+            if sub == "miniatura" and len(segs) == 5 and metodo == "GET":
+                ruta_png = api_doc_miniatura(slug, codigo_base)
+                self._binario(200, ruta_png.read_bytes(), "image/png")
                 return
             self._error(404, "ruta de API desconocida")
             return

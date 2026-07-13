@@ -2,12 +2,11 @@
 import { ref, computed, watch } from "vue";
 import { getTyp, putTyp, guardarVersion, compilar } from "../api.js";
 import MetaEditorModal from "./MetaEditorModal.vue";
+import StatusBar from "./StatusBar.vue";
 
 const props = defineProps({
   slug: { type: String, required: true },
   codigo: { type: String, default: null },
-  doc: { type: Object, default: null },
-  restaurarPayload: { type: Object, default: null },
 });
 
 const emit = defineEmits(["sucio-cambio", "cambio-en-servidor"]);
@@ -19,6 +18,7 @@ const ocupado = ref(false);
 const mensaje = ref("");
 const mensajeEsError = ref(false);
 const mostrarMeta = ref(false);
+const refreshSignalLocal = ref(0);
 
 const sucio = computed(() => texto.value !== original.value);
 watch(sucio, (v) => emit("sucio-cambio", v));
@@ -49,16 +49,11 @@ watch(
   { immediate: true },
 );
 
-watch(
-  () => props.restaurarPayload,
-  (payload) => {
-    if (payload) {
-      texto.value = payload.contenido;
-      mensaje.value = `Versión v${payload.version} cargada en el editor (sin guardar aún).`;
-      mensajeEsError.value = false;
-    }
-  },
-);
+function onCargarEnEditor(payload) {
+  texto.value = payload.contenido;
+  mensaje.value = `Versión v${payload.version} cargada en el editor (sin guardar aún).`;
+  mensajeEsError.value = false;
+}
 
 async function guardarCambios() {
   ocupado.value = true;
@@ -89,6 +84,7 @@ async function subirVersion() {
     const res = await guardarVersion(props.slug, props.codigo, msg);
     mensaje.value = `Versión subida: v${res.version_actual} → v${res.version_nueva}.`;
     mensajeEsError.value = false;
+    refreshSignalLocal.value++;
     emit("cambio-en-servidor");
   } catch (e) {
     mensaje.value = `Error al subir versión: ${e.message}`;
@@ -113,6 +109,7 @@ async function compilarDoc() {
       ? `Compilado: ${res.pdf} (v${res.version}).`
       : `Guardado como v${res.version}, pero la compilación no generó PDF.`;
     mensajeEsError.value = false;
+    refreshSignalLocal.value++;
     emit("cambio-en-servidor");
   } catch (e) {
     mensaje.value = `Error al compilar: ${e.message}`;
@@ -138,18 +135,9 @@ function onMetaGuardado(res) {
   <div class="panel panel-editor">
     <div v-if="!codigo" class="empty-state">Selecciona un documento para editarlo.</div>
     <template v-else>
-      <div class="editor-toolbar">
-        <strong>{{ doc?.codigo_base || codigo }}</strong>
-        <span class="estado">
-          {{ cargando ? "Cargando…" : sucio ? "cambios sin guardar" : "sin cambios pendientes" }}
-        </span>
-        <button :disabled="!sucio || ocupado || cargando" @click="guardarCambios">Guardar cambios</button>
-        <button class="primary" :disabled="ocupado || cargando" @click="subirVersion">Subir versión</button>
-        <button :disabled="ocupado || cargando" @click="compilarDoc">Compilar</button>
-        <button :disabled="ocupado || cargando" @click="mostrarMeta = true">Metadatos</button>
-        <span class="estado" :style="{ color: mensajeEsError ? 'var(--danger)' : undefined }">
-          {{ mensaje }}
-        </span>
+      <div v-if="cargando" class="empty-state">Cargando…</div>
+      <div v-if="mensaje" class="estado editor-mensaje" :style="{ color: mensajeEsError ? 'var(--danger)' : undefined }">
+        {{ mensaje }}
       </div>
       <textarea
         class="editor-textarea"
@@ -157,6 +145,19 @@ function onMetaGuardado(res) {
         :disabled="cargando"
         spellcheck="false"
       ></textarea>
+      <StatusBar
+        :slug="slug"
+        :codigo="codigo"
+        :texto="texto"
+        :sucio="sucio"
+        :ocupado="ocupado"
+        :refresh-signal="refreshSignalLocal"
+        @guardar="guardarCambios"
+        @subir-version="subirVersion"
+        @compilar="compilarDoc"
+        @metadatos="mostrarMeta = true"
+        @cargar-en-editor="onCargarEnEditor"
+      />
       <MetaEditorModal
         v-if="mostrarMeta"
         :slug="slug"

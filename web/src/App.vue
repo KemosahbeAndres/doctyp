@@ -1,9 +1,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { listOrgs, listDocs, listAutores, activarOrg, activarAutor, suscribirEventos } from "./api.js";
-import DocList from "./components/DocList.vue";
+import DocumentGrid from "./components/DocumentGrid.vue";
 import DocEditor from "./components/DocEditor.vue";
-import HistoryPanel from "./components/HistoryPanel.vue";
 import NewDocumentModal from "./components/NewDocumentModal.vue";
 import NewOrgModal from "./components/NewOrgModal.vue";
 import OrgManager from "./components/OrgManager.vue";
@@ -15,10 +14,9 @@ const autores = ref([]);
 const autorActivoId = ref(null);
 const cargandoDocs = ref(false);
 const docSeleccionado = ref(null);
+const vista = ref("grid"); // "grid" | "documento"
 const error = ref("");
 const editorSucio = ref(false);
-const restaurarPayload = ref(null);
-const refreshSignal = ref(0);
 const mostrarNuevo = ref(false);
 const mostrarNuevaOrg = ref(false);
 const mostrarGestor = ref(false);
@@ -72,18 +70,27 @@ async function cargarAutores() {
 
 watch(orgSlug, (slug) => {
   docSeleccionado.value = null;
+  vista.value = "grid";
   cargarDocs();
   cargarAutores();
   if (slug) activarOrg(slug).catch(() => {});
 });
 
 function seleccionarDoc(codigo) {
-  if (codigo === docSeleccionado.value) return;
-  if (editorSucio.value && !window.confirm("Tienes cambios sin guardar en el editor. ¿Descartarlos y cambiar de documento?")) {
+  if (codigo !== docSeleccionado.value) {
+    if (editorSucio.value && !window.confirm("Tienes cambios sin guardar en el editor. ¿Descartarlos y cambiar de documento?")) {
+      return;
+    }
+    docSeleccionado.value = codigo;
+  }
+  vista.value = "documento";
+}
+
+function volverAGrid() {
+  if (editorSucio.value && !window.confirm("Tienes cambios sin guardar en el editor. ¿Volver a la cuadrícula igualmente?")) {
     return;
   }
-  restaurarPayload.value = null;
-  docSeleccionado.value = codigo;
+  vista.value = "grid";
 }
 
 async function cambiarAutorActivo(id) {
@@ -99,18 +106,13 @@ async function cambiarAutorActivo(id) {
   }
   autorActivoId.value = id;
   if (docActivo.value && docActivo.value.autor_id !== id) {
-    restaurarPayload.value = null;
     docSeleccionado.value = null;
+    vista.value = "grid";
   }
 }
 
 function onCambioEnServidor() {
   cargarDocs();
-  refreshSignal.value++;
-}
-
-function onCargarEnEditor(payload) {
-  restaurarPayload.value = { contenido: payload.contenido, version: payload.version };
 }
 
 async function onDocumentoCreado(doc) {
@@ -137,7 +139,6 @@ onMounted(() => {
   cancelarEventos = suscribirEventos((evento) => {
     if (evento.tipo === "docs-changed") {
       cargarDocs();
-      refreshSignal.value++;
     } else if (evento.tipo === "org-changed") {
       cargarOrgs();
       cargarAutores();
@@ -170,24 +171,29 @@ onUnmounted(() => {
       <button title="Gestionar organización" @click="mostrarGestor = true">⚙ Organización</button>
     </div>
     <div v-if="error" class="error-banner">{{ error }}</div>
-    <div class="main-layout">
-      <DocList
-        :docs="docsFiltrados"
-        :seleccionado="docSeleccionado"
-        :cargando="cargandoDocs"
-        @seleccionar="seleccionarDoc"
-        @nuevo="mostrarNuevo = true"
-      />
+
+    <DocumentGrid
+      v-if="vista === 'grid'"
+      :slug="orgSlug"
+      :docs="docsFiltrados"
+      :cargando="cargandoDocs"
+      @seleccionar="seleccionarDoc"
+      @nuevo="mostrarNuevo = true"
+    />
+    <div v-else class="vista-documento">
+      <div class="documento-header">
+        <button @click="volverAGrid">← Documentos</button>
+        <strong>{{ docActivo?.codigo_base || docSeleccionado }}</strong>
+        <span class="estado">{{ docActivo?.titulo }}</span>
+      </div>
       <DocEditor
         :slug="orgSlug"
         :codigo="docSeleccionado"
-        :doc="docActivo"
-        :restaurar-payload="restaurarPayload"
         @sucio-cambio="editorSucio = $event"
         @cambio-en-servidor="onCambioEnServidor"
       />
-      <HistoryPanel :slug="orgSlug" :codigo="docSeleccionado" :refresh-signal="refreshSignal" @cargar-en-editor="onCargarEnEditor" />
     </div>
+
     <NewDocumentModal
       v-if="mostrarNuevo"
       :slug="orgSlug"

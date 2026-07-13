@@ -414,9 +414,9 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 4 | Backend `doctyp web`: API JSON + SSE + estáticos + auto-apertura del navegador | **Completada** |
 | 5 | SPA Vue 3: CRUD de autores/equipos por org, orgs/carpetas/documentos + editor | **Completada** |
 | 6 | Generacion de snapshots propios. Las versiones futuras se almacenaran en un sistema de control de versiones propio y simple dejando de lado git. generacion de snapshots, similar a git, con algoritmo propio y sistema de gestion de versiones propio pero simple. almacenar snapshots en: 'carpeta de cada documento > .snapshots' y acceder a ellos para verlos y hacer comparaciones (funcionalidad futura).  | **Completada** |
-| 7 | Vista de documentos en formato de cuadricula como pantalla principal con una pequeña vista previa de la primera pagina de cada documento. La vista de documento solo se dividira en dos debajo del navbar: editor y vista previa. Barra de estado inferior indicando la version actual, con desplegable para seleccionar otras versiones y ver sus diferencias con la actual. Tambien la barra de estado indicara si hay cambios y tendra los botones para guardar y para hacer commit de una nueva version. Tambien indicara la cantidad de palabras y otra informacion relevante como tamaño de archivo y un boton para que typst compile. | Pendiente |
-| 8 | Precompilado o Vista previa de typst en cliente web. La App Web debe mostrar una vista previa del informe/doumento generado para poder editar y visualizar directamente en la interfaz de la misma manera que la app web typst. | Pendiente |
-| 9 | Editor de plantillas con CRUD completo y seleccion de plantilla con modal al crear documento nuevo. Usar vista completamente nueva dividida con vista previa similar a typst. | Pendiente |
+| 7 | Vista de documentos en formato de cuadricula como pantalla principal con una pequeña vista previa de la primera pagina de cada documento de su ultima compilacion o una compilacion temporal del documento actual. Barra de estado inferior indicando la version actual, con desplegable para seleccionar otras versiones y ver sus diferencias con la actual. Tambien la barra de estado indicara si hay cambios y tendra los botones para guardar y para hacer commit de una nueva version. Tambien indicara la cantidad de palabras y otra informacion relevante como tamaño de archivo y un boton para que typst compile. | **Completada** |
+| 8 | La vista de documento solo se dividira en dos debajo del navbar: editor y vista previa. La App Web debe mostrar una vista previa del informe/doumento generado para poder editar y visualizar directamente en la interfaz de la misma manera que la app web typst. Se debe generar un compilado fresco on-demand cada vez para mostrar la vista previa, el archivo compilado no se guardara o se guardara de manera temporal con un nombre temporal en el directorio raiz del documento. | Pendiente |
+| 9 | Editor de plantillas con CRUD completo y seleccion de plantilla con modal al crear documento nuevo. Usar vista dividida: editor y vista previa similar a typst. Al editar una plantilla se debera mostrar un documento. Explorar otras soluciones de compilado/precompilado/vistaprevia/cache. | Pendiente |
 
 **Nota sobre el alcance real de las Etapas 2 y 3** (decisión explícita, amplía lo descrito arriba):
 - Todos los comandos (`new`, `save`, `compile`, `edit`, `add`, `delete`, `import`, `history`,
@@ -504,6 +504,32 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 - Los 2 documentos reales (`TI-INF-SFW_2026-0001`, `TI-INF-RED_2026-0039`) tenían carpetas
   `versions/` vacías (ningún `save` había llegado a generar un snapshot) — la migración fue
   crear `.snapshots/` y su `index.json` inicial, sin ningún archivo de snapshot que mover.
+
+**Nota sobre el alcance real de la Etapa 7**:
+- La edición del usuario a §14 separó lo que iba a ser una sola etapa en dos: esta Etapa 7 es
+  cuadrícula + barra de estado; el panel dividido editor/vista previa en vivo (compilado
+  fresco on-demand) quedó explícitamente para la Etapa 8 — **no** se construyó ningún
+  renderizador de Typst en vivo en esta etapa.
+- Miniatura de la cuadrícula: `generar_miniatura()` (`doctyp.py`) compila la página 1 con
+  `typst compile --pages 1` a un PNG oculto junto al `.typ`
+  (`.<código-base>.miniatura.png`), cacheado por mtime — no vuelve a invocar typst si la
+  miniatura ya es más nueva que el `.typ`. Nunca toca el PDF real que genera "Compilar"
+  (acción explícita del usuario, sigue igual). Documento nunca compilado o con error de
+  compilación → la API devuelve 404 y el frontend cae a un placeholder ("Sin compilar aún"),
+  sin bloquear la cuadrícula.
+- Diff de versiones: nuevo, no existía — `api_doc_version_diff` usa `difflib.SequenceMatcher`
+  (stdlib) entre el snapshot elegido y el `.typ` vigente, reusando
+  `api_doc_version_contenido`/`api_doc_typ_get` ya existentes (no relee archivos aparte).
+- Navegación: `App.vue` gana un estado simple `vista` (`grid`/`documento`), sin vue-router
+  (no hacía falta deep-linking). La cuadrícula (`DocumentGrid.vue`) reemplaza a `DocList.vue`
+  como pantalla principal; la nueva `StatusBar.vue` (barra fija al fondo del editor, con
+  desplegable de versión + diff + contador de palabras/tamaño + Guardar/Subir versión/
+  Compilar/Metadatos) reemplaza al toolbar de `DocEditor.vue` y a `HistoryPanel.vue`.
+  `DocList.vue`/`HistoryPanel.vue` **no se borraron** (quedan sin usar, por si Etapa 8
+  reutiliza algo) — evaluar limpieza cuando se confirme que no hace falta nada de ahí.
+- Cantidad de palabras y tamaño de archivo se calculan en el cliente sobre el texto en
+  edición (no sobre el archivo en disco), igual que el indicador de cambios sin guardar —
+  quedan "vivos" mientras se escribe, sin ida y vuelta al servidor.
 
 ---
 

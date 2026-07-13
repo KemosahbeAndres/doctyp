@@ -673,6 +673,31 @@ def compilar_typ(out_file: Path) -> bool:
         return False
 
 
+def generar_miniatura(typ_path: Path) -> Path | None:
+    """Miniatura PNG de la página 1 de `typ_path`, cacheada en un archivo oculto junto al
+    documento (nunca pisa el PDF real de un 'Compilar' explícito). Si la miniatura ya existe y
+    es más nueva que el .typ, no vuelve a invocar typst. Devuelve None si typst no está
+    disponible o la compilación falla (silenciosamente: es solo una vista previa, el frontend
+    cae a un placeholder) -- a diferencia de compilar_typ(), no imprime avisos."""
+    cache = typ_path.parent / f".{typ_path.stem}.miniatura.png"
+    if cache.exists() and cache.stat().st_mtime >= typ_path.stat().st_mtime:
+        return cache
+    base = _typst_cmd()
+    if base is None:
+        return None
+    cmd = base + ["compile", "--pages", "1"]
+    font_dir = typ_path.parent / "fonts"
+    if font_dir.is_dir():
+        cmd += ["--font-path", str(font_dir)]
+    cmd += [str(typ_path), str(cache)]
+    try:
+        subprocess.run(cmd, check=True, cwd=str(typ_path.parent),
+                        capture_output=True)
+        return cache
+    except subprocess.CalledProcessError:
+        return None
+
+
 def agregar_doctyp_json(cwd: Path, correlativo: int, anio: int,
                         nombre_archivo: str, autor: str) -> None:
     """Añade una entrada al doctyp.json del directorio cwd (lo crea si no existe).
