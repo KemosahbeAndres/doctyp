@@ -87,24 +87,26 @@ export function urlMiniaturaPlantilla(slug, nombre) {
   return `/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/miniatura`;
 }
 
-/** Compila el lib.typ en edición sobre un documento de muestra. Devuelve un Blob o lanza
- * Error con el mensaje de typst si falla la compilación (mismo patrón que compilarVistaPrevia). */
-export async function vistaPreviaPlantilla(slug, nombre, contenido) {
-  const res = await fetch(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/vista-previa`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contenido }),
-  });
-  if (!res.ok) {
-    let mensaje = `error ${res.status}`;
-    try {
-      mensaje = (await res.json()).error || mensaje;
-    } catch {
-      // sin cuerpo JSON
-    }
-    throw new Error(mensaje);
-  }
-  return res.blob();
+/** Lista de rutas relativas de los archivos de soporte de una plantilla (Images/*, etc. --
+ * excluye lib.typ, que viaja como texto en vivo). Para armar el proyecto del compilador
+ * Typst-WASM en el navegador (Etapa 11). */
+export function getArchivosPlantilla(slug, nombre) {
+  return request(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/archivos`);
+}
+
+/** Bytes crudos de un archivo de soporte de una plantilla. */
+export async function getArchivoPlantilla(slug, nombre, ruta) {
+  const partes = ruta.split("/").map(enc).join("/");
+  const res = await fetch(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/archivo/${partes}`);
+  if (!res.ok) throw new Error(`no se pudo cargar '${ruta}' (error ${res.status})`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+/** Documento de ejemplo (build_typ + _muestra_meta, Etapa 9) usado como main.typ virtual al
+ * previsualizar una plantilla. */
+export async function getMuestraPlantilla(slug, nombre) {
+  const data = await request(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/muestra`);
+  return data.contenido;
 }
 
 export function getHistoriaPlantilla(slug, nombre) {
@@ -213,24 +215,19 @@ export function urlMiniatura(slug, codigo) {
   return `/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/miniatura`;
 }
 
-/** Compila el texto en edición a un PDF temporal. Devuelve un Blob (no JSON, a diferencia de
- * request()) o lanza Error con el mensaje de typst si falla la compilación. */
-export async function compilarVistaPrevia(slug, codigo, contenido) {
-  const res = await fetch(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/vista-previa`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contenido }),
-  });
-  if (!res.ok) {
-    let mensaje = `error ${res.status}`;
-    try {
-      mensaje = (await res.json()).error || mensaje;
-    } catch {
-      // sin cuerpo JSON
-    }
-    throw new Error(mensaje);
-  }
-  return res.blob();
+/** Lista de rutas relativas de los archivos de soporte de un documento (Images/*, img/*,
+ * lib.typ -- excluye el .typ principal, que viaja como texto en vivo). Para armar el proyecto
+ * del compilador Typst-WASM en el navegador (Etapa 11). */
+export function getArchivosDoc(slug, codigo) {
+  return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/archivos`);
+}
+
+/** Bytes crudos de un archivo de soporte de un documento. */
+export async function getArchivoDoc(slug, codigo, ruta) {
+  const partes = ruta.split("/").map(enc).join("/");
+  const res = await fetch(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/archivo/${partes}`);
+  if (!res.ok) throw new Error(`no se pudo cargar '${ruta}' (error ${res.status})`);
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 export function guardarVersion(slug, codigo, mensaje) {

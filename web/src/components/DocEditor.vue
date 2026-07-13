@@ -1,9 +1,9 @@
 <script setup>
 import { ref, computed, watch } from "vue";
-import { getTyp, putTyp, guardarVersion, compilar } from "../api.js";
+import { getTyp, putTyp, guardarVersion, compilar, getArchivosDoc, getArchivoDoc } from "../api.js";
 import MetaEditorModal from "./MetaEditorModal.vue";
 import StatusBar from "./StatusBar.vue";
-import VistaPrevia from "./VistaPrevia.vue";
+import TypstCanvasPreview from "./TypstCanvasPreview.vue";
 import CodeEditor from "./CodeEditor.vue";
 
 const props = defineProps({
@@ -12,6 +12,14 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["sucio-cambio", "cambio-en-servidor"]);
+
+async function cargarArchivosDoc(slug, codigo, texto) {
+  const rutas = (await getArchivosDoc(slug, codigo)).filter((r) => !r.startsWith("fonts/"));
+  const archivos = await Promise.all(
+    rutas.map(async (ruta) => ({ ruta, bytes: await getArchivoDoc(slug, codigo, ruta) })),
+  );
+  return { mainTexto: texto, archivos };
+}
 
 const texto = ref("");
 const original = ref("");
@@ -143,7 +151,7 @@ function onMetaGuardado(res) {
       </div>
       <div class="editor-preview-split">
         <CodeEditor class="editor-textarea" v-model="texto" :disabled="cargando" />
-        <VistaPrevia :slug="slug" :codigo="codigo" :texto="texto" />
+        <TypstCanvasPreview :slug="slug" :codigo="codigo" :texto="texto" :cargar-archivos="cargarArchivosDoc" />
       </div>
       <StatusBar
         :slug="slug"

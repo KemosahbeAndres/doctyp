@@ -15,10 +15,10 @@ reutiliza exactamente compilar_typ().
 No requiere paquetes externos (solo stdlib).
 """
 from __future__ import annotations
-import datetime, difflib, json, os, queue, threading, time, webbrowser
+import datetime, difflib, json, mimetypes, os, queue, threading, time, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit, parse_qs
+from urllib.parse import urlsplit, parse_qs, unquote
 
 import doctyp as core
 
@@ -320,18 +320,45 @@ def api_doc_miniatura(slug: str, codigo_base: str) -> Path:
     return cache
 
 
-def api_doc_vista_previa(slug: str, codigo_base: str, texto: str) -> Path:
-    """Compila el texto en edición (aún sin guardar) a un PDF temporal -- nunca toca el .typ
-    real ni cambia versión. Siempre recompila (sin cache, a diferencia de la miniatura)."""
+def _listar_archivos_carpeta(base_dir: Path, excluir: set[str]) -> list[str]:
+    """Lista rutas relativas (posix) de los archivos bajo base_dir para que el navegador arme
+    el "proyecto" del compilador Typst-WASM (Etapa 11): excluye .snapshots/, archivos ocultos,
+    los nombres en `excluir` (el .typ/lib.typ que viaja como texto en vivo, no desde disco) y
+    los `.pdf` (salidas de "Compilar", nunca referenciadas desde un .typ -- fetchearlas sería
+    puro desperdicio, y algunas quedan con nombres heredados no estándar en documentos
+    migrados manualmente antes de la Etapa 2, p. ej. con espacios en el nombre)."""
+    if not base_dir.is_dir():
+        return []
+    out = []
+    for p in base_dir.rglob("*"):
+        if not p.is_file() or p.suffix.lower() == ".pdf":
+            continue
+        rel = p.relative_to(base_dir)
+        partes = rel.parts
+        if partes[0] == core.SNAPSHOTS_DIRNAME or any(parte.startswith(".") for parte in partes):
+            continue
+        rel_str = rel.as_posix()
+        if rel_str in excluir:
+            continue
+        out.append(rel_str)
+    return sorted(out)
+
+
+def api_doc_archivos(slug: str, codigo_base: str) -> list[str]:
     org = _cargar_org_api(slug)
     _doc_o_404(org, codigo_base)
     dest_dir = core.doc_dir(slug, codigo_base)
-    if not dest_dir.is_dir():
-        raise ApiError(404, f"la carpeta del documento no existe: {dest_dir}")
-    pdf, error_msg = core.compilar_vista_previa(dest_dir, codigo_base, texto)
-    if pdf is None:
-        raise ApiError(422, error_msg)
-    return pdf
+    return _listar_archivos_carpeta(dest_dir, excluir={f"{codigo_base}.typ"})
+
+
+def api_doc_archivo(slug: str, codigo_base: str, ruta: list[str]) -> Path:
+    org = _cargar_org_api(slug)
+    _doc_o_404(org, codigo_base)
+    _resolver_ruta_segura(core.docs_root(), slug, codigo_base, *ruta)
+    destino = core.doc_dir(slug, codigo_base).joinpath(*ruta)
+    if not destino.is_file():
+        raise ApiError(404, f"no existe el archivo '{'/'.join(ruta)}'")
+    return destino
 
 
 def api_doc_save(slug: str, codigo_base: str, mensaje: str) -> dict:
@@ -441,15 +468,29 @@ def api_template_miniatura(slug: str, nombre: str) -> Path:
     return cache
 
 
-def api_template_vista_previa(slug: str, nombre: str, contenido: str) -> Path:
-    """Compila la plantilla en edición (aún sin guardar) sobre un documento de muestra --
-    nunca toca el lib.typ real. Siempre recompila (sin cache)."""
+def api_template_archivos(slug: str, nombre: str) -> list[str]:
+    _cargar_org_api(slug)
+    dest_dir = _plantilla_o_404(slug, nombre)
+    return _listar_archivos_carpeta(dest_dir, excluir={"lib.typ"})
+
+
+def api_template_archivo(slug: str, nombre: str, ruta: list[str]) -> Path:
     _cargar_org_api(slug)
     _plantilla_o_404(slug, nombre)
-    pdf, error_msg = core.compilar_vista_previa_plantilla(slug, nombre, contenido)
-    if pdf is None:
-        raise ApiError(422, error_msg)
-    return pdf
+    _resolver_ruta_segura(core.organizations_dir(), slug, "templates", nombre, *ruta)
+    destino = core.plantilla_dir(slug, nombre).joinpath(*ruta)
+    if not destino.is_file():
+        raise ApiError(404, f"no existe el archivo '{'/'.join(ruta)}'")
+    return destino
+
+
+def api_template_muestra(slug: str, nombre: str) -> str:
+    """Texto del documento de muestra (Etapa 9: build_typ + _muestra_meta) que el navegador usa
+    como `main.typ` al previsualizar una plantilla vía Typst-WASM (Etapa 11) -- el lib.typ en
+    edición viaja aparte, como el `texto` en vivo del editor."""
+    _cargar_org_api(slug)
+    _plantilla_o_404(slug, nombre)
+    return core.build_typ(core._muestra_meta(), "lib.typ")
 
 
 def api_template_historia(slug: str, nombre: str) -> list[dict]:
@@ -620,7 +661,10 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
 
     def _despachar(self, metodo: str) -> None:
         partes_url = urlsplit(self.path)
-        segs = [s for s in partes_url.path.split("/") if s]
+        # self.path llega percent-encoded (p. ej. espacios como %20 en nombres de archivo con
+        # espacios); urlsplit() no decodifica -- hay que hacerlo explícitamente antes de usar
+        # los segmentos como componentes de ruta o identificadores.
+        segs = [unquote(s) for s in partes_url.path.split("/") if s]
 
         try:
             if segs and segs[0] == "api":
@@ -741,10 +785,13 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                 ruta_png = api_doc_miniatura(slug, codigo_base)
                 self._binario(200, ruta_png.read_bytes(), "image/png")
                 return
-            if sub == "vista-previa" and len(segs) == 5 and metodo == "POST":
-                cuerpo = self._leer_cuerpo_json()
-                ruta_pdf = api_doc_vista_previa(slug, codigo_base, cuerpo.get("contenido", ""))
-                self._binario(200, ruta_pdf.read_bytes(), "application/pdf")
+            if sub == "archivos" and len(segs) == 5 and metodo == "GET":
+                self._json(200, api_doc_archivos(slug, codigo_base))
+                return
+            if sub == "archivo" and len(segs) >= 6 and metodo == "GET":
+                ruta_archivo = api_doc_archivo(slug, codigo_base, segs[5:])
+                tipo, _ = mimetypes.guess_type(ruta_archivo.name)
+                self._binario(200, ruta_archivo.read_bytes(), tipo or "application/octet-stream")
                 return
             self._error(404, "ruta de API desconocida")
             return
@@ -784,10 +831,16 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                 ruta_png = api_template_miniatura(slug, nombre)
                 self._binario(200, ruta_png.read_bytes(), "image/png")
                 return
-            if sub == "vista-previa" and len(segs) == 5 and metodo == "POST":
-                cuerpo = self._leer_cuerpo_json()
-                ruta_pdf = api_template_vista_previa(slug, nombre, cuerpo.get("contenido", ""))
-                self._binario(200, ruta_pdf.read_bytes(), "application/pdf")
+            if sub == "archivos" and len(segs) == 5 and metodo == "GET":
+                self._json(200, api_template_archivos(slug, nombre))
+                return
+            if sub == "archivo" and len(segs) >= 6 and metodo == "GET":
+                ruta_archivo = api_template_archivo(slug, nombre, segs[5:])
+                tipo, _ = mimetypes.guess_type(ruta_archivo.name)
+                self._binario(200, ruta_archivo.read_bytes(), tipo or "application/octet-stream")
+                return
+            if sub == "muestra" and len(segs) == 5 and metodo == "GET":
+                self._json(200, {"contenido": api_template_muestra(slug, nombre)})
                 return
             if sub == "historia" and len(segs) == 5 and metodo == "GET":
                 self._json(200, api_template_historia(slug, nombre))
@@ -896,7 +949,8 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             destino = WEB_DIST / "index.html"  # fallback SPA
 
         tipos = {".html": "text/html", ".js": "application/javascript", ".css": "text/css",
-                 ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png"}
+                 ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
+                 ".wasm": "application/wasm", ".ttf": "font/ttf"}
         content_type = tipos.get(destino.suffix, "application/octet-stream")
         cuerpo = destino.read_bytes()
         self.send_response(200)

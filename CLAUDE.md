@@ -427,7 +427,10 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 8 | La vista de documento solo se dividira en dos debajo del navbar: editor y vista previa. La App Web debe mostrar una vista previa del informe/doumento generado para poder editar y visualizar directamente en la interfaz de la misma manera que la app web typst. Se debe generar un compilado fresco on-demand cada vez para mostrar la vista previa, el archivo compilado no se guardara o se guardara de manera temporal con un nombre temporal en el directorio raiz del documento. | **Completada** |
 | 9 | Editor de plantillas con CRUD completo y seleccion de plantilla en el modal al crear documento nuevo. Usar vista dividida: editor y vista previa similar a typst. Al editar una plantilla se debera mostrar un documento. Explorar otras soluciones de compilado/precompilado/vistaprevia/cache. | **Completada** |
 | 10 | Editor de plantillas en el cliente web debe poder accederse desde pantalla principal con boton junto al boton 'organizacion' y la vista debe ser a pantalla completa como el editor de documentos. El editor de texto/codigo debe mostrar en colores los codigos/funciones/variables de typst como un editor de codigo moderno. La division por colores permite una mejor edicion para el usuario. Usar la convencion de colores de Typst y/o la que usa VSCode con la extension de Typst. | **Completada** |
-| 11 | Cambiar renderizado de vista previa en el cliente web (editor documentos y editor plantillas) por un renderizado de typst WASM <typst.ts> dentro del cliente web. El editor debe seguir el documento cuando se haga click en el texto y lo mismo para la vista previa, al hacer click en una seccion o parrafo o titulo/encabezado el editor se debe mover hasta donde este el cursor en la vista previa. Renderizar en HTML <canvas> igual que la app web de typst. El boton de actualizar vista previa debe estar en la barra de estado. | Pendiente |
+| 11 | Cambiar renderizado de vista previa en el cliente web (editor documentos y editor plantillas) por un renderizado de typst WASM (typst.ts) dentro del cliente web, a HTML `<canvas>`, con el mismo botón de actualizar vista previa en la barra de estado. Sin click-to-jump (ver Etapa 12). | **Completada** |
+| 12 | Sincronización bidireccional clic↔cursor entre el editor y la vista previa (click-to-jump): clic en el `<canvas>` renderizado mueve el cursor del editor a la posición fuente correspondiente, y mover el cursor en el editor resalta/hace scroll a la posición correspondiente en la vista previa en tiempo real. Al hacer girar la rueda del mouse se aplica lo mismo, ambas secciones deben hacer scroll sincronizado. Aplica a editor de documentos y editor de plantillas. | Pendiente |
+| 13 | FIX. En el canvas de renderizado no puede hacerse scroll horizontal, el documento debe ocupar todo el espacio en ese eje. | Pendiente |
+| 14 | FIX. El debounce no debe re-renderizar el documento sino guardar el documento en caso que tenga cambios. Si el documento tiene cambios se guarda y despues de guardar se re-renderiza el documento. | Pendiente |
 
 
 **Nota sobre el alcance real de las Etapas 2 y 3** (decisión explícita, amplía lo descrito arriba):
@@ -640,6 +643,48 @@ y estructuras **no existen** — no los uses ni los des por hechos.
   del host) para levantar `doctyp web` en un puerto separado (8799) y navegar la app real
   end-to-end con capturas de pantalla — no quedó ninguna dependencia nueva ni archivo temporal
   en el repositorio ni en `organizations/`.
+
+**Nota sobre el alcance real de la Etapa 11**:
+- **Sin click-to-jump** (decisión ya tomada con el usuario, dividida en una Etapa 12 nueva):
+  investigué el ecosistema **typst.ts** instalándolo y leyendo sus `.d.ts` reales (no solo el
+  README) — el wrapper Vue3 oficial (`@myriaddreamin/typst.vue3`) está `[WIP]` y se descartó;
+  el click-to-jump bidireccional no está documentado en ningún paquete público. Dato para la
+  Etapa 12: `RenderSession.getSourceLoc(path: Uint32Array): string | undefined` existe en el
+  renderer (`@myriaddreamin/typst.ts`, `dist/esm/renderer.d.mts`) — es la pieza de bajo nivel
+  que probablemente hará falta para la dirección clic→cursor.
+- **API real usada** (`createTypstCompiler()`/`createTypstRenderer()` del paquete core
+  `@myriaddreamin/typst.ts`, no el wrapper WIP): `compiler.addSource(path, texto)` para
+  archivos de texto (`main.typ`, `lib.typ`), `compiler.mapShadow(path, Uint8Array)` para
+  binarios (`Images/*`), `compiler.compile({mainFilePath, format:'vector', diagnostics:'unix'})`
+  → artefacto vectorial + diagnósticos legibles, `renderer.renderToCanvas({container,
+  artifactContent, backgroundColor})` — gestiona la paginación a `<canvas>` sin código propio de
+  bajo nivel. Todo vive en `web/src/typst-wasm/client.js` (singleton: reinicializar los ~28 MB
+  del compilador por cada apertura de editor sería inaceptable).
+- **Los binarios `.wasm` (~28 MB compilador + ~1 MB renderer) no se versionan** — se importan
+  con el sufijo `?url` de Vite directo desde `node_modules/@myriaddreamin/...`, que los copia a
+  `dist/assets/` con hash en cada build (mismo principio que `web/dist/`/`web/node_modules/`:
+  build artifacts, no código fuente). Solo las fuentes Liberation Sans (~825 KB, licencia SIL
+  OFL, redistribución explícitamente permitida) se versionan en `web/public/fonts/`, junto a su
+  `LICENSE.txt`.
+- **Solo Liberation Sans en la vista previa en vivo** (decisión ya tomada) — `loadFonts(...,
+  {assets: false})` evita que typst.ts descargue además sus fuentes por defecto desde GitHub;
+  verificado con Playwright que no hay peticiones de red fuera de `127.0.0.1` al compilar.
+  "Compilar" (PDF real, `doctyp.py: compilar_typ`) y las miniaturas
+  (`generar_miniatura`/`generar_miniatura_plantilla`) siguen usando `typst` en el servidor sin
+  cambios, con Museo Sans si está instalada — puede haber diferencias cosméticas menores entre
+  la vista previa en vivo y el PDF final mientras tanto.
+- **Backend nuevo, genérico para documentos y plantillas** (`doctyp_web.py`): `GET
+  .../archivos` (manifiesto de rutas relativas, excluyendo `.snapshots/`, ocultos y el
+  archivo que viaja como texto en vivo) y `GET .../archivo/<ruta...>` (bytes crudos, con
+  `mimetypes.guess_type` para el content-type) — el navegador arma el "proyecto" del
+  compilador con esto. Para plantillas se agregó además `GET .../plantillas/<nombre>/muestra`
+  (mismo `build_typ(_muestra_meta(), "lib.typ")` de la Etapa 9, sin reimplementarlo en JS). El
+  servidor de estáticos ganó `.wasm: "application/wasm"` en su mapa de tipos (antes caía a
+  `application/octet-stream`, más lento para `WebAssembly.instantiateStreaming`).
+- **Limpieza**: `VistaPrevia.vue`, `compilar_vista_previa()` y
+  `compilar_vista_previa_plantilla()` (Etapa 8/9) se eliminaron por completo junto con los
+  endpoints `POST .../vista-previa` — sin ningún llamador tras el cambio. `compilar_typ()` /
+  `generar_miniatura()` / `generar_miniatura_plantilla()` no se tocaron.
 
 ---
 

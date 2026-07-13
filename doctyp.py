@@ -698,32 +698,6 @@ def generar_miniatura(typ_path: Path) -> Path | None:
         return None
 
 
-def compilar_vista_previa(dest_dir: Path, codigo_base: str, texto: str) -> tuple[Path | None, str | None]:
-    """Compila una vista previa "en caliente" del texto en edición (incluye cambios sin
-    guardar) a un PDF temporal, sin tocar jamás el .typ real ni el PDF real de un 'Compilar'
-    explícito. Escribe `texto` a un .typ temporal en la misma carpeta (los imports relativos a
-    lib.typ/Images/img siguen resolviendo) y lo compila a un PDF temporal -- ambos con nombre
-    oculto paralelo al de generar_miniatura(). Siempre recompila (sin cache: "fresco cada
-    vez"). Devuelve (ruta_pdf, None) en éxito o (None, mensaje_error) si typst no está
-    disponible o falla la compilación (mensaje = stderr de typst, para mostrarlo al usuario)."""
-    typ_temp = dest_dir / f".{codigo_base}.preview.typ"
-    pdf_temp = dest_dir / f".{codigo_base}.preview.pdf"
-    typ_temp.write_text(texto, encoding="utf-8")
-    base = _typst_cmd()
-    if base is None:
-        return None, "'typst' no disponible (ni en el PATH ni vía flatpak-spawn)."
-    cmd = base + ["compile"]
-    font_dir = dest_dir / "fonts"
-    if font_dir.is_dir():
-        cmd += ["--font-path", str(font_dir)]
-    cmd += [str(typ_temp), str(pdf_temp)]
-    try:
-        subprocess.run(cmd, check=True, cwd=str(dest_dir), capture_output=True, text=True)
-        return pdf_temp, None
-    except subprocess.CalledProcessError as e:
-        return None, (e.stderr or "").strip() or "Error de compilación."
-
-
 def agregar_doctyp_json(cwd: Path, correlativo: int, anio: int,
                         nombre_archivo: str, autor: str) -> None:
     """Añade una entrada al doctyp.json del directorio cwd (lo crea si no existe).
@@ -975,18 +949,6 @@ def _muestra_meta() -> dict:
         "autor": "Autor de ejemplo", "cargo": "Cargo de ejemplo", "correo": "autor@ejemplo.cl",
         "revisor": None, "aprobador": None,
     }
-
-
-def compilar_vista_previa_plantilla(slug: str, nombre: str, lib_texto: str) -> tuple[Path | None, str | None]:
-    """Vista previa "en caliente" de una plantilla: escribe `lib_texto` (con cambios sin
-    guardar) a un lib.typ temporal oculto -- nunca pisa el lib.typ real -- y genera un
-    documento de muestra que lo importa, delegando la compilación a compilar_vista_previa()
-    (Etapa 8, sin modificarla: ya acepta dest_dir/codigo_base/texto genéricos)."""
-    dest_dir = plantilla_dir(slug, nombre)
-    lib_temp_nombre = f".{nombre}.preview.lib.typ"
-    (dest_dir / lib_temp_nombre).write_text(lib_texto, encoding="utf-8")
-    texto_muestra = build_typ(_muestra_meta(), lib_temp_nombre)
-    return compilar_vista_previa(dest_dir, "_muestra", texto_muestra)
 
 
 def _muestra_typ_path(slug: str, nombre: str) -> Path:

@@ -1,38 +1,29 @@
 <script setup>
 import { ref, watch, onUnmounted } from "vue";
-import { compilarVistaPrevia } from "../api.js";
+import { compilarYRenderizar, reiniciarProyecto } from "../typst-wasm/client.js";
 
 const props = defineProps({
   slug: { type: String, required: true },
   codigo: { type: String, required: true },
   texto: { type: String, default: "" },
-  // Permite reusar este componente para otras vistas previas "en caliente" (p. ej. plantillas)
-  // que compilan sobre un documento de muestra en vez del documento vigente.
-  compilarFn: { type: Function, default: null },
+  // (slug, codigo, texto) => Promise<{ mainTexto, archivos: {ruta, bytes}[] }>
+  // Encapsula la diferencia documento/plantilla (mismo patrón que compilar-fn en la Etapa 10).
+  cargarArchivos: { type: Function, required: true },
 });
 
-const pdfUrl = ref(null);
+const contenedor = ref(null);
 const compilando = ref(false);
 const error = ref("");
 
 let temporizador = null;
 
-function revocarUrlAnterior() {
-  if (pdfUrl.value) {
-    URL.revokeObjectURL(pdfUrl.value);
-    pdfUrl.value = null;
-  }
-}
-
 async function compilar() {
+  if (!contenedor.value) return;
   compilando.value = true;
   try {
-    const fn = props.compilarFn || compilarVistaPrevia;
-    const blob = await fn(props.slug, props.codigo, props.texto);
-    const nuevaUrl = URL.createObjectURL(blob);
-    revocarUrlAnterior();
-    pdfUrl.value = nuevaUrl;
-    error.value = "";
+    const { mainTexto, archivos } = await props.cargarArchivos(props.slug, props.codigo, props.texto);
+    const res = await compilarYRenderizar({ mainTexto, archivos, contenedor: contenedor.value });
+    error.value = res.ok ? "" : res.diagnosticos.join("\n");
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -47,7 +38,10 @@ function actualizarAhora() {
 
 watch(
   () => props.codigo,
-  () => compilar(),
+  async () => {
+    await reiniciarProyecto();
+    compilar();
+  },
   { immediate: true },
 );
 
@@ -61,7 +55,6 @@ watch(
 
 onUnmounted(() => {
   if (temporizador) clearTimeout(temporizador);
-  revocarUrlAnterior();
 });
 </script>
 
@@ -75,7 +68,6 @@ onUnmounted(() => {
     <div v-if="error" class="vista-previa-error">
       <pre>{{ error }}</pre>
     </div>
-    <embed v-else-if="pdfUrl" :src="pdfUrl" type="application/pdf" class="vista-previa-embed" />
-    <div v-else class="empty-state">{{ compilando ? "Compilando…" : "Sin vista previa aún." }}</div>
+    <div v-show="!error" ref="contenedor" class="vista-previa-canvas"></div>
   </div>
 </template>

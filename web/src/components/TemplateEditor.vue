@@ -1,10 +1,11 @@
 <script setup>
 import { ref, computed, watch, onMounted } from "vue";
 import {
-  getPlantillaLibTyp, guardarPlantillaLibTyp, vistaPreviaPlantilla,
+  getPlantillaLibTyp, guardarPlantillaLibTyp,
   getHistoriaPlantilla, getVersionContenidoPlantilla,
+  getArchivosPlantilla, getArchivoPlantilla, getMuestraPlantilla,
 } from "../api.js";
-import VistaPrevia from "./VistaPrevia.vue";
+import TypstCanvasPreview from "./TypstCanvasPreview.vue";
 import CodeEditor from "./CodeEditor.vue";
 
 const props = defineProps({
@@ -96,6 +97,20 @@ function onCambioVersion(ev) {
   ev.target.value = "";
   if (version) cargarVersionEnEditor(version);
 }
+
+async function cargarArchivosPlantilla(slug, nombre, texto) {
+  const [rutas, muestra] = await Promise.all([
+    getArchivosPlantilla(slug, nombre),
+    getMuestraPlantilla(slug, nombre),
+  ]);
+  const archivos = await Promise.all(
+    rutas
+      .filter((r) => !r.startsWith("fonts/"))
+      .map(async (ruta) => ({ ruta, bytes: await getArchivoPlantilla(slug, nombre, ruta) })),
+  );
+  archivos.push({ ruta: "lib.typ", bytes: new TextEncoder().encode(texto) });
+  return { mainTexto: muestra, archivos };
+}
 </script>
 
 <template>
@@ -107,11 +122,11 @@ function onCambioVersion(ev) {
       </div>
       <div class="editor-preview-split">
         <CodeEditor class="editor-textarea" v-model="texto" />
-        <VistaPrevia
+        <TypstCanvasPreview
           :slug="slug"
           :codigo="nombre"
           :texto="texto"
-          :compilar-fn="vistaPreviaPlantilla"
+          :cargar-archivos="cargarArchivosPlantilla"
         />
       </div>
       <div class="status-bar">
