@@ -5,3 +5,7 @@ settings.json
 *.pdf
 !TI-MAN-GOB_2026-0020_v2.0_20260514.pdf
 __pycache__/
+
+# SPA Vue 3 (Etapa 5): dependencias y build, no se versionan; el código fuente sí.
+web/node_modules/
+web/dist/

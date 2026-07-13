@@ -152,6 +152,25 @@ def api_doc_historia(slug: str, codigo_base: str) -> list[dict]:
     return out
 
 
+def api_doc_version_contenido(slug: str, codigo_base: str, version: str) -> str:
+    """Lee el snapshot de una versión anterior (solo lectura; nunca escribe archivos, a
+    diferencia de `cmd_restore` en doctyp.py)."""
+    org = _cargar_org_api(slug)
+    doc = _doc_o_404(org, codigo_base)
+    vers = {v["version"]: v for v in (doc.get("versiones") or [])}
+    v = vers.get(version)
+    if v is None:
+        raise ApiError(404, f"la versión '{version}' no existe para '{codigo_base}'")
+    snapshot = v.get("snapshot")
+    if not snapshot:
+        raise ApiError(404, f"la versión '{version}' no tiene snapshot disponible")
+    dest_dir = core.doc_dir(slug, codigo_base)
+    snap_path = dest_dir / snapshot
+    if not snap_path.exists():
+        raise ApiError(404, f"el snapshot registrado no existe en disco: {snap_path}")
+    return snap_path.read_text(encoding="utf-8")
+
+
 def api_doc_save(slug: str, codigo_base: str, mensaje: str) -> dict:
     if not mensaje:
         raise ApiError(400, "el mensaje es obligatorio")
@@ -339,6 +358,10 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                 return
             if sub == "historia" and len(segs) == 5 and metodo == "GET":
                 self._json(200, api_doc_historia(slug, codigo_base))
+                return
+            if sub == "historia" and len(segs) == 7 and segs[6] == "contenido" and metodo == "GET":
+                version = segs[5]
+                self._json(200, {"contenido": api_doc_version_contenido(slug, codigo_base, version)})
                 return
             if sub == "save" and len(segs) == 5 and metodo == "POST":
                 cuerpo = self._leer_cuerpo_json()
