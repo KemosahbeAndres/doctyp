@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "slug": "slep-chinchorro",
+  "nombre": "SLEP Chinchorro",
+  "config": {
+    "correlativo_inicio": {},
+    "plantilla_default": "informe-ti"
+  },
+  "equipos": [],
+  "autores": [
+    {
+      "id": "a1",
+      "nombre": "Andres Cubillos Salazar",
+      "cargo": "Tecnico de Soporte Informático",
+      "correo": "andres.cubillos@epchinchorro.cl",
+      "equipos": []
+    }
+  ],
+  "documentos": [
+    {
+      "codigo_base": "TI-INF-SFW_2026-0001",
+      "area": "TI",
+      "tipo": "INF",
+      "categoria": "SFW",
+      "anio": 2026,
+      "correlativo": 1,
+      "titulo": "Informe B",
+      "autor_id": "a1",
+      "equipo_id": null,
+      "plantilla": "informe-ti",
+      "ruta": "TI-INF-SFW_2026-0001",
+      "creado": "2026-06-21T23:01:50",
+      "versiones": [
+        {
+          "version": "1.0.0",
+          "fecha": "20260621",
+          "creado": "2026-06-21T23:01:50"
+        }
+      ]
+    },
+    {
+      "codigo_base": "TI-INF-RED_2026-0039",
+      "area": "TI",
+      "tipo": "INF",
+      "categoria": "RED",
+      "anio": 2026,
+      "correlativo": 39,
+      "titulo": "Propuesta de mejora y ampliación de infraestructura tecnológica",
+      "autor_id": "a1",
+      "equipo_id": null,
+      "plantilla": "informe-ti",
+      "ruta": "TI-INF-RED_2026-0039",
+      "creado": "2026-06-23T00:00:00",
+      "versiones": [
+        {
+          "version": "1.0",
+          "fecha": "20260623",
+          "creado": "2026-06-23T00:00:00",
+          "mensaje": "Versión inicial. Cotización base de equipamiento sin instalación."
+        },
+        {
+          "version": "1.1",
+          "fecha": "20260625",
+          "creado": "2026-06-25T00:00:00",
+          "mensaje": "Ampliación del proyecto a provisión e instalación."
+        },
+        {
+          "version": "1.2",
+          "fecha": "20260707",
+          "creado": "2026-07-07T00:00:00",
+          "mensaje": "Ajustes y mejoras en equipamiento. Especificación de requerimientos eléctricos."
+        }
+      ]
+    }
+  ]
+}
