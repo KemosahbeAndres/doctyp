@@ -31,7 +31,7 @@ Uso rápido:
 No requiere paquetes externos (solo stdlib).
 """
 from __future__ import annotations
-import argparse, json, os, re, sys, subprocess, datetime
+import argparse, json, os, re, shutil, sys, subprocess, datetime
 from pathlib import Path
 
 # La salida lleva emojis (✔ ⚠ …). En la consola de Windows (cp1252 por defecto) eso provocaría
@@ -471,6 +471,160 @@ def docs_root() -> Path:
     return root
 
 
+# ── Documentos-carpeta (Etapa 2 de la arquitectura v3, ver CLAUDE.md §4) ──────────────────
+#
+# Un documento nuevo es una carpeta autocontenida bajo docs_root_org(slug)/<codigo_base>/, con
+# la plantilla copiada (lib.typ, Images/, fonts/), img/ para imágenes propias y versions/ con
+# snapshots .typ de cada versión cerrada. org.json guarda la ruta como *relativa* a
+# docs_root_org(slug) (solo el codigo_base); la ruta absoluta se deriva en runtime con doc_dir().
+#
+# Los documentos creados antes de esta etapa (TI-INF-SFW_2026-0001, TI-INF-RED_2026-0039) siguen
+# con "ruta" ABSOLUTA en org.json/settings.json y viven junto al script: es_legacy(doc) es la
+# única heurística que distingue ambos mundos, usada por los comandos migrados para hacer
+# fallback silencioso al comportamiento anterior (git) sin tocar esos documentos.
+
+def docs_root_org(slug: str) -> Path:
+    root = docs_root() / slug
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def doc_dir(slug: str, codigo_base: str) -> Path:
+    return docs_root_org(slug) / codigo_base
+
+
+def resolver_ruta_doc_org(slug: str, doc: dict) -> Path:
+    return doc_dir(slug, doc["codigo_base"]) / f"{doc['codigo_base']}.typ"
+
+
+def es_legacy(doc: dict) -> bool:
+    """True si `doc["ruta"]` es una ruta absoluta (documento creado antes de la Etapa 2,
+    aún junto al script y versionado con git). Los comandos migrados usan esto para
+    delegar en el comportamiento anterior sin tocar estos documentos."""
+    return Path(doc["ruta"]).is_absolute()
+
+
+def plantilla_dir(slug: str, nombre: str) -> Path:
+    return org_dir(slug) / "templates" / nombre
+
+
+def copiar_plantilla_a_documento(slug: str, plantilla: str, dest_dir: Path) -> None:
+    """Copia lib.typ (obligatorio), Images/ y fonts/ (opcionales) de la plantilla de la
+    organización hacia la carpeta de un documento."""
+    origen = plantilla_dir(slug, plantilla)
+    lib_origen = origen / "lib.typ"
+    if not lib_origen.exists():
+        sys.exit(f"ERROR: la plantilla '{plantilla}' no tiene lib.typ ({origen}).")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(lib_origen, dest_dir / "lib.typ")
+    for carpeta in ("Images", "fonts"):
+        src = origen / carpeta
+        if src.is_dir():
+            shutil.copytree(src, dest_dir / carpeta, dirs_exist_ok=True)
+
+
+def crear_carpeta_documento(slug: str, codigo_base: str, plantilla: str,
+                            forzar: bool = False) -> Path:
+    """Crea la carpeta-documento (plantilla copiada + img/ + versions/) y la devuelve.
+    Aborta si ya existe el .typ vigente y no se pasó forzar=True."""
+    dest_dir = doc_dir(slug, codigo_base)
+    out_file = dest_dir / f"{codigo_base}.typ"
+    if out_file.exists() and not forzar:
+        sys.exit(f"ERROR: {out_file} ya existe. Usa --forzar para sobrescribir.")
+    copiar_plantilla_a_documento(slug, plantilla, dest_dir)
+    (dest_dir / "img").mkdir(exist_ok=True)
+    (dest_dir / "versions").mkdir(exist_ok=True)
+    return dest_dir
+
+
+def ruta_version_snapshot(codigo_base: str, version: str) -> str:
+    return f"versions/{codigo_base}_v{version}.typ"
+
+
+def snapshot_version(doc_dir_path: Path, codigo_base: str, version: str) -> Path:
+    """Copia el .typ vigente (aún sin bump) a versions/<base>_v<version>.typ. Devuelve la
+    ruta absoluta del snapshot creado."""
+    origen = doc_dir_path / f"{codigo_base}.typ"
+    destino = doc_dir_path / ruta_version_snapshot(codigo_base, version)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(origen, destino)
+    return destino
+
+
+def buscar_doc_org(org: dict, correlativo: int, anio: int) -> dict:
+    """Calco de buscar_doc() pero sobre org["documentos"]."""
+    docs = [d for d in org["documentos"]
+            if d.get("correlativo") == correlativo and d.get("anio") == anio]
+    if not docs:
+        sys.exit(f"ERROR: no hay documento con correlativo {correlativo:04d} (año {anio}) "
+                 f"en la organización '{org.get('slug', '')}'. Revisa con 'doctyp list'.")
+    if len(docs) > 1:
+        sys.exit(f"ERROR: hay {len(docs)} documentos con correlativo {correlativo:04d} "
+                 f"(año {anio}) en '{org.get('slug', '')}'. Resuelve el duplicado en org.json.")
+    return docs[0]
+
+
+def parse_docref_org(ref: str, org: dict) -> tuple[dict, str]:
+    """Calco de parse_docref() pero resolviendo contra org["documentos"]."""
+    corr, version, anio = _parse_docref_partes(ref)
+    doc = buscar_doc_org(org, corr, anio)
+    vers = doc.get("versiones") or []
+    if version is None:
+        if not vers:
+            sys.exit(f"ERROR: el documento {corr:04d} (año {anio}) no tiene versiones registradas.")
+        return doc, vers[-1]["version"]
+    disponibles = [v["version"] for v in vers]
+    if version not in disponibles:
+        sys.exit(f"ERROR: el documento {corr:04d} (año {anio}) no tiene la versión '{version}'. "
+                 f"Disponibles: {', '.join(disponibles) or '(ninguna)'}")
+    return doc, version
+
+
+def realizar_save_org(doc_dir_path: Path, doc: dict, mensaje: str) -> tuple[str, str]:
+    """Sube el patch de versión de `doc` (modelo carpeta+snapshots, sin git). Antes del bump,
+    snapshotea el .typ vigente y rellena `snapshot` en la última fila ya existente de
+    doc["versiones"] (esa fila se cierra en este momento); luego bumpea el .typ in-place y
+    agrega la fila nueva, sin snapshot todavía (se rellenará en el próximo save/compile).
+    No persiste org.json; el llamador debe hacer guardar_org(...). Devuelve
+    (version_actual, version_nueva)."""
+    typ_path = doc_dir_path / f"{doc['codigo_base']}.typ"
+    if not typ_path.exists():
+        sys.exit(f"ERROR: el archivo del documento no existe: {typ_path}")
+    texto = typ_path.read_text(encoding="utf-8")
+
+    version_actual = doc["versiones"][-1]["version"] if doc.get("versiones") else "1.0"
+    version_nueva = bump_patch(version_actual)
+    hoy = datetime.date.today()
+    fecha = hoy.strftime("%Y%m%d")
+    fecha_iso = hoy.strftime("%Y-%m-%d")
+    autor = doc.get("autor", "")
+
+    if doc.get("versiones"):
+        snap = snapshot_version(doc_dir_path, doc["codigo_base"], version_actual)
+        doc["versiones"][-1]["snapshot"] = os.path.relpath(snap, doc_dir_path).replace(os.sep, "/")
+
+    nuevo_texto, n = re.subn(r'(version:\s*")[^"]*(")',
+                             lambda m: f'{m.group(1)}{version_nueva}{m.group(2)}',
+                             texto, count=1)
+    if n == 0:
+        sys.exit(f"ERROR: no se encontró el campo 'version:' en {typ_path}.")
+
+    fila = f'  ("v{version_nueva}", "{fecha_iso}", "{ty_str(autor)}", "{ty_str(mensaje)}"),\n'
+    nuevo_texto, n = re.subn(r'(#s-versiones\(\s*meta\s*,\s*\(\n)',
+                             lambda m: m.group(1) + fila,
+                             nuevo_texto, count=1)
+    if n == 0:
+        sys.exit(f"ERROR: no se encontró el bloque '#s-versiones(meta, (' en {typ_path}.")
+
+    typ_path.write_text(nuevo_texto, encoding="utf-8")
+
+    ahora = datetime.datetime.now().isoformat(timespec="seconds")
+    doc.setdefault("versiones", []).append({
+        "version": version_nueva, "fecha": fecha, "creado": ahora, "mensaje": mensaje,
+    })
+    return version_actual, version_nueva
+
+
 def _typst_cmd() -> list[str] | None:
     import shutil
     if shutil.which("typst"):
@@ -638,9 +792,14 @@ def leer_doctyp_json(cwd: Path) -> list[dict] | None:
     return None
 
 
-def resolver_desde_doctyp_json(cwd: Path, registro: dict, anio_arg: int | None) -> dict:
+def resolver_desde_doctyp_json(cwd: Path, registro: dict, anio_arg: int | None,
+                                buscador=None) -> dict:
     """Lee doctyp.json y devuelve el documento del registro seleccionado.
-    Si hay una sola entrada la usa directamente; si hay varias pide selección interactiva."""
+    Si hay una sola entrada la usa directamente; si hay varias pide selección interactiva.
+    `buscador` permite reutilizar esta misma lógica contra org.json (buscar_doc_org) en
+    vez del registro legacy de settings.json (buscar_doc, por defecto)."""
+    if buscador is None:
+        buscador = buscar_doc
     entradas = leer_doctyp_json(cwd)
     if not entradas:
         sys.exit(
@@ -654,7 +813,7 @@ def resolver_desde_doctyp_json(cwd: Path, registro: dict, anio_arg: int | None) 
         corr = e["correlativo"]
         anio = anio_arg or e.get("anio", datetime.date.today().year)
         _ok(f"Usando correlativo {_c(_C.CYAN, f'{corr:04d}')} de {DOCTYP_JSON}")
-        return buscar_doc(registro, corr, anio)
+        return buscador(registro, corr, anio)
 
     # Múltiples entradas → selección interactiva
     etiquetas = []
@@ -671,7 +830,7 @@ def resolver_desde_doctyp_json(cwd: Path, registro: dict, anio_arg: int | None) 
 
     e = entradas[idx]
     anio = anio_arg or e.get("anio", datetime.date.today().year)
-    return buscar_doc(registro, e["correlativo"], anio)
+    return buscador(registro, e["correlativo"], anio)
 
 
 def codigo_base(area, tipo, cat, anio, corr) -> str:
@@ -1023,6 +1182,48 @@ def cmd_author_use(args):
     _ok(f"Autor activo: {_c(_C.BOLD, autor_id)}")
 
 
+def cmd_template_add(args):
+    slug = org_activa_slug()
+    org = cargar_org(slug)
+    origen = Path(args.ruta).expanduser().resolve()
+    if not (origen / "lib.typ").exists():
+        sys.exit(f"ERROR: '{origen}' no contiene lib.typ; no es una plantilla válida.")
+    nombre = args.nombre or origen.name
+    destino = plantilla_dir(slug, nombre)
+    if destino.exists():
+        sys.exit(f"ERROR: ya existe una plantilla '{nombre}' en '{slug}'.")
+    shutil.copytree(origen, destino)
+    _ok(f"Plantilla importada: {_c(_C.BOLD, nombre)} en {_c(_C.CYAN, slug)}")
+    print(f"       {_c(_C.DIM, str(destino))}\n")
+
+
+def cmd_template_list(args):
+    slug = org_activa_slug()
+    org = cargar_org(slug)
+    default = org.get("config", {}).get("plantilla_default")
+    base = org_dir(slug) / "templates"
+    nombres = sorted(p.name for p in base.iterdir() if p.is_dir()) if base.exists() else []
+    if not nombres:
+        print(f"\n  {_c(_C.YELLOW, '!')} La organización '{slug}' no tiene plantillas.\n")
+        return
+    print()
+    for nombre in nombres:
+        marca = _c(_C.GREEN, "●") if nombre == default else " "
+        print(f"  {marca} {_c(_C.BOLD, nombre)}")
+    print()
+
+
+def cmd_template_default(args):
+    slug = org_activa_slug()
+    org = cargar_org(slug)
+    nombre = args.nombre.strip()
+    if not (plantilla_dir(slug, nombre) / "lib.typ").exists():
+        sys.exit(f"ERROR: no existe la plantilla '{nombre}' en '{slug}' (o le falta lib.typ).")
+    org.setdefault("config", {})["plantilla_default"] = nombre
+    guardar_org(slug, org)
+    _ok(f"Plantilla por defecto: {_c(_C.BOLD, nombre)}")
+
+
 def cmd_listar(args):
     slug = args.org or org_activa_slug()
     org = cargar_org(slug)
@@ -1094,10 +1295,6 @@ def cmd_reset(args):
 
 
 def cmd_nuevo(args):
-    lib_path = SCRIPT_DIR / args.lib
-    if not lib_path.exists():
-        sys.exit(f"ERROR: no se encontró {args.lib} junto al script ({SCRIPT_DIR}).")
-
     tipo = args.tipo.upper()
     cat = args.categoria.upper()
     if tipo not in TIPOS:
@@ -1115,11 +1312,10 @@ def cmd_nuevo(args):
         sys.exit("ERROR: --fecha debe ser AAAAMMDD.")
     anio = args.anio or int(fecha[:4])
 
-    out_dir = docs_dir(anio)
     slug = org_activa_slug()
     org = cargar_org(slug)
-    fallback = next_correlativo(scan_existing(out_dir, exclude={args.lib}), anio) - 1
-    corr = args.correlativo if args.correlativo is not None else next_correlativo_org(org, anio, fallback)
+    plantilla = args.plantilla or org.get("config", {}).get("plantilla_default", "informe-ti")
+    corr = args.correlativo if args.correlativo is not None else next_correlativo_org(org, anio)
 
     autor_org = autor_activo(org)
     autoria = {"autor": autor_org["nombre"], "cargo": autor_org["cargo"], "correo": autor_org["correo"]}
@@ -1137,48 +1333,28 @@ def cmd_nuevo(args):
     }
 
     base = codigo_base(f["area"], tipo, cat, anio, corr)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / f"{base}.typ"
-    if out_file.exists() and not args.forzar:
-        sys.exit(f"ERROR: {out_file} ya existe. Usa --forzar para sobrescribir.")
+    dest_dir = crear_carpeta_documento(slug, base, plantilla, forzar=args.forzar)
+    out_file = dest_dir / f"{base}.typ"
 
-    lib_import = os.path.relpath(lib_path, out_dir).replace(os.sep, "/")
-    out_file.write_text(build_typ(f, lib_import), encoding="utf-8")
+    out_file.write_text(build_typ(f, "lib.typ"), encoding="utf-8")
 
     ahora = datetime.datetime.now().isoformat(timespec="seconds")
-    entrada = {
-        "codigo_base": base,
-        "area": f["area"], "tipo": tipo, "categoria": cat,
-        "anio": anio, "correlativo": corr,
-        "titulo": titulo, "autor": f["autor"],
-        "ruta": str(out_file),
-        "creado": ahora,
-        "versiones": [{"version": f["version"], "fecha": fecha, "creado": ahora}],
-    }
 
-    # org.json (fuente de verdad v3)
+    # org.json (fuente de verdad v3): ruta relativa a docs_root_org(slug), portable entre SO/máquinas.
     entrada_org = {
         "codigo_base": base,
         "area": f["area"], "tipo": tipo, "categoria": cat,
         "anio": anio, "correlativo": corr,
         "titulo": titulo, "autor_id": autor_org.get("id"), "equipo_id": None,
-        "plantilla": "informe-ti",
-        "ruta": str(out_file),
+        "plantilla": plantilla,
+        "ruta": base,
         "creado": ahora,
         "versiones": [{"version": f["version"], "fecha": fecha, "creado": ahora}],
     }
     org["documentos"].append(entrada_org)
     guardar_org(slug, org)
 
-    # Espejo v2 en settings.json (deuda explícita, ver CLAUDE.md §14): mantiene funcionando
-    # save/compile/edit/etc. sin cambios hasta que la Etapa 3 los migre a org.json.
-    settings = cargar_settings()
-    settings["documentos"].append(entrada)
-    guardar_settings(settings)
-
     agregar_doctyp_json(Path.cwd(), corr, anio, f"{base}.typ", f["autor"])
-    _git_snapshot(SCRIPT_DIR, entrada, f["version"], "Versión inicial.", "new",
-                  [out_file, registro_path(SCRIPT_DIR)])
 
     print()
     _ok(f"Creado: {_c(_C.DIM, str(out_file))}")
@@ -1289,13 +1465,14 @@ def realizar_save(doc: dict, mensaje: str) -> tuple[str, str]:
 
 
 def cmd_save(args):
-    registro = cargar_registro(SCRIPT_DIR)
+    slug = org_activa_slug()
+    org = cargar_org(slug)
     anio = args.anio or datetime.date.today().year
 
     # Correlativo: si no se pasó por CLI, selección interactiva
     if getattr(args, "correlativo", None) is None:
         docs = sorted(
-            [d for d in registro["documentos"] if d.get("anio") == anio],
+            [d for d in org["documentos"] if d.get("anio") == anio],
             key=lambda d: d.get("correlativo", 0),
         )
         if not docs:
@@ -1314,7 +1491,7 @@ def cmd_save(args):
             return
         doc = docs[idx]
     else:
-        doc = buscar_doc(registro, args.correlativo, anio)
+        doc = buscar_doc_org(org, args.correlativo, anio)
 
     # Mensaje: si no se pasó por CLI, pedirlo interactivamente
     mensaje = getattr(args, "mensaje", None) or ""
@@ -1323,16 +1500,26 @@ def cmd_save(args):
         if mensaje is None:
             return
 
-    version_actual, version_nueva = realizar_save(doc, mensaje)
-    guardar_registro(SCRIPT_DIR, registro)
-    _git_snapshot(SCRIPT_DIR, doc, version_nueva, mensaje, "save",
-                  [Path(doc["ruta"]), registro_path(SCRIPT_DIR)])
+    if es_legacy(doc):
+        # Documento anterior a la Etapa 2 (aún junto al script, versionado con git).
+        registro = cargar_registro(SCRIPT_DIR)
+        doc_legacy = buscar_doc(registro, doc["correlativo"], anio)
+        version_actual, version_nueva = realizar_save(doc_legacy, mensaje)
+        guardar_registro(SCRIPT_DIR, registro)
+        _git_snapshot(SCRIPT_DIR, doc_legacy, version_nueva, mensaje, "save",
+                      [Path(doc_legacy["ruta"]), registro_path(SCRIPT_DIR)])
+        ruta_str = str(Path(doc_legacy["ruta"]))
+    else:
+        dest_dir = doc_dir(slug, doc["codigo_base"])
+        version_actual, version_nueva = realizar_save_org(dest_dir, doc, mensaje)
+        guardar_org(slug, org)
+        ruta_str = str(dest_dir / f"{doc['codigo_base']}.typ")
 
     print()
     _ok(f"Versión actualizada: {_c(_C.DIM, 'v' + version_actual)} → "
         f"{_c(_C.BOLD + _C.CYAN, 'v' + version_nueva)}")
     print(f"       Documento: {_c(_C.BOLD, doc['codigo_base'])}")
-    print(f"       Archivo:   {_c(_C.DIM, str(Path(doc['ruta'])))}")
+    print(f"       Archivo:   {_c(_C.DIM, ruta_str)}")
     print(f"       Mensaje:   {mensaje}\n")
 
 
@@ -1471,16 +1658,13 @@ def cmd_change(args):
 
 
 def cmd_compile(args):
-    registro = cargar_registro(SCRIPT_DIR)
+    slug = org_activa_slug()
+    org = cargar_org(slug)
     if args.correlativo is None:
-        doc = resolver_desde_doctyp_json(Path.cwd(), registro, args.anio)
+        doc = resolver_desde_doctyp_json(Path.cwd(), org, args.anio, buscador=buscar_doc_org)
     else:
         anio = args.anio or datetime.date.today().year
-        doc = buscar_doc(registro, args.correlativo, anio)
-
-    typ_path = Path(doc["ruta"])
-    if not typ_path.exists():
-        sys.exit(f"ERROR: el archivo registrado no existe: {typ_path}")
+        doc = buscar_doc_org(org, args.correlativo, anio)
 
     # Commit de versión implícito: cada compilación sube el patch antes de generar el PDF,
     # así el documento (portada, ficha, tabla de versiones) siempre refleja la versión compilada.
@@ -1490,12 +1674,27 @@ def cmd_compile(args):
         if mensaje is None:
             return
 
-    version_actual, version = realizar_save(doc, mensaje)
-    guardar_registro(SCRIPT_DIR, registro)
-    _ok(f"Versión actualizada: {_c(_C.DIM, 'v' + version_actual)} → "
-        f"{_c(_C.BOLD + _C.CYAN, 'v' + version)}")
-    _git_snapshot(SCRIPT_DIR, doc, version, mensaje, "save",
-                  [typ_path, registro_path(SCRIPT_DIR)])
+    if es_legacy(doc):
+        registro = cargar_registro(SCRIPT_DIR)
+        doc_legacy = buscar_doc(registro, doc["correlativo"], doc["anio"])
+        typ_path = Path(doc_legacy["ruta"])
+        if not typ_path.exists():
+            sys.exit(f"ERROR: el archivo registrado no existe: {typ_path}")
+        version_actual, version = realizar_save(doc_legacy, mensaje)
+        guardar_registro(SCRIPT_DIR, registro)
+        _ok(f"Versión actualizada: {_c(_C.DIM, 'v' + version_actual)} → "
+            f"{_c(_C.BOLD + _C.CYAN, 'v' + version)}")
+        _git_snapshot(SCRIPT_DIR, doc_legacy, version, mensaje, "save",
+                      [typ_path, registro_path(SCRIPT_DIR)])
+    else:
+        dest_dir = doc_dir(slug, doc["codigo_base"])
+        typ_path = dest_dir / f"{doc['codigo_base']}.typ"
+        if not typ_path.exists():
+            sys.exit(f"ERROR: el archivo del documento no existe: {typ_path}")
+        version_actual, version = realizar_save_org(dest_dir, doc, mensaje)
+        guardar_org(slug, org)
+        _ok(f"Versión actualizada: {_c(_C.DIM, 'v' + version_actual)} → "
+            f"{_c(_C.BOLD + _C.CYAN, 'v' + version)}")
 
     pdf_versioned_name = f"{typ_path.stem} (v{version}).pdf"
 
@@ -1514,20 +1713,20 @@ def cmd_compile(args):
 
     destino_cwd = Path.cwd() / pdf_versioned_name
     if pdf_versioned.exists() and destino_cwd.resolve() != pdf_versioned.resolve():
-        import shutil
         shutil.copy2(pdf_versioned, destino_cwd)
         _ok(f"Copiado a: {_c(_C.DIM, str(destino_cwd))}\n")
 
 
 def cmd_edit(args):
-    registro = cargar_registro(SCRIPT_DIR)
+    slug = org_activa_slug()
+    org = cargar_org(slug)
     if args.correlativo is None:
-        doc = resolver_desde_doctyp_json(Path.cwd(), registro, args.anio)
+        doc = resolver_desde_doctyp_json(Path.cwd(), org, args.anio, buscador=buscar_doc_org)
     else:
         anio = args.anio or datetime.date.today().year
-        doc = buscar_doc(registro, args.correlativo, anio)
+        doc = buscar_doc_org(org, args.correlativo, anio)
 
-    typ_path = Path(doc["ruta"])
+    typ_path = Path(doc["ruta"]) if es_legacy(doc) else resolver_ruta_doc_org(slug, doc)
     if not typ_path.exists():
         sys.exit(f"ERROR: el archivo registrado no existe: {typ_path}")
 
@@ -1588,8 +1787,9 @@ def _seleccionar(opciones: list[str], titulo: str) -> int | None:
 
 
 def cmd_add(args):
-    registro = cargar_registro(SCRIPT_DIR)
-    registrados = {d.get("codigo_base") for d in registro["documentos"]}
+    slug = org_activa_slug()
+    org = cargar_org(slug)
+    registrados = {d.get("codigo_base") for d in org["documentos"]}
 
     cwd = Path.cwd()
     candidatos = []
@@ -1617,7 +1817,7 @@ def cmd_add(args):
         return
     p, meta, base = candidatos[idx]
 
-    choque = next((d for d in registro["documentos"]
+    choque = next((d for d in org["documentos"]
                    if d.get("anio") == meta["anio"]
                    and d.get("correlativo") == meta["correlativo"]), None)
     if choque:
@@ -1625,46 +1825,40 @@ def cmd_add(args):
                  f"registrado por {choque['codigo_base']}. Reasigna el correlativo en el .typ "
                  f"antes de importarlo.")
 
-    import shutil
-    dest_dir = docs_dir(meta["anio"])
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    plantilla = org.get("config", {}).get("plantilla_default", "informe-ti")
+    dest_dir = crear_carpeta_documento(slug, base, plantilla, forzar=True)
     destino = dest_dir / f"{base}.typ"
-    if destino.resolve() != p.resolve():
-        shutil.move(str(p), str(destino))
-        _ok(f"Movido: {p.name} → {_c(_C.DIM, str(destino))}")
-    else:
-        print(f"  Ya está en su carpeta: {destino}")
+    shutil.move(str(p), str(destino))
+    _ok(f"Movido: {p.name} → {_c(_C.DIM, str(destino))}")
 
-    lib_import = os.path.relpath(SCRIPT_DIR / args.lib, dest_dir).replace(os.sep, "/")
     txt = destino.read_text(encoding="utf-8")
     nuevo, n = re.subn(r'(#import\s+")[^"]*(":\s*\*)',
-                       lambda m: f'{m.group(1)}{lib_import}{m.group(2)}', txt, count=1)
+                       lambda m: f'{m.group(1)}lib.typ{m.group(2)}', txt, count=1)
     if n and nuevo != txt:
         destino.write_text(nuevo, encoding="utf-8")
-        print(f"       Import normalizado a \"{lib_import}\".")
+        print(f'       Import normalizado a "lib.typ".')
 
     ahora = datetime.datetime.now().isoformat(timespec="seconds")
     mensaje_import = "Importado al registro."
-    entrada = {
+    entrada_org = {
         "codigo_base": base,
         "area": meta["area"], "tipo": meta["tipo"], "categoria": meta["categoria"],
         "anio": meta["anio"], "correlativo": meta["correlativo"],
-        "titulo": meta["titulo"], "autor": meta["autor"],
-        "ruta": str(destino),
+        "titulo": meta["titulo"], "autor_id": autor_activo(org).get("id"), "equipo_id": None,
+        "plantilla": plantilla,
+        "ruta": base,
         "creado": ahora,
         "versiones": [{"version": meta["version"], "fecha": ahora[:10].replace("-", ""),
                        "creado": ahora, "mensaje": mensaje_import}],
     }
-    registro["documentos"].append(entrada)
-    guardar_registro(SCRIPT_DIR, registro)
+    org["documentos"].append(entrada_org)
+    guardar_org(slug, org)
     agregar_doctyp_json(cwd, meta["correlativo"], meta["anio"], f"{base}.typ", meta["autor"])
-    _git_snapshot(SCRIPT_DIR, entrada, meta["version"], mensaje_import, "add",
-                  [destino, registro_path(SCRIPT_DIR)])
 
     print()
     _ok(f"Registrado: {_c(_C.BOLD, base)}  (v{meta['version']})")
     print(f"       Archivo:  {_c(_C.DIM, str(destino))}")
-    print(f"       Registro: {_c(_C.DIM, str(registro_path(SCRIPT_DIR)))}\n")
+    print(f"       Registro: {_c(_C.DIM, str(org_path(slug)))}\n")
 
 
 def _quitar_de_doctyp_json(cwd: Path, correlativo: int, anio: int) -> bool:
@@ -1691,17 +1885,72 @@ def _quitar_de_doctyp_json(cwd: Path, correlativo: int, anio: int) -> bool:
 
 
 def cmd_delete(args):
-    """Elimina un documento: archivo .typ, entrada en settings.json y en doctyp.json (si existe)."""
-    registro = cargar_registro(SCRIPT_DIR)
+    """Elimina un documento. Modelo nuevo (carpeta): borra la carpeta completa (versions/,
+    Images/, img/, etc.) y la entrada en org.json. Modelo legacy: borra .typ+.pdf sueltos
+    junto al script y la entrada en settings.json (comportamiento anterior sin cambios)."""
+    slug = org_activa_slug()
+    org = cargar_org(slug)
     anio = args.anio or datetime.date.today().year
-    doc = buscar_doc(registro, args.correlativo, anio)
+    doc = buscar_doc_org(org, args.correlativo, anio)
+    base = doc.get("codigo_base", "")
 
-    typ_path = Path(doc["ruta"])
-    base = doc.get("codigo_base", typ_path.stem)
+    if es_legacy(doc):
+        registro = cargar_registro(SCRIPT_DIR)
+        doc_legacy = buscar_doc(registro, args.correlativo, anio)
+        typ_path = Path(doc_legacy["ruta"])
+
+        print(f"\n  {_c(_C.BOLD + _C.RED, 'Eliminar documento')}")
+        print(f"  Código:  {_c(_C.BOLD, base)}")
+        print(f"  Archivo: {_c(_C.DIM, str(typ_path))}")
+        print(f"  Título:  {doc.get('titulo', '')}\n")
+
+        if not args.yes:
+            try:
+                resp = input(f"  {_c(_C.YELLOW, '¿Confirmar eliminación?')} [s/N]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return
+            if resp not in ("s", "si", "sí", "y", "yes"):
+                print("  Cancelado.\n")
+                return
+
+        eliminado_typ = False
+        if typ_path.exists():
+            typ_path.unlink()
+            eliminado_typ = True
+
+        pdf_path = typ_path.with_suffix(".pdf")
+        eliminado_pdf = False
+        if pdf_path.exists():
+            pdf_path.unlink()
+            eliminado_pdf = True
+
+        registro["documentos"] = [
+            d for d in registro["documentos"]
+            if not (d.get("correlativo") == args.correlativo and d.get("anio") == anio)
+        ]
+        guardar_registro(SCRIPT_DIR, registro)
+
+        eliminado_json = _quitar_de_doctyp_json(Path.cwd(), args.correlativo, anio)
+
+        print()
+        if eliminado_typ:
+            _ok(f"Archivo eliminado:  {_c(_C.DIM, str(typ_path))}")
+        else:
+            _warn(f"Archivo no encontrado (ya no existía): {typ_path}")
+        if eliminado_pdf:
+            _ok(f"PDF eliminado:      {_c(_C.DIM, str(pdf_path))}")
+        _ok(f"Eliminado del registro: {_c(_C.DIM, str(registro_path(SCRIPT_DIR)))}")
+        if eliminado_json:
+            _ok(f"Eliminado de {DOCTYP_JSON} en el directorio actual.")
+        print()
+        return
+
+    dest_dir = doc_dir(slug, base)
 
     print(f"\n  {_c(_C.BOLD + _C.RED, 'Eliminar documento')}")
     print(f"  Código:  {_c(_C.BOLD, base)}")
-    print(f"  Archivo: {_c(_C.DIM, str(typ_path))}")
+    print(f"  Carpeta: {_c(_C.DIM, str(dest_dir))}  {_c(_C.RED, '(se elimina COMPLETA: .typ, versions/, Images/, img/)')}")
     print(f"  Título:  {doc.get('titulo', '')}\n")
 
     if not args.yes:
@@ -1714,33 +1963,25 @@ def cmd_delete(args):
             print("  Cancelado.\n")
             return
 
-    eliminado_typ = False
-    if typ_path.exists():
-        typ_path.unlink()
-        eliminado_typ = True
+    eliminada_carpeta = False
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir)
+        eliminada_carpeta = True
 
-    pdf_path = typ_path.with_suffix(".pdf")
-    eliminado_pdf = False
-    if pdf_path.exists():
-        pdf_path.unlink()
-        eliminado_pdf = True
-
-    registro["documentos"] = [
-        d for d in registro["documentos"]
-        if not (d.get("correlativo") == doc["correlativo"] and d.get("anio") == doc["anio"])
+    org["documentos"] = [
+        d for d in org["documentos"]
+        if not (d.get("correlativo") == args.correlativo and d.get("anio") == anio)
     ]
-    guardar_registro(SCRIPT_DIR, registro)
+    guardar_org(slug, org)
 
-    eliminado_json = _quitar_de_doctyp_json(Path.cwd(), doc["correlativo"], doc["anio"])
+    eliminado_json = _quitar_de_doctyp_json(Path.cwd(), args.correlativo, anio)
 
     print()
-    if eliminado_typ:
-        _ok(f"Archivo eliminado:  {_c(_C.DIM, str(typ_path))}")
+    if eliminada_carpeta:
+        _ok(f"Carpeta eliminada:  {_c(_C.DIM, str(dest_dir))}")
     else:
-        _warn(f"Archivo no encontrado (ya no existía): {typ_path}")
-    if eliminado_pdf:
-        _ok(f"PDF eliminado:      {_c(_C.DIM, str(pdf_path))}")
-    _ok(f"Eliminado del registro: {_c(_C.DIM, str(registro_path(SCRIPT_DIR)))}")
+        _warn(f"Carpeta no encontrada (ya no existía): {dest_dir}")
+    _ok(f"Eliminado del registro: {_c(_C.DIM, str(org_path(slug)))}")
     if eliminado_json:
         _ok(f"Eliminado de {DOCTYP_JSON} en el directorio actual.")
     print()
@@ -1881,9 +2122,101 @@ def cmd_git_init(args):
     print()
 
 
+def cmd_migrate(args):
+    """Migra un documento del modelo antiguo (archivo suelto junto al script + tags git) al
+    modelo de carpeta con snapshots de archivo (Etapa 2). No borra el archivo original ni
+    toca settings.json; el usuario decide cuándo limpiar. Idempotente: si el documento ya
+    tiene ruta relativa (ya migrado), avisa y no hace nada."""
+    slug = org_activa_slug()
+    org = cargar_org(slug)
+    anio = args.anio or datetime.date.today().year
+
+    doc = None
+    for d in org["documentos"]:
+        if d.get("correlativo") == args.correlativo and d.get("anio") == anio:
+            doc = d
+            break
+    origen_settings = False
+    if doc is None:
+        settings = cargar_settings()
+        for d in settings["documentos"]:
+            if d.get("correlativo") == args.correlativo and d.get("anio") == anio:
+                doc = dict(d)
+                origen_settings = True
+                break
+    if doc is None:
+        sys.exit(f"ERROR: no hay documento con correlativo {args.correlativo:04d} (año {anio}) "
+                 f"ni en org.json ni en settings.json.")
+
+    if not es_legacy(doc):
+        _ok(f"{doc['codigo_base']} ya está migrado (ruta relativa en org.json). Nada que hacer.")
+        return
+
+    ruta_original = Path(doc["ruta"])
+    if not ruta_original.exists():
+        sys.exit(f"ERROR: el archivo original no existe: {ruta_original}")
+
+    plantilla = doc.get("plantilla") or org.get("config", {}).get("plantilla_default", "informe-ti")
+    dest_dir = crear_carpeta_documento(slug, doc["codigo_base"], plantilla, forzar=True)
+    destino = dest_dir / f"{doc['codigo_base']}.typ"
+    shutil.copy2(ruta_original, destino)
+    _ok(f"Copiado (el original NO se borra): {_c(_C.DIM, str(ruta_original))} → {_c(_C.DIM, str(destino))}")
+
+    vers = doc.get("versiones") or []
+    con_git = _git_repo_ok(SCRIPT_DIR)
+    rel_git = Path(os.path.relpath(ruta_original, SCRIPT_DIR)).as_posix()
+    con_snapshot, sin_snapshot = 0, 0
+    for v in vers:
+        tag = _tag_doc(doc, v["version"])
+        if con_git:
+            r_tag = _git("rev-parse", "--verify", "--quiet", f"refs/tags/{tag}", root=SCRIPT_DIR)
+        else:
+            r_tag = None
+        if con_git and r_tag.returncode == 0:
+            r_show = _git("show", f"{tag}:{rel_git}", root=SCRIPT_DIR)
+            if r_show.returncode == 0:
+                snap_path = dest_dir / ruta_version_snapshot(doc["codigo_base"], v["version"])
+                snap_path.parent.mkdir(parents=True, exist_ok=True)
+                snap_path.write_text(r_show.stdout, encoding="utf-8")
+                v["snapshot"] = ruta_version_snapshot(doc["codigo_base"], v["version"])
+                con_snapshot += 1
+                continue
+        sin_snapshot += 1
+
+    entrada_org = {
+        "codigo_base": doc["codigo_base"],
+        "area": doc["area"], "tipo": doc["tipo"], "categoria": doc["categoria"],
+        "anio": doc["anio"], "correlativo": doc["correlativo"],
+        "titulo": doc.get("titulo", ""),
+        "autor_id": doc.get("autor_id") or autor_activo(org).get("id"),
+        "equipo_id": doc.get("equipo_id"),
+        "plantilla": plantilla,
+        "ruta": doc["codigo_base"],
+        "creado": doc.get("creado", ""),
+        "versiones": vers,
+    }
+    org["documentos"] = [d for d in org["documentos"]
+                         if not (d.get("correlativo") == doc["correlativo"]
+                                 and d.get("anio") == doc["anio"])]
+    org["documentos"].append(entrada_org)
+    guardar_org(slug, org)
+
+    print()
+    _ok(f"Migrado: {_c(_C.BOLD, doc['codigo_base'])}")
+    print(f"       Snapshots recuperados: {con_snapshot}/{len(vers)}"
+          + (f"  ({sin_snapshot} sin tag git disponible)" if sin_snapshot else ""))
+    print(f"       Carpeta nueva: {_c(_C.DIM, str(dest_dir))}")
+    print(f"       {_c(_C.YELLOW, 'El archivo original no se eliminó')}"
+          f" ({_c(_C.DIM, str(ruta_original))}); bórralo manualmente si ya no lo necesitas.")
+    if origen_settings:
+        print(f"       {_c(_C.DIM, 'Nota: settings.json conserva su entrada; no se modifica.')}")
+    print()
+
+
 def cmd_history(args):
-    """Lista las versiones de un documento e indica si tienen snapshot git disponible."""
-    registro = cargar_registro(SCRIPT_DIR)
+    """Lista las versiones de un documento e indica si tienen snapshot disponible."""
+    slug = org_activa_slug()
+    org = cargar_org(slug)
     ref = args.docref
     if ref is None:
         try:
@@ -1896,7 +2229,7 @@ def cmd_history(args):
             return
 
     corr, _version_ignorada, anio = _parse_docref_partes(ref)
-    doc = buscar_doc(registro, corr, anio)
+    doc = buscar_doc_org(org, corr, anio)
     vers = doc.get("versiones") or []
 
     print(f"\n  {_c(_C.BOLD, doc['codigo_base'])}  ·  {doc.get('titulo', '')}")
@@ -1904,30 +2237,43 @@ def cmd_history(args):
         print(f"  {_c(_C.YELLOW, '!')} Sin versiones registradas.\n")
         return
 
-    con_git = _git_repo_ok(SCRIPT_DIR)
+    if es_legacy(doc):
+        con_git = _git_repo_ok(SCRIPT_DIR)
+        print()
+        for v in reversed(vers):
+            tag = _tag_doc(doc, v["version"])
+            if con_git:
+                r = _git("rev-parse", "--verify", "--quiet", f"refs/tags/{tag}", root=SCRIPT_DIR)
+                snap = _c(_C.GREEN, "✔") if r.returncode == 0 else _c(_C.DIM, "–")
+            else:
+                snap = _c(_C.DIM, "–")
+            fecha = v.get("fecha", "")
+            fecha_fmt = f"{fecha[:4]}-{fecha[4:6]}-{fecha[6:]}" if len(fecha) == 8 else fecha
+            ver_col = _c(_C.BOLD + _C.CYAN, f"v{v['version']:<8}")
+            print(f"  {snap}  {ver_col} {fecha_fmt:<12} {v.get('mensaje', '')}")
+        if not con_git:
+            print(f"\n  {_c(_C.YELLOW, '!')} git no disponible o el directorio no es un repositorio "
+                  f"— ejecuta 'doctyp git-init' para habilitar snapshots.")
+        print()
+        return
+
+    dest_dir = doc_dir(slug, doc["codigo_base"])
     print()
     for v in reversed(vers):
-        tag = _tag_doc(doc, v["version"])
-        if con_git:
-            r = _git("rev-parse", "--verify", "--quiet", f"refs/tags/{tag}", root=SCRIPT_DIR)
-            snap = _c(_C.GREEN, "✔") if r.returncode == 0 else _c(_C.DIM, "–")
-        else:
-            snap = _c(_C.DIM, "–")
+        snapshot = v.get("snapshot")
+        existe = bool(snapshot) and (dest_dir / snapshot).exists()
+        snap = _c(_C.GREEN, "✔") if existe else _c(_C.DIM, "–")
         fecha = v.get("fecha", "")
         fecha_fmt = f"{fecha[:4]}-{fecha[4:6]}-{fecha[6:]}" if len(fecha) == 8 else fecha
         ver_col = _c(_C.BOLD + _C.CYAN, f"v{v['version']:<8}")
         print(f"  {snap}  {ver_col} {fecha_fmt:<12} {v.get('mensaje', '')}")
-
-    if not con_git:
-        print(f"\n  {_c(_C.YELLOW, '!')} git no disponible o el directorio no es un repositorio "
-              f"— ejecuta 'doctyp git-init' para habilitar snapshots.")
     print()
 
 
 def cmd_restore(args):
-    """Extrae el .typ de una versión anterior desde su snapshot git, sin tocar el vigente."""
-    registro = cargar_registro(SCRIPT_DIR)
-    root = SCRIPT_DIR
+    """Extrae el .typ de una versión anterior desde su snapshot, sin tocar el vigente."""
+    slug = org_activa_slug()
+    org = cargar_org(slug)
 
     ref = args.docref
     if ref is None:
@@ -1940,12 +2286,8 @@ def cmd_restore(args):
             print("  Cancelado.")
             return
 
-    if not _git_repo_ok(root):
-        sys.exit("ERROR: este directorio no es un repositorio git (o git no está disponible). "
-                 "Ejecuta 'doctyp git-init' primero.")
-
     corr, version, anio = _parse_docref_partes(ref)
-    doc = buscar_doc(registro, corr, anio)
+    doc = buscar_doc_org(org, corr, anio)
     vers = doc.get("versiones") or []
 
     if version is None:
@@ -1962,24 +2304,42 @@ def cmd_restore(args):
             sys.exit(f"ERROR: el documento {doc['codigo_base']} no tiene la versión '{version}'. "
                      f"Disponibles: {', '.join(disponibles) or '(ninguna)'}")
 
-    tag = _tag_doc(doc, version)
-    r_tag = _git("rev-parse", "--verify", "--quiet", f"refs/tags/{tag}", root=root)
-    if r_tag.returncode != 0:
-        sys.exit(f"ERROR: no existe el snapshot '{tag}' para esa versión. "
-                 f"Usa 'doctyp history {corr}' para ver qué versiones tienen snapshot.")
-
-    ruta = Path(doc["ruta"])
-    rel_git = Path(os.path.relpath(ruta, root)).as_posix()
-    r_show = _git("show", f"{tag}:{rel_git}", root=root)
-    if r_show.returncode != 0:
-        sys.exit(f"ERROR: no se pudo leer '{rel_git}' en '{tag}': {r_show.stderr.strip()}")
-    contenido = r_show.stdout
+    if es_legacy(doc):
+        root = SCRIPT_DIR
+        if not _git_repo_ok(root):
+            sys.exit("ERROR: este directorio no es un repositorio git (o git no está disponible). "
+                     "Ejecuta 'doctyp git-init' primero.")
+        tag = _tag_doc(doc, version)
+        r_tag = _git("rev-parse", "--verify", "--quiet", f"refs/tags/{tag}", root=root)
+        if r_tag.returncode != 0:
+            sys.exit(f"ERROR: no existe el snapshot '{tag}' para esa versión. "
+                     f"Usa 'doctyp history {corr}' para ver qué versiones tienen snapshot.")
+        ruta = Path(doc["ruta"])
+        rel_git = Path(os.path.relpath(ruta, root)).as_posix()
+        r_show = _git("show", f"{tag}:{rel_git}", root=root)
+        if r_show.returncode != 0:
+            sys.exit(f"ERROR: no se pudo leer '{rel_git}' en '{tag}': {r_show.stderr.strip()}")
+        contenido = r_show.stdout
+        destino_dir = ruta.parent
+    else:
+        dest_dir = doc_dir(slug, doc["codigo_base"])
+        vers_elegida = next(v for v in vers if v["version"] == version)
+        snapshot = vers_elegida.get("snapshot")
+        if not snapshot:
+            sys.exit(f"ERROR: la versión '{version}' no tiene snapshot (probablemente es la "
+                     f"vigente y aún no se ha guardado una versión posterior). Usa "
+                     f"'doctyp save' para cerrarla y generar su snapshot.")
+        snap_path = dest_dir / snapshot
+        if not snap_path.exists():
+            sys.exit(f"ERROR: el snapshot registrado no existe en disco: {snap_path}")
+        contenido = snap_path.read_text(encoding="utf-8")
+        destino_dir = dest_dir
 
     if args.stdout:
         print(contenido, end="" if contenido.endswith("\n") else "\n")
         return
 
-    destino = ruta.parent / f"{doc['codigo_base']}_v{version}.typ"
+    destino = destino_dir / f"{doc['codigo_base']}_v{version}.typ"
     if destino.exists():
         sys.exit(f"ERROR: ya existe {destino}; no se sobreescribe. "
                  f"Bórralo o renómbralo antes de restaurar.")
@@ -2053,6 +2413,21 @@ def build_parser() -> argparse.ArgumentParser:
     pau_use.add_argument("id", metavar="ID")
     pau_use.set_defaults(func=cmd_author_use)
 
+    ptp = sub.add_parser("template", help="Gestiona plantillas de la organización activa.")
+    ptp_sub = ptp.add_subparsers(dest="template_cmd", required=True)
+
+    ptp_add = ptp_sub.add_parser("add", help="Importa una carpeta de plantilla a la org activa.")
+    ptp_add.add_argument("ruta", metavar="RUTA", help="Carpeta de origen (debe contener lib.typ).")
+    ptp_add.add_argument("--nombre", help="Nombre de la plantilla (por defecto, el de la carpeta).")
+    ptp_add.set_defaults(func=cmd_template_add)
+
+    ptp_list = ptp_sub.add_parser("list", aliases=["ls"], help="Lista plantillas de la org activa.")
+    ptp_list.set_defaults(func=cmd_template_list)
+
+    ptp_default = ptp_sub.add_parser("default", help="Fija la plantilla por defecto de la org activa.")
+    ptp_default.add_argument("nombre", metavar="NOMBRE")
+    ptp_default.set_defaults(func=cmd_template_default)
+
     pn = sub.add_parser("new", aliases=["n"],
                         help="Crea un nuevo documento .typ con correlativo secuencial.")
     pn.add_argument("titulo_pos", nargs="?", metavar="TÍTULO",
@@ -2083,6 +2458,7 @@ def build_parser() -> argparse.ArgumentParser:
     pn.add_argument("--correo", help="Correo del autor.")
     pn.add_argument("--revisor", help="Revisor.")
     pn.add_argument("--aprobador", help="Aprobador.")
+    pn.add_argument("--plantilla", help="Plantilla a usar (por defecto: config.plantilla_default de la org activa).")
     pn.add_argument("--forzar", action="store_true",
                     help="Sobrescribir si el archivo ya existe.")
     pn.set_defaults(func=cmd_nuevo)
@@ -2161,6 +2537,14 @@ def build_parser() -> argparse.ArgumentParser:
                          help="Inicializa/migra el repositorio git para snapshots de versión.")
     pgi.set_defaults(func=cmd_git_init)
 
+    pmg = sub.add_parser("migrate",
+                         help="Migra un documento del modelo antiguo (archivo suelto + tags git) "
+                              "al modelo de carpeta con snapshots de archivo.")
+    pmg.add_argument("correlativo", type=int, metavar="CORRELATIVO",
+                     help="Número correlativo del documento a migrar.")
+    pmg.add_argument("--anio", type=int, help="Año del documento (por defecto, el actual).")
+    pmg.set_defaults(func=cmd_migrate)
+
     ph = sub.add_parser("history", aliases=["h", "log"],
                         help="Lista las versiones de un documento y si tienen snapshot git.")
     ph.add_argument("docref", nargs="?", metavar="DOC-REF",
@@ -2210,6 +2594,7 @@ def menu_interactivo() -> None:
         ("org list",      "",                "Listar organizaciones"),
         ("team list",     "",                "Listar equipos de la organización activa"),
         ("author list",   "",                "Listar autores de la organización activa"),
+        ("template list", "",                "Listar plantillas de la organización activa"),
         ("config-author", "",                "[legacy v2] Configurar el autor global"),
         ("git-init",      "",                "Inicializar/migrar snapshots git"),
         ("history",       "h / log",         "Ver el historial de versiones de un documento"),
