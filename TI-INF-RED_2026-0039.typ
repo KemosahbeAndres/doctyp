@@ -169,13 +169,6 @@ Según el diseño de red (Unifi Design), la interconexión de cámaras, puntos d
   La canalización de datos (cámaras, AP, antenas) y la de energía/video de los proyectores deben tenderse en tubos o canaletas independientes, evitando compartir un mismo ducto entre corrientes fuertes y corrientes débiles.
 ])
 
-==== Puntos eléctricos para Proyectores
-
-Toda
-
-
-#pagebreak()
-
 == Instalación de la Infraestructura de Red
 El proveedor contratado ejecutará los siguientes trabajos bajo supervisión técnica de la Unidad TI:
 
@@ -210,7 +203,12 @@ Para realizar esta instalación el proveedor debe incluir en la cotización de s
 
 === Distribución de Access Point (AP)
 
+La ditribución de los equipos de red deben seguir la guía del siguiente diagrama.
 
+#figure(
+  image("/img-39/distribucion-equipamiento-red.png"),
+  caption: [Ubicación de los equipos de red.]
+)
 
 === Topología de Red
 La arquitectura propuesta reemplaza la dependencia de repetidores inalámbricos en cascada —principal causa de la degradación actual— por un diseño donde cada AP se conecta al switch mediante cableado estructurado. 
