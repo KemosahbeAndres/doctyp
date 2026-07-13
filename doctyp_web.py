@@ -199,6 +199,7 @@ def api_doc_new(slug: str, payload: dict) -> dict:
     }
     org["documentos"].append(entrada_org)
     core.guardar_org(slug, org)
+    core.escribir_indice_snapshots(dest_dir, entrada_org)
     return entrada_org
 
 

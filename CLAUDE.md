@@ -67,7 +67,7 @@ según el sistema operativo (raíz de documentos = `DOCS_ROOT`):
             ├── lib.typ              # copia de la plantilla al momento de crear/agregar
             ├── Images/              # assets copiados de la plantilla
             ├── img/                 # imágenes propias del documento
-            └── versions/            # snapshots sin git: <código-base>_vX.Y.Z.typ
+            └── .snapshots/          # snapshots sin git: <código-base>_vX.Y.Z.typ + index.json
 ```
 
 Resolución de `<Documentos>` (siempre se **busca**, no se asume):
@@ -86,7 +86,10 @@ Principios:
 - **`org.json` es la fuente de verdad** de correlativos, versiones y membresías de la org.
   Escrituras atómicas obligatorias (write-temp + rename).
 - **Sin git para versionado de documentos:** cada versión se preserva como copia en
-  `versions/`. Los comandos `git-*` quedan retirados.
+  `.snapshots/`. Los comandos `git-*` quedan retirados. Además de la fila en `org.json`
+  (fuente de verdad), cada documento guarda `.snapshots/index.json` — un espejo local de solo
+  respaldo de `doc["versiones"]`, para que el historial sobreviva aunque `org.json` se pierda;
+  ningún comando lo lee en caliente (Etapa 6, ver §14).
 
 ---
 
@@ -129,7 +132,7 @@ Principios:
       "creado": "…",
       "versiones": [
         { "version": "1.0.0", "fecha": "20260601", "creado": "…",
-          "mensaje": "Versión inicial.", "snapshot": "versions/TI-INF-SEG_2026-0023_v1.0.0.typ" }
+          "mensaje": "Versión inicial.", "snapshot": ".snapshots/TI-INF-SEG_2026-0023_v1.0.0.typ" }
       ]
     }
   ]
@@ -157,12 +160,14 @@ La ruta absoluta se deriva en tiempo de ejecución (portabilidad entre máquinas
 ## 4. Documentos como carpeta
 
 - Cada documento = carpeta `<Documentos>/doctyp/<org-slug>/<código-base>/` con: el `.typ`,
-  la copia de la plantilla (`lib.typ`, `Images/`), `img/` para imágenes propias y `versions/`
+  la copia de la plantilla (`lib.typ`, `Images/`), `img/` para imágenes propias y `.snapshots/`
   con snapshots. El año ya viene codificado en el `código-base` (no hay subcarpeta por año).
 - **Versionado sin git:** en cada `save`/`compile` se copia el `.typ` vigente a
-  `versions/<código-base>_v<versión>.typ` **antes** de subir la versión, y se añade la fila
-  al `org.json`. `history` lista las versiones del registro y marca cuáles tienen snapshot;
-  `restore` extrae el snapshot a `<código-base>_v<versión>.typ` sin tocar jamás el vigente.
+  `.snapshots/<código-base>_v<versión>.typ` **antes** de subir la versión, y se añade la fila
+  al `org.json` (fuente de verdad) y a `.snapshots/index.json` (espejo local de solo respaldo,
+  mismo shape que `doc["versiones"]` — ver §14 Etapa 6). `history` lista las versiones del
+  registro y marca cuáles tienen snapshot; `restore` extrae el snapshot a
+  `<código-base>_v<versión>.typ` sin tocar jamás el vigente.
 - Referencias en el `.typ` a imágenes propias: ruta relativa `img/<archivo>`.
 
 ---
@@ -203,7 +208,7 @@ doctyp add                                    # (alias: a)   importa un .typ del
 doctyp compile <doc-ref>                      # (alias: c)   snapshot + compila a PDF en la carpeta del doc
 doctyp edit <doc-ref>                         # (alias: code, e, open)
 doctyp history <doc-ref>                      # (alias: h, log) versiones y snapshots (✔/–)
-doctyp restore <doc-ref> [--pdf] [--stdout]   # extrae versión desde versions/ (nunca sobrescribe)
+doctyp restore <doc-ref> [--pdf] [--stdout]   # extrae versión desde .snapshots/ (nunca sobrescribe)
 doctyp reset [<correlativo>]                  # inicio del correlativo del año (org activa)
 ```
 
@@ -224,7 +229,7 @@ doctyp web [--port 8787] [--host 127.0.0.1] [--no-browser]  # (alias: serve)
 2. `doctyp new "…"` (ajusta `--tipo`/`--categoria`/`--plantilla` solo si difieren del default).
 3. Abre el `.typ` de la carpeta creada y **rellena las secciones `// TODO`** (§8).
 4. **No compiles** (§0, §10). Reporta el `codigo-completo` tras cada cambio.
-5. Para subir versión: `doctyp save <doc-ref> --m "…"` (snapshot automático en `versions/`).
+5. Para subir versión: `doctyp save <doc-ref> --m "…"` (snapshot automático en `.snapshots/`).
 
 ---
 
@@ -371,7 +376,7 @@ Cuando el usuario diga "redactemos un informe sobre X":
 4. **No compiles tú** (§0, §10): deja el `.typ` listo y avisa. El usuario compila con
    `doctyp compile <doc-ref>` cuando quiere revisar; itera sección por sección.
 5. Para subir versión sin compilar: `doctyp save <doc-ref> --m "<qué cambió>"` — snapshot en
-   `versions/`, bump del patch, fila en `s-versiones`, registro en `org.json`. Reporta el
+   `.snapshots/`, bump del patch, fila en `s-versiones`, registro en `org.json`. Reporta el
    `codigo-completo`.
 
 Sugerencia: deja `typst watch <archivo>.typ` corriendo (desde la carpeta del documento).
@@ -407,8 +412,8 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 2 | Documentos-carpeta en `<Documentos>/doctyp/<org>/` + plantillas por org + copia de plantilla + versionado por snapshots (sin git) | **Completada** |
 | 3 | Adaptación de comandos existentes, retiro de git, ajustes de plantilla (`rama-git`), escrituras atómicas | **Completada** |
 | 4 | Backend `doctyp web`: API JSON + SSE + estáticos + auto-apertura del navegador | **Completada** |
-| 5 | SPA Vue 3: CRUD de autores/equipos por org, orgs/carpetas/documentos + editor | Pendiente |
-| 6 | Generacion de snapshots propios. Las versiones futuras se almacenaran en un sistema de control de versiones propio y simple dejando de lado git. generacion de snapshots, similar a git, con algoritmo propio y sistema de gestion de versiones propio pero simple. almacenar snapshots en: 'carpeta de cada documento > .snapshots' y acceder a ellos para verlos y hacer comparaciones (funcionalidad futura).  | Pendiente |
+| 5 | SPA Vue 3: CRUD de autores/equipos por org, orgs/carpetas/documentos + editor | **Completada** |
+| 6 | Generacion de snapshots propios. Las versiones futuras se almacenaran en un sistema de control de versiones propio y simple dejando de lado git. generacion de snapshots, similar a git, con algoritmo propio y sistema de gestion de versiones propio pero simple. almacenar snapshots en: 'carpeta de cada documento > .snapshots' y acceder a ellos para verlos y hacer comparaciones (funcionalidad futura).  | **Completada** |
 | 7 | Vista de documentos en formato de cuadricula como pantalla principal con una pequeña vista previa de la primera pagina de cada documento. La vista de documento solo se dividira en dos debajo del navbar: editor y vista previa. Barra de estado inferior indicando la version actual, con desplegable para seleccionar otras versiones y ver sus diferencias con la actual. Tambien la barra de estado indicara si hay cambios y tendra los botones para guardar y para hacer commit de una nueva version. Tambien indicara la cantidad de palabras y otra informacion relevante como tamaño de archivo y un boton para que typst compile. | Pendiente |
 | 8 | Precompilado o Vista previa de typst en cliente web. La App Web debe mostrar una vista previa del informe/doumento generado para poder editar y visualizar directamente en la interfaz de la misma manera que la app web typst. | Pendiente |
 | 9 | Editor de plantillas con CRUD completo y seleccion de plantilla con modal al crear documento nuevo. Usar vista completamente nueva dividida con vista previa similar a typst. | Pendiente |
@@ -416,7 +421,7 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 **Nota sobre el alcance real de las Etapas 2 y 3** (decisión explícita, amplía lo descrito arriba):
 - Todos los comandos (`new`, `save`, `compile`, `edit`, `add`, `delete`, `import`, `history`,
   `restore`, `change`) operan sobre `org.json` y el modelo de carpeta-documento con snapshots
-  de archivo en `versions/`. `settings.json["documentos"]` (espejo v2) quedó retirado; solo
+  de archivo (en `.snapshots/` desde la Etapa 6; ver su nota más abajo). `settings.json["documentos"]` (espejo v2) quedó retirado; solo
   `cmd_config_author`/`cmd_reset` (legacy) siguen usando `settings.json` para preferencias
   locales (`local.author`, `local.correlativo_inicio`), sin relación con el registro de
   documentos.
@@ -446,6 +451,59 @@ y estructuras **no existen** — no los uses ni los des por hechos.
   muchos segmentos podía caer directo a 404 sin pasar por la validación del slug).
 - `web/dist/` (Etapa 5) aún no existe; mientras tanto el servidor sirve un placeholder HTML
   explicando que el backend está activo pero la interfaz no se ha construido.
+
+**Nota sobre el alcance real de la Etapa 5**:
+- SPA Vue 3 + Vite en `web/` (código fuente versionado; `web/node_modules/` y `web/dist/` en
+  `.gitignore` — el build se genera con `npm install && npm run build`, no se commitea).
+- Explorador + editor: lista de documentos de la org activa (tiempo real vía SSE), editor de
+  texto crudo del `.typ` con Guardar/Subir versión/Compilar, historial de versiones con vista
+  previa de snapshots y "cargar en editor" (equivalente funcional a `restore`, sin duplicar la
+  semántica de archivo-nuevo-sin-sobrescribir del CLI: acá el usuario decide explícitamente si
+  guarda lo cargado).
+- Backend ganó un endpoint de solo lectura, `GET .../historia/<version>/contenido`, que no
+  existía — necesario para la vista previa de una versión anterior sin escribir archivos.
+- Crear documentos desde la web: `POST /api/orgs/<slug>/documentos` reimplementa la
+  orquestación de `cmd_nuevo` (mismas funciones del core), pero **sin** el espejo legacy en
+  cwd (`agregar_doctyp_json`) — no tiene sentido para un proceso de servidor sin relación con
+  el documento.
+- CRUD de autores/equipos: el CLI **nunca tuvo** `editar`/`eliminar` para autores ni equipos
+  (solo `add`/`list`/`use`) — se agregaron como funciones de core nuevas (`autor_editar`,
+  `autor_eliminar`, `equipo_editar`, `equipo_eliminar`, con sus `_crear`/`_buscar`), con
+  validaciones que tampoco existían antes: no se puede eliminar un autor o equipo con
+  documentos asignados; eliminar un equipo lo quita en cascada de los autores que lo tenían.
+  `cmd_author_add`/`cmd_team_new`/`cmd_template_default` (CLI) se refactorizaron para reusar
+  estas mismas funciones en vez de duplicar la lógica.
+- Selector de autor activo en la topbar (pedido explícito del usuario): cambiarlo llama
+  `POST .../autores/<id>/activar` (equivalente web de `doctyp author use`) y **filtra** el
+  explorador de documentos a los del autor activo (`doc.autor_id`). Sin "ver todos" — es el
+  comportamiento pedido; documentos sin `autor_id` que calce quedan invisibles hasta
+  reasignarlos.
+- Fuera de alcance, explícito: importar plantillas desde la web (`template add` necesita una
+  ruta del filesystem del servidor; requeriría subida de archivos, una capacidad distinta,
+  sigue siendo solo CLI) y eliminar organizaciones (destructivo/irreversible, no pedido).
+- Metadatos estructurados: como no hay parser de Typst en el proyecto (deliberado, stdlib
+  puro), `extraer_meta_typ`/`actualizar_meta_typ` editan el bloque `crear-meta((...))` por
+  regex quirúrgica — mismo patrón que ya usaba `realizar_save_org` para `version:` y
+  `#s-versiones`. Preserva los defaults de plantilla: si `revisor`/`aprobador` quedan vacíos y
+  no existían en el `.typ`, no se insertan. El campo `titulo` se sincroniza también en
+  `org["documentos"]` (evita que `DocList` quede desactualizado). El frontend resincroniza el
+  editor de texto crudo con el contenido devuelto tras guardar metadatos, para que un
+  "Guardar cambios" posterior no pise el patch con contenido viejo en memoria.
+
+**Nota sobre el alcance real de la Etapa 6**:
+- Solo el mecanismo de almacenamiento (decisión explícita del usuario): sigue siendo copias de
+  archivo completo, sin direccionamiento por hash ni deduplicación tipo git real — lo único
+  que cambia es la carpeta (`versions/` → `.snapshots/`) y que cada documento gana un índice
+  local propio, `.snapshots/index.json` (mismo shape que `doc["versiones"]`), escrito por
+  `escribir_indice_snapshots()` junto con cada `save`/`compile` y al crear el documento.
+- **`org.json` sigue siendo la única fuente de verdad** — el índice local es un espejo de solo
+  respaldo (documento autocontenido, sobrevive aunque `org.json` se pierda); ningún código de
+  lectura en caliente (`history`, `restore`, la API web) fue modificado ni depende de él.
+- "Ver y comparar" (diff entre versiones) queda explícitamente para la Etapa 7, que ya lo
+  menciona.
+- Los 2 documentos reales (`TI-INF-SFW_2026-0001`, `TI-INF-RED_2026-0039`) tenían carpetas
+  `versions/` vacías (ningún `save` había llegado a generar un snapshot) — la migración fue
+  crear `.snapshots/` y su `index.json` inicial, sin ningún archivo de snapshot que mover.
 
 ---
 

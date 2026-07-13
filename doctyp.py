@@ -3,7 +3,7 @@
 doctyp — Generador de informes para la plantilla Typst del SLEP Chinchorro (Unidad TI).
 
 Comando global: se instala como `doctyp` (symlink en ~/.local/bin) y se invoca desde cualquier
-carpeta. Cada documento es una carpeta autocontenida (plantilla copiada + img/ + versions/)
+carpeta. Cada documento es una carpeta autocontenida (plantilla copiada + img/ + .snapshots/)
 bajo <Documentos>/doctyp/<organización>/<código-base>/; el registro vive en
 organizations/<organización>/org.json.
 
@@ -14,7 +14,8 @@ Subcomandos (con alias):  list/ls · org · team · author · template · new/n 
                           edit/code/e/open · config-author · reset · history/h/log · restore
 
 Versionado por snapshots de archivo (sin git): cada `save`/`compile` copia el `.typ` vigente a
-versions/<código-base>_v<versión>.typ antes de subir la versión, y lo registra en org.json.
+.snapshots/<código-base>_v<versión>.typ antes de subir la versión, y lo registra en org.json
+(fuente de verdad) y en .snapshots/index.json (respaldo local autocontenido del documento).
     doctyp history 1                                       # versiones de un doc y su snapshot
     doctyp restore 1:1.2                                   # extrae esa versión sin tocar la vigente
 Doc-ref: `<correlativo>[:<version>][@<anio>]` (p. ej. `39`, `39:1.2`, `39:1.2@2025`, `39@2025`).
@@ -272,6 +273,8 @@ ORG_SLUG_DEFAULT = "slep-chinchorro"
 ORG_NOMBRE_DEFAULT = "SLEP Chinchorro"
 ORGANIZATIONS = "organizations"
 ORG_REGISTRO = "org.json"
+SNAPSHOTS_DIRNAME = ".snapshots"
+INDICE_SNAPSHOTS = "index.json"
 
 
 def organizations_dir() -> Path:
@@ -483,9 +486,10 @@ def docs_root() -> Path:
 # ── Documentos-carpeta (arquitectura v3, ver CLAUDE.md §4) ────────────────────────────────
 #
 # Un documento es una carpeta autocontenida bajo docs_root_org(slug)/<codigo_base>/, con la
-# plantilla copiada (lib.typ, Images/, fonts/), img/ para imágenes propias y versions/ con
-# snapshots .typ de cada versión cerrada. org.json guarda la ruta como *relativa* a
-# docs_root_org(slug) (solo el codigo_base); la ruta absoluta se deriva en runtime con doc_dir().
+# plantilla copiada (lib.typ, Images/, fonts/), img/ para imágenes propias y .snapshots/ con
+# snapshots .typ de cada versión cerrada (+ index.json, respaldo local de doc["versiones"]).
+# org.json guarda la ruta como *relativa* a docs_root_org(slug) (solo el codigo_base); la ruta
+# absoluta se deriva en runtime con doc_dir().
 
 def docs_root_org(slug: str) -> Path:
     root = docs_root() / slug
@@ -522,7 +526,7 @@ def copiar_plantilla_a_documento(slug: str, plantilla: str, dest_dir: Path) -> N
 
 def crear_carpeta_documento(slug: str, codigo_base: str, plantilla: str,
                             forzar: bool = False) -> Path:
-    """Crea la carpeta-documento (plantilla copiada + img/ + versions/) y la devuelve.
+    """Crea la carpeta-documento (plantilla copiada + img/ + .snapshots/) y la devuelve.
     Aborta si ya existe el .typ vigente y no se pasó forzar=True."""
     dest_dir = doc_dir(slug, codigo_base)
     out_file = dest_dir / f"{codigo_base}.typ"
@@ -530,16 +534,25 @@ def crear_carpeta_documento(slug: str, codigo_base: str, plantilla: str,
         sys.exit(f"ERROR: {out_file} ya existe. Usa --forzar para sobrescribir.")
     copiar_plantilla_a_documento(slug, plantilla, dest_dir)
     (dest_dir / "img").mkdir(exist_ok=True)
-    (dest_dir / "versions").mkdir(exist_ok=True)
+    (dest_dir / SNAPSHOTS_DIRNAME).mkdir(exist_ok=True)
     return dest_dir
 
 
 def ruta_version_snapshot(codigo_base: str, version: str) -> str:
-    return f"versions/{codigo_base}_v{version}.typ"
+    return f"{SNAPSHOTS_DIRNAME}/{codigo_base}_v{version}.typ"
+
+
+def escribir_indice_snapshots(doc_dir_path: Path, doc: dict) -> None:
+    """Manifiesto local en .snapshots/index.json: espejo de doc['versiones'] dentro de la
+    propia carpeta del documento, para que el historial sobreviva aunque org.json se pierda o
+    corrompa. org.json sigue siendo la fuente de verdad (CLAUDE.md §1); esto es un respaldo de
+    solo lectura -- ningún código de lectura en caliente depende de este archivo."""
+    indice = {"codigo_base": doc["codigo_base"], "versiones": doc.get("versiones", [])}
+    _escribir_json_atomico(doc_dir_path / SNAPSHOTS_DIRNAME / INDICE_SNAPSHOTS, indice)
 
 
 def snapshot_version(doc_dir_path: Path, codigo_base: str, version: str) -> Path:
-    """Copia el .typ vigente (aún sin bump) a versions/<base>_v<version>.typ. Devuelve la
+    """Copia el .typ vigente (aún sin bump) a .snapshots/<base>_v<version>.typ. Devuelve la
     ruta absoluta del snapshot creado."""
     origen = doc_dir_path / f"{codigo_base}.typ"
     destino = doc_dir_path / ruta_version_snapshot(codigo_base, version)
@@ -589,8 +602,9 @@ def realizar_save_org(doc_dir_path: Path, doc: dict, mensaje: str) -> tuple[str,
     snapshotea el .typ vigente y rellena `snapshot` en la última fila ya existente de
     doc["versiones"] (esa fila se cierra en este momento); luego bumpea el .typ in-place y
     agrega la fila nueva, sin snapshot todavía (se rellenará en el próximo save/compile).
-    No persiste org.json; el llamador debe hacer guardar_org(...). Devuelve
-    (version_actual, version_nueva)."""
+    Al final actualiza el índice local .snapshots/index.json (respaldo, ver
+    escribir_indice_snapshots). No persiste org.json; el llamador debe hacer
+    guardar_org(...). Devuelve (version_actual, version_nueva)."""
     typ_path = doc_dir_path / f"{doc['codigo_base']}.typ"
     if not typ_path.exists():
         sys.exit(f"ERROR: el archivo del documento no existe: {typ_path}")
@@ -626,6 +640,7 @@ def realizar_save_org(doc_dir_path: Path, doc: dict, mensaje: str) -> tuple[str,
     doc.setdefault("versiones", []).append({
         "version": version_nueva, "fecha": fecha, "creado": ahora, "mensaje": mensaje,
     })
+    escribir_indice_snapshots(doc_dir_path, doc)
     return version_actual, version_nueva
 
 
@@ -1424,6 +1439,7 @@ def cmd_nuevo(args):
     }
     org["documentos"].append(entrada_org)
     guardar_org(slug, org)
+    escribir_indice_snapshots(dest_dir, entrada_org)
 
     agregar_doctyp_json(Path.cwd(), corr, anio, f"{base}.typ", f["autor"])
 
@@ -1633,7 +1649,7 @@ def cmd_change(args):
     )
     ruta_antigua.write_text(texto, encoding="utf-8")
 
-    # ── Renombrar la carpeta completa (preserva versions/, img/, Images/, etc.) ─
+    # ── Renombrar la carpeta completa (preserva .snapshots/, img/, Images/, etc.) ─
     dir_antiguo.rename(dir_nuevo)
     ruta_nueva = dir_nuevo / f"{base_nuevo}.typ"
     (dir_nuevo / f"{doc['codigo_base']}.typ").rename(ruta_nueva)
@@ -1890,7 +1906,7 @@ def _quitar_de_doctyp_json(cwd: Path, correlativo: int, anio: int) -> bool:
 
 
 def cmd_delete(args):
-    """Elimina un documento: borra la carpeta completa (.typ, versions/, Images/, img/, etc.)
+    """Elimina un documento: borra la carpeta completa (.typ, .snapshots/, Images/, img/, etc.)
     y la entrada en org.json."""
     slug = org_activa_slug()
     org = cargar_org(slug)
@@ -1902,7 +1918,7 @@ def cmd_delete(args):
 
     print(f"\n  {_c(_C.BOLD + _C.RED, 'Eliminar documento')}")
     print(f"  Código:  {_c(_C.BOLD, base)}")
-    print(f"  Carpeta: {_c(_C.DIM, str(dest_dir))}  {_c(_C.RED, '(se elimina COMPLETA: .typ, versions/, Images/, img/)')}")
+    print(f"  Carpeta: {_c(_C.DIM, str(dest_dir))}  {_c(_C.RED, '(se elimina COMPLETA: .typ, .snapshots/, Images/, img/)')}")
     print(f"  Título:  {doc.get('titulo', '')}\n")
 
     if not args.yes:
