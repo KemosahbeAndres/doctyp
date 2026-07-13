@@ -289,9 +289,8 @@ Patrón: `AREA-TIPO-CAT_AAAA-NNNN_vX.Y_AAAAMMDD` → p. ej. `TI-INF-SEG_2026-002
 
 Los encabezados se numeran solos (`1`, `1.1`). `doctyp new` ya escribe todo este esqueleto.
 
-> Nota: con el retiro de git, `s-ficha` ya no recibe `rama-git:` y la columna de tag git del
-> control de versiones desaparece (ajuste de plantilla pendiente de la Etapa 3; hasta entonces
-> la firma vigente de `lib.typ` manda).
+> Nota: tras el retiro de git (Etapa 3), `s-ficha` ya no acepta `rama-git:` y la tabla de
+> control de versiones ya no muestra tag por fila.
 
 ---
 
@@ -404,23 +403,25 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | Etapa | Alcance | Estado |
 |---|---|---|
 | 1 | Núcleo de organizaciones: `organizations/` (config+plantillas), `org.json`, `org/team/author *`, resolución de `DOCS_ROOT` por SO, migración del registro a la org **`slep-chinchorro`** | **Completada** |
-| 2 | Documentos-carpeta en `<Documentos>/doctyp/<org>/` + plantillas por org + copia de plantilla + versionado por snapshots (sin git) + migración de documentos existentes | Pendiente |
-| 3 | Adaptación de comandos existentes, retiro de git, ajustes de plantilla (`rama-git`), escrituras atómicas | Pendiente |
+| 2 | Documentos-carpeta en `<Documentos>/doctyp/<org>/` + plantillas por org + copia de plantilla + versionado por snapshots (sin git) | **Completada** |
+| 3 | Adaptación de comandos existentes, retiro de git, ajustes de plantilla (`rama-git`), escrituras atómicas | **Completada** |
 | 4 | Backend `doctyp web`: API JSON + SSE + estáticos + auto-apertura del navegador | Pendiente |
 | 5 | SPA Vue 3: CRUD de autores/equipos por org, orgs/carpetas/documentos + editor | Pendiente |
 | 6 | Proyectos (funcionalidad futura) | Pendiente |
 
-**Nota sobre el alcance real de la Etapa 1** (decisión explícita, amplía lo descrito arriba):
-- El documento ya registrado en `settings.json` se migró a `org.json` en esta misma etapa
-  (no se esperó a la Etapa 2), junto con la resolución de `DOCS_ROOT` (función `docs_root()`,
-  implementada pero **aún no usada** para mover archivos — eso sigue siendo Etapa 2).
-- `doctyp list` y `doctyp new` ya leen/escriben en `org.json` (correlativo y autor por
-  organización), adelantando una porción de la Etapa 3.
-- El resto de los comandos (`save`, `compile`, `edit`, `add`, `delete`, `import`, `history`,
-  `restore`, `change`, `git-init`, y `config-author` que queda como alias legacy) **no se
-  tocaron**: siguen leyendo/escribiendo en `settings.json["documentos"]`, que ahora actúa como
-  **espejo** de `org.json["documentos"]` (formato v2, sincronizado por `cmd_nuevo`). Esto es
-  deuda explícita: la Etapa 3 migra estos comandos a `org.json` y elimina el espejo.
+**Nota sobre el alcance real de las Etapas 2 y 3** (decisión explícita, amplía lo descrito arriba):
+- Todos los comandos (`new`, `save`, `compile`, `edit`, `add`, `delete`, `import`, `history`,
+  `restore`, `change`) operan sobre `org.json` y el modelo de carpeta-documento con snapshots
+  de archivo en `versions/`. `settings.json["documentos"]` (espejo v2) quedó retirado; solo
+  `cmd_config_author`/`cmd_reset` (legacy) siguen usando `settings.json` para preferencias
+  locales (`local.author`, `local.correlativo_inicio`), sin relación con el registro de
+  documentos.
+- El único documento previo a la Etapa 2 (`TI-INF-SFW_2026-0001`) se migró al modelo de
+  carpeta con `doctyp migrate` antes de retirar el subsistema git; ese comando y todo el
+  código de tags/commits (`cmd_git_init`, `_git_snapshot`, etc.) se eliminaron por completo al
+  no quedar ningún documento legacy pendiente. `TI-INF-RED_2026-0039.typ` sigue huérfano (no
+  registrado en `org.json`) y no se tocó.
+- `lib.typ` ya no acepta `rama-git:` en `s-ficha` ni muestra tag por versión (ver nota de §8).
 - Autoría multi-org: `doctyp author add/list/use` reemplaza a `config-author` (que queda
   marcado `[legacy v2]` en la ayuda, sin alias `author` para evitar el choque de nombres).
 

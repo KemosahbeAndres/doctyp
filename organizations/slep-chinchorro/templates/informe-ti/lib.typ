@@ -16,8 +16,8 @@
 //   ))
 //   #show: report.with(meta: meta)            // portada + estilos (contraportada al final)
 //
-//   #s-ficha(meta, rama-git: "doc/...")       // 1. Ficha de control (incluye el tag git, ver tag-doc)
-//   #s-versiones(meta, (                      // 2. Control de versiones (idem, tag por fila)
+//   #s-ficha(meta)                             // 1. Ficha de control
+//   #s-versiones(meta, (                      // 2. Control de versiones
 //     ("v1.0", "2026-06-01", "Autor", "Versión inicial."),
 //   ))
 //   #s-distribucion((                         // 3. Distribución
@@ -135,20 +135,6 @@
   meta.area + "-" + meta.tipo + "-" + meta.categoria + "_" + str(meta.anio) + "-" + n
 }
 #let codigo-completo(meta) = codigo-base(meta) + "_v" + meta.version + "_" + meta.fecha-codigo
-
-// Quita un eventual prefijo "v"/"V" de una cadena de versión ("v1.2" → "1.2").
-#let _sin-v(version) = if version.starts-with("v") or version.starts-with("V") {
-  version.slice(1)
-} else { version }
-
-// Nombre del tag git de una versión (ver `doctyp git-init`/`save`, misma convención que el CLI):
-// doc/<anio>-<correlativo:04d>/v<version>. Se calcula desde `meta`, nunca se guarda aparte,
-// así que queda al día solo con que `meta.version` lo esté (lo actualiza `doctyp save`).
-#let tag-doc(meta, version: none) = {
-  let n = str(meta.correlativo)
-  while n.len() < 4 { n = "0" + n }
-  "doc/" + str(meta.anio) + "-" + n + "/v" + _sin-v(if version == none { meta.version } else { version })
-}
 
 // Badge genérico
 #let badge(txt, fondo) = box(
@@ -374,14 +360,13 @@
 }
 
 // --- Ficha de control documental (sección 1) ---
-#let ficha-control(meta, rama-git: none) = {
+#let ficha-control(meta) = {
   let filas = (
     ("Tipo de documento", meta.tipo-largo),
     ("Código base",        text(fill: marino, weight: "bold")[#codigo-base(meta)]),
     ("Código completo",    raw(codigo-completo(meta))),
     ("Título",             meta.titulo),
     ("Versión",            "v" + meta.version),
-    ("Tag Git",            raw(tag-doc(meta))),
     ("Fecha de emisión",   meta.fecha-codigo),
     ("Estado",             badge-estado(meta.estado)),
     ("Clasificación",      badge-clasificacion(meta.clasificacion)),
@@ -392,7 +377,6 @@
     ("Revisor",            [#meta.revisor \ #text(size: 8.5pt, fill: gris-texto)[#meta.cargo-revisor]]),
     ("Aprobador",          [#meta.aprobador \ #text(size: 8.5pt, fill: gris-texto)[#meta.cargo-aprob]]),
   )
-  if rama-git != none { filas.push(("Rama Git", raw(rama-git))) }
   tabla-kv(filas)
 }
 
@@ -447,22 +431,19 @@
 // ============================================================
 
 // 1 · Ficha de control documental
-#let s-ficha(meta, rama-git: none) = {
+#let s-ficha(meta) = {
   heading(level: 1)[Ficha de control documental]
-  ficha-control(meta, rama-git: rama-git)
+  ficha-control(meta)
 }
 
 // 2 · Control de versiones — filas: (versión, fecha, autor, descripción)
-// El tag git de cada fila se calcula solo (misma convención que `doctyp`, ver `tag-doc`);
-// por eso `s-versiones` recibe `meta` — así queda al día sin que `doctyp save` deba tocarlo.
 #let s-versiones(meta, filas) = {
   heading(level: 1)[Control de versiones]
   tabla(
     columns: (auto, auto, 1fr, 2.4fr),
     ("Versión", "Fecha", "Autor", "Descripción del cambio"),
     filas.map(((version, fecha, autor, descripcion)) => (
-      version, fecha, autor,
-      [#descripcion #linebreak() #text(size: 8pt, fill: gris-texto)[#raw(tag-doc(meta, version: version))]],
+      version, fecha, autor, descripcion,
     )),
   )
 }
