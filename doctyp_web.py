@@ -137,7 +137,10 @@ def api_docs_list(slug: str) -> list[dict]:
 
 
 def api_tipos_documento() -> dict:
-    return {"tipos": core.TIPOS, "categorias": sorted(core.CATEGORIAS)}
+    return {
+        "tipos": core.TIPOS, "categorias": sorted(core.CATEGORIAS),
+        "estados": list(core.ESTADOS), "clasificaciones": list(core.CLASIFICACIONES),
+    }
 
 
 def api_doc_new(slug: str, payload: dict) -> dict:
@@ -227,6 +230,28 @@ def api_doc_typ_put(slug: str, codigo_base: str, contenido: str) -> dict:
         raise ApiError(404, f"la carpeta del documento no existe: {ruta.parent}")
     ruta.write_text(contenido, encoding="utf-8")
     return {"ok": True}
+
+
+def api_doc_meta_get(slug: str, codigo_base: str) -> dict:
+    org = _cargar_org_api(slug)
+    _doc_o_404(org, codigo_base)
+    ruta = _ruta_typ_segura(slug, codigo_base)
+    if not ruta.exists():
+        raise ApiError(404, f"el archivo del documento no existe: {ruta}")
+    return core.extraer_meta_typ(ruta)
+
+
+def api_doc_meta_put(slug: str, codigo_base: str, cambios: dict) -> dict:
+    org = _cargar_org_api(slug)
+    doc = _doc_o_404(org, codigo_base)
+    ruta = _ruta_typ_segura(slug, codigo_base)
+    if not ruta.exists():
+        raise ApiError(404, f"el archivo del documento no existe: {ruta}")
+    nuevo_texto = core.actualizar_meta_typ(ruta, cambios)
+    if "titulo" in cambios and cambios["titulo"] and doc.get("titulo") != cambios["titulo"]:
+        doc["titulo"] = cambios["titulo"]
+        core.guardar_org(slug, org)
+    return {"meta": core.extraer_meta_typ(ruta), "contenido": nuevo_texto}
 
 
 def api_doc_historia(slug: str, codigo_base: str) -> list[dict]:
@@ -532,6 +557,15 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                 elif metodo == "PUT":
                     cuerpo = self._leer_cuerpo_json()
                     self._json(200, api_doc_typ_put(slug, codigo_base, cuerpo.get("contenido", "")))
+                else:
+                    self._error(405, "método no soportado")
+                return
+            if sub == "meta" and len(segs) == 5:
+                if metodo == "GET":
+                    self._json(200, api_doc_meta_get(slug, codigo_base))
+                elif metodo == "PUT":
+                    cuerpo = self._leer_cuerpo_json()
+                    self._json(200, api_doc_meta_put(slug, codigo_base, cuerpo))
                 else:
                     self._error(405, "método no soportado")
                 return

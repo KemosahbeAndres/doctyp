@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from "vue";
 import { getTyp, putTyp, guardarVersion, compilar } from "../api.js";
+import MetaEditorModal from "./MetaEditorModal.vue";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -17,6 +18,7 @@ const cargando = ref(false);
 const ocupado = ref(false);
 const mensaje = ref("");
 const mensajeEsError = ref(false);
+const mostrarMeta = ref(false);
 
 const sucio = computed(() => texto.value !== original.value);
 watch(sucio, (v) => emit("sucio-cambio", v));
@@ -119,6 +121,17 @@ async function compilarDoc() {
     ocupado.value = false;
   }
 }
+
+function onMetaGuardado(res) {
+  // El backend ya escribió el .typ en disco (incluye el patch de metadatos) -- resincronizamos
+  // texto/original con ese contenido para no arriesgar que "Guardar cambios" lo pise después.
+  texto.value = res.contenido;
+  original.value = res.contenido;
+  mostrarMeta.value = false;
+  mensaje.value = "Metadatos guardados.";
+  mensajeEsError.value = false;
+  emit("cambio-en-servidor");
+}
 </script>
 
 <template>
@@ -133,6 +146,7 @@ async function compilarDoc() {
         <button :disabled="!sucio || ocupado || cargando" @click="guardarCambios">Guardar cambios</button>
         <button class="primary" :disabled="ocupado || cargando" @click="subirVersion">Subir versión</button>
         <button :disabled="ocupado || cargando" @click="compilarDoc">Compilar</button>
+        <button :disabled="ocupado || cargando" @click="mostrarMeta = true">Metadatos</button>
         <span class="estado" :style="{ color: mensajeEsError ? 'var(--danger)' : undefined }">
           {{ mensaje }}
         </span>
@@ -143,6 +157,13 @@ async function compilarDoc() {
         :disabled="cargando"
         spellcheck="false"
       ></textarea>
+      <MetaEditorModal
+        v-if="mostrarMeta"
+        :slug="slug"
+        :codigo="codigo"
+        @guardado="onMetaGuardado"
+        @cancelar="mostrarMeta = false"
+      />
     </template>
   </div>
 </template>

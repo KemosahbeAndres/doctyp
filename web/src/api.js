@@ -123,6 +123,17 @@ export function putTyp(slug, codigo, contenido) {
   });
 }
 
+export function getMetaDoc(slug, codigo) {
+  return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/meta`);
+}
+
+export function putMetaDoc(slug, codigo, cambios) {
+  return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/meta`, {
+    method: "PUT",
+    body: JSON.stringify(cambios),
+  });
+}
+
 export function getHistoria(slug, codigo) {
   return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/historia`);
 }

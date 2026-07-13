@@ -56,6 +56,17 @@ TIPOS = {
     "ETT": "Especificación Técnica", "ACT": "Acta",
 }
 CATEGORIAS = {"SEG","RED","HRW","SFW","DAT","SRV","PRV","GOB","USR","CPD","BCK","PRY","CAP"}
+ESTADOS = ("BORRADOR", "EN REVISIÓN", "APROBADO")
+CLASIFICACIONES = ("PÚBLICO", "INTERNO", "RESERVADO", "CONFIDENCIAL")
+
+# Campos de meta editables desde el formulario de metadatos (web). Deliberadamente excluye el
+# código documental (área/tipo/categoría/año/correlativo/versión/fecha-código): eso es
+# identidad gestionada por new/change/save, nunca a mano (CLAUDE.md §7).
+CAMPOS_META_EDITABLES = (
+    "titulo", "subtitulo", "tipo-largo", "estado", "clasificacion",
+    "autor", "cargo-autor", "correo-autor",
+    "revisor", "cargo-revisor", "aprobador", "cargo-aprob",
+)
 
 # Código documental dentro de un nombre de archivo o del contenido
 RE_CODE = re.compile(r"([A-Z]{2,4})-([A-Z]{2,4})-([A-Z]{2,4})_(\d{4})-(\d{4})")
@@ -759,6 +770,11 @@ def ty_str(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def ty_unstr(s: str) -> str:
+    """Inversa de ty_str: des-escapa un valor leído desde un literal de texto Typst."""
+    return s.replace('\\"', '"').replace("\\\\", "\\")
+
+
 # ── Generación del .typ ───────────────────────────────────────────────────────
 
 def build_typ(f: dict, lib_import: str) -> str:
@@ -865,6 +881,65 @@ def build_typ(f: dict, lib_import: str) -> str:
 == Anexo B. Firmas
 #firmas-estandar(meta)
 '''
+
+
+# ── Metadatos: edición quirúrgica del bloque crear-meta((...)) ────────────────────────────
+#
+# No hay parser de Typst en el proyecto (deliberado, stdlib-only) — mismo patrón que
+# realizar_save_org ya usa para bumpear `version:` y agregar filas a #s-versiones: localizar
+# con regex y reemplazar/insertar in-place, sin tocar el resto del documento.
+
+_RE_META_BLOQUE = re.compile(r"(#let meta = crear-meta\(\(\n)(.*?)(\n\)\))", re.DOTALL)
+
+
+def _patron_campo_meta(campo: str) -> re.Pattern:
+    # (?<![\w-]) evita que "autor:" matchee dentro de "cargo-autor:"/"correo-autor:".
+    # (?:[^"\\]|\\.)* respeta comillas escapadas (\") dentro del valor -- [^"]* a secas
+    # cortaría el valor en la primera comilla escapada en vez de la comilla de cierre real.
+    return re.compile(r'(?<![\w-])' + re.escape(campo) + r':(\s*)"((?:[^"\\]|\\.)*)"')
+
+
+def extraer_meta_typ(typ_path: Path) -> dict:
+    """Lee los valores actuales de CAMPOS_META_EDITABLES desde el bloque crear-meta((...)) de
+    un .typ. Campo ausente en el archivo -> cadena vacía (puede estar cubierto por un default
+    de la plantilla, ver lib.typ)."""
+    texto = typ_path.read_text(encoding="utf-8")
+    m = _RE_META_BLOQUE.search(texto)
+    if not m:
+        sys.exit(f"ERROR: no se encontró el bloque 'crear-meta((...))' en {typ_path}.")
+    bloque = m.group(2)
+    out = {}
+    for campo in CAMPOS_META_EDITABLES:
+        mm = _patron_campo_meta(campo).search(bloque)
+        out[campo] = ty_unstr(mm.group(2)) if mm else ""
+    return out
+
+
+def actualizar_meta_typ(typ_path: Path, cambios: dict) -> str:
+    """Aplica `cambios` (campo -> valor) al bloque crear-meta((...)) de un .typ, in-place.
+    Campo ya presente -> se reemplaza el valor (incluso a vacío, es un vaciado explícito).
+    Campo ausente y valor vacío -> no se inserta (preserva el default de la plantilla, ver
+    lib.typ). Campo ausente y valor no vacío -> se inserta una línea nueva antes del cierre.
+    Devuelve el texto completo ya escrito."""
+    texto = typ_path.read_text(encoding="utf-8")
+    m = _RE_META_BLOQUE.search(texto)
+    if not m:
+        sys.exit(f"ERROR: no se encontró el bloque 'crear-meta((...))' en {typ_path}.")
+    bloque = m.group(2)
+    for campo, valor in cambios.items():
+        if campo not in CAMPOS_META_EDITABLES:
+            sys.exit(f"ERROR: el campo '{campo}' no es editable desde este formulario.")
+        valor = valor or ""
+        patron = _patron_campo_meta(campo)
+        if patron.search(bloque):
+            valor_ty = ty_str(valor)
+            bloque = patron.sub(
+                lambda mm, v=valor_ty: f'{campo}:{mm.group(1)}"{v}"', bloque, count=1)
+        elif valor:
+            bloque = bloque.rstrip("\n") + f'\n  {campo}: "{ty_str(valor)}",'
+    nuevo_texto = texto[:m.start(2)] + bloque + texto[m.end(2):]
+    typ_path.write_text(nuevo_texto, encoding="utf-8")
+    return nuevo_texto
 
 
 # ── Editores ──────────────────────────────────────────────────────────────────
