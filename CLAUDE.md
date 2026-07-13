@@ -36,6 +36,7 @@
 ```
 .
 ├── doctyp.py            # CLI (comando global `doctyp`; symlinks: ty, tp, dt).
+├── doctyp_web.py         # Backend de `doctyp web` (servidor HTTP + API + SSE, Etapa 4).
 ├── init                 # Instalador (bash): dependencias + fuentes + symlinks.
 ├── README.md
 ├── CLAUDE.md            # Este archivo.
@@ -405,7 +406,7 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 1 | Núcleo de organizaciones: `organizations/` (config+plantillas), `org.json`, `org/team/author *`, resolución de `DOCS_ROOT` por SO, migración del registro a la org **`slep-chinchorro`** | **Completada** |
 | 2 | Documentos-carpeta en `<Documentos>/doctyp/<org>/` + plantillas por org + copia de plantilla + versionado por snapshots (sin git) | **Completada** |
 | 3 | Adaptación de comandos existentes, retiro de git, ajustes de plantilla (`rama-git`), escrituras atómicas | **Completada** |
-| 4 | Backend `doctyp web`: API JSON + SSE + estáticos + auto-apertura del navegador | Pendiente |
+| 4 | Backend `doctyp web`: API JSON + SSE + estáticos + auto-apertura del navegador | **Completada** |
 | 5 | SPA Vue 3: CRUD de autores/equipos por org, orgs/carpetas/documentos + editor | Pendiente |
 | 6 | Proyectos (funcionalidad futura) | Pendiente |
 
@@ -419,11 +420,29 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 - El único documento previo a la Etapa 2 (`TI-INF-SFW_2026-0001`) se migró al modelo de
   carpeta con `doctyp migrate` antes de retirar el subsistema git; ese comando y todo el
   código de tags/commits (`cmd_git_init`, `_git_snapshot`, etc.) se eliminaron por completo al
-  no quedar ningún documento legacy pendiente. `TI-INF-RED_2026-0039.typ` sigue huérfano (no
-  registrado en `org.json`) y no se tocó.
+  no quedar ningún documento legacy pendiente. `TI-INF-RED_2026-0039` se migró manualmente
+  (el comando `migrate` ya no existía) en la Etapa 4, incluyendo la normalización de sus
+  referencias de imagen a `img/<archivo>` (antes usaba una carpeta `img-39/` en la raíz del
+  repo, con rutas mezcladas absolutas/relativas). Ningún documento legacy queda huérfano.
 - `lib.typ` ya no acepta `rama-git:` en `s-ficha` ni muestra tag por versión (ver nota de §8).
 - Autoría multi-org: `doctyp author add/list/use` reemplaza a `config-author` (que queda
   marcado `[legacy v2]` en la ayuda, sin alias `author` para evitar el choque de nombres).
+
+**Nota sobre el alcance real de la Etapa 4**:
+- Backend implementado en `doctyp_web.py` (archivo nuevo junto a `doctyp.py`, importado
+  perezoso desde el subcomando `doctyp web`/`serve`), no dentro de `doctyp.py` — mantiene el
+  núcleo CLI enfocado en documentos y evita inflar un único archivo a +3000 líneas, sin dejar
+  de ser stdlib puro (sin dependencias externas).
+- La API (`/api/orgs`, `/api/orgs/<slug>/documentos/...`) envuelve funciones ya existentes
+  del core (`cargar_org`, `guardar_org`, `buscar_doc_org_por_codigo`, `realizar_save_org`,
+  `compilar_typ`); no reimplementa lógica de negocio en el handler HTTP.
+- SSE en `/api/events` vía polling de mtimes cada 1.5s (sin inotify/watchdog, no son stdlib).
+- Seguridad verificada: toda ruta de la API valida el `slug` con `_slug_valido()` y las rutas
+  de filesystem con `_resolver_ruta_segura()` contra `organizations/`/`DOCS_ROOT` antes de
+  cualquier ramificación por longitud de segmentos (se corrigió un caso donde una ruta con
+  muchos segmentos podía caer directo a 404 sin pasar por la validación del slug).
+- `web/dist/` (Etapa 5) aún no existe; mientras tanto el servidor sirve un placeholder HTML
+  explicando que el backend está activo pero la interfaz no se ha construido.
 
 ---
 

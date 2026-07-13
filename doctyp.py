@@ -550,6 +550,13 @@ def buscar_doc_org(org: dict, correlativo: int, anio: int) -> dict:
     return docs[0]
 
 
+def buscar_doc_org_por_codigo(org: dict, codigo_base: str) -> dict | None:
+    """Busca un documento por codigo_base (en vez de correlativo+año). Usada por la API web,
+    donde el documento se identifica por su código legible en la URL. Devuelve None si no
+    existe (a diferencia de buscar_doc_org, no aborta el proceso)."""
+    return next((d for d in org["documentos"] if d.get("codigo_base") == codigo_base), None)
+
+
 def parse_docref_org(ref: str, org: dict) -> tuple[dict, str]:
     """Calco de parse_docref() pero resolviendo contra org["documentos"]."""
     corr, version, anio = _parse_docref_partes(ref)
@@ -2117,7 +2124,22 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Imprime el contenido en stdout en vez de escribir un archivo.")
     prs.set_defaults(func=cmd_restore)
 
+    pw = sub.add_parser("web", aliases=["serve"],
+                        help="Levanta el backend web (API + estáticos) y abre el navegador.")
+    pw.add_argument("--port", type=int, default=8787, help="Puerto. Por defecto: 8787.")
+    pw.add_argument("--host", default="127.0.0.1", help="Host de bind. Por defecto: 127.0.0.1.")
+    pw.add_argument("--no-browser", action="store_true", dest="no_browser",
+                    help="No abrir el navegador automáticamente.")
+    pw.set_defaults(func=_cmd_web)
+
     return p
+
+
+def _cmd_web(args):
+    """Import perezoso: solo se paga el costo de cargar http.server/threading si el
+    usuario efectivamente ejecuta 'doctyp web'."""
+    import doctyp_web
+    doctyp_web.cmd_web(args)
 
 
 def menu_interactivo() -> None:
