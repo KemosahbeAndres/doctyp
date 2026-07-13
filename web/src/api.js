@@ -59,6 +59,65 @@ export function fijarPlantillaDefault(slug, nombre) {
   return request(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/default`, { method: "POST" });
 }
 
+export function crearPlantilla(slug, payload) {
+  return request(`/api/orgs/${enc(slug)}/plantillas`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function eliminarPlantilla(slug, nombre) {
+  return request(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}`, { method: "DELETE" });
+}
+
+export async function getPlantillaLibTyp(slug, nombre) {
+  const data = await request(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/lib-typ`);
+  return data.contenido;
+}
+
+export function guardarPlantillaLibTyp(slug, nombre, contenido, mensaje) {
+  return request(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/lib-typ`, {
+    method: "PUT",
+    body: JSON.stringify({ contenido, mensaje }),
+  });
+}
+
+/** URL de la miniatura (page 1 del documento de muestra) para usar directo en <img src>. */
+export function urlMiniaturaPlantilla(slug, nombre) {
+  return `/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/miniatura`;
+}
+
+/** Compila el lib.typ en edición sobre un documento de muestra. Devuelve un Blob o lanza
+ * Error con el mensaje de typst si falla la compilación (mismo patrón que compilarVistaPrevia). */
+export async function vistaPreviaPlantilla(slug, nombre, contenido) {
+  const res = await fetch(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/vista-previa`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contenido }),
+  });
+  if (!res.ok) {
+    let mensaje = `error ${res.status}`;
+    try {
+      mensaje = (await res.json()).error || mensaje;
+    } catch {
+      // sin cuerpo JSON
+    }
+    throw new Error(mensaje);
+  }
+  return res.blob();
+}
+
+export function getHistoriaPlantilla(slug, nombre) {
+  return request(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/historia`);
+}
+
+export async function getVersionContenidoPlantilla(slug, nombre, version) {
+  const data = await request(
+    `/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/historia/${enc(version)}/contenido`,
+  );
+  return data.contenido;
+}
+
 export function listEquipos(slug) {
   return request(`/api/orgs/${enc(slug)}/equipos`);
 }

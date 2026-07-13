@@ -9,3 +9,11 @@ __pycache__/
 # SPA Vue 3 (Etapa 5): dependencias y build, no se versionan; el código fuente sí.
 web/node_modules/
 web/dist/
+
+# Plantillas (Etapa 9): documento de muestra y vista previa efímeros, regenerados on-demand
+# para la miniatura y el editor de plantillas (nunca tocan el lib.typ real ni se comparten).
+organizations/*/templates/*/.*.preview.lib.typ
+organizations/*/templates/*/.*.preview.typ
+organizations/*/templates/*/.*.preview.pdf
+organizations/*/templates/*/.*.muestra.typ
+organizations/*/templates/*/*.miniatura.png

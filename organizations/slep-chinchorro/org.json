@@ -6,14 +6,21 @@
     "correlativo_inicio": {},
     "plantilla_default": "informe-ti"
   },
-  "equipos": [],
+  "equipos": [
+    {
+      "id": "uti",
+      "nombre": "Unidad de Tecnologías de la Información"
+    }
+  ],
   "autores": [
     {
       "id": "a1",
       "nombre": "Andres Cubillos Salazar",
       "cargo": "Tecnico de Soporte Informático",
       "correo": "andres.cubillos@epchinchorro.cl",
-      "equipos": []
+      "equipos": [
+        "uti"
+      ]
     }
   ],
   "documentos": [

@@ -75,7 +75,7 @@ async function confirmar() {
           <option v-for="c in categorias" :key="c" :value="c">{{ c }}</option>
         </select>
       </label>
-      <label v-if="plantillas.length > 1">
+      <label v-if="plantillas.length">
         Plantilla
         <select v-model="plantilla">
           <option v-for="p in plantillas" :key="p.nombre" :value="p.nombre">

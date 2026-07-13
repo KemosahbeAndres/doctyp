@@ -380,6 +380,99 @@ def api_template_default(slug: str, nombre: str) -> dict:
     return {"plantilla_default": org["config"]["plantilla_default"]}
 
 
+def _plantilla_dir_segura(slug: str, nombre: str) -> Path:
+    """Resuelve la carpeta de una plantilla, validada contra organizations/ (sin path
+    traversal). No valida que exista -- cada endpoint decide si eso es un 404 o no."""
+    _resolver_ruta_segura(core.organizations_dir(), slug, "templates", nombre)
+    return core.plantilla_dir(slug, nombre)
+
+
+def _plantilla_o_404(slug: str, nombre: str) -> Path:
+    destino = _plantilla_dir_segura(slug, nombre)
+    if not (destino / "lib.typ").exists():
+        raise ApiError(404, f"no existe la plantilla '{nombre}' en '{slug}'")
+    return destino
+
+
+def api_template_new(slug: str, payload: dict) -> dict:
+    """Crea una plantilla nueva (equivalente web de `doctyp template new`): clonando otra
+    plantilla de la org, o el esqueleto mínimo de templates_base/ si no se indica origen."""
+    _cargar_org_api(slug)
+    nombre = (payload.get("nombre") or "").strip()
+    if not nombre:
+        raise ApiError(400, "el nombre de la plantilla es obligatorio")
+    _plantilla_dir_segura(slug, nombre)
+    clonar_de = payload.get("clonar_de")
+    if clonar_de:
+        origen = _plantilla_o_404(slug, clonar_de)
+    else:
+        origen = core.TEMPLATES_BASE_DIR / core.PLANTILLA_MINIMA
+    destino = core.plantilla_clonar(slug, nombre, origen)
+    return {"nombre": nombre, "ruta": str(destino)}
+
+
+def api_template_libtyp_get(slug: str, nombre: str) -> dict:
+    _cargar_org_api(slug)
+    destino = _plantilla_o_404(slug, nombre)
+    return {"contenido": (destino / "lib.typ").read_text(encoding="utf-8")}
+
+
+def api_template_libtyp_put(slug: str, nombre: str, contenido: str, mensaje: str) -> dict:
+    if not mensaje:
+        raise ApiError(400, "el mensaje es obligatorio")
+    _cargar_org_api(slug)
+    _plantilla_o_404(slug, nombre)
+    return core.guardar_version_plantilla(slug, nombre, contenido, mensaje)
+
+
+def api_template_delete(slug: str, nombre: str) -> dict:
+    org = _cargar_org_api(slug)
+    _plantilla_o_404(slug, nombre)
+    core.plantilla_eliminar(org, nombre)
+    return {"ok": True}
+
+
+def api_template_miniatura(slug: str, nombre: str) -> Path:
+    _cargar_org_api(slug)
+    _plantilla_o_404(slug, nombre)
+    cache = core.generar_miniatura_plantilla(slug, nombre)
+    if cache is None:
+        raise ApiError(404, "no se pudo generar la miniatura (typst no disponible o falló la compilación)")
+    return cache
+
+
+def api_template_vista_previa(slug: str, nombre: str, contenido: str) -> Path:
+    """Compila la plantilla en edición (aún sin guardar) sobre un documento de muestra --
+    nunca toca el lib.typ real. Siempre recompila (sin cache)."""
+    _cargar_org_api(slug)
+    _plantilla_o_404(slug, nombre)
+    pdf, error_msg = core.compilar_vista_previa_plantilla(slug, nombre, contenido)
+    if pdf is None:
+        raise ApiError(422, error_msg)
+    return pdf
+
+
+def api_template_historia(slug: str, nombre: str) -> list[dict]:
+    _cargar_org_api(slug)
+    dest_dir = _plantilla_o_404(slug, nombre)
+    out = []
+    for v in core.listar_versiones_plantilla(slug, nombre):
+        snapshot = v.get("snapshot")
+        existe = bool(snapshot) and (dest_dir / snapshot).exists()
+        out.append({**v, "snapshot_disponible": existe})
+    return out
+
+
+def api_template_historia_contenido(slug: str, nombre: str, version: str) -> str:
+    _cargar_org_api(slug)
+    _plantilla_o_404(slug, nombre)
+    try:
+        version_int = int(version)
+    except ValueError:
+        raise ApiError(400, f"versión inválida: '{version}'")
+    return core.contenido_version_plantilla(slug, nombre, version_int)
+
+
 def api_equipos_list(slug: str) -> list[dict]:
     return _cargar_org_api(slug).get("equipos", [])
 
@@ -657,11 +750,51 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             return
 
         if recurso == "plantillas":
-            if len(segs) == 3 and metodo == "GET":
-                self._json(200, api_templates_list(slug))
+            if len(segs) == 3:
+                if metodo == "GET":
+                    self._json(200, api_templates_list(slug))
+                elif metodo == "POST":
+                    cuerpo = self._leer_cuerpo_json()
+                    self._json(201, api_template_new(slug, cuerpo))
+                else:
+                    self._error(405, "método no soportado")
                 return
-            if len(segs) == 5 and segs[4] == "default" and metodo == "POST":
-                self._json(200, api_template_default(slug, segs[3]))
+            nombre = segs[3]
+            if len(segs) == 4:
+                if metodo == "DELETE":
+                    self._json(200, api_template_delete(slug, nombre))
+                else:
+                    self._error(405, "método no soportado")
+                return
+            sub = segs[4]
+            if sub == "default" and len(segs) == 5 and metodo == "POST":
+                self._json(200, api_template_default(slug, nombre))
+                return
+            if sub == "lib-typ" and len(segs) == 5:
+                if metodo == "GET":
+                    self._json(200, api_template_libtyp_get(slug, nombre))
+                elif metodo == "PUT":
+                    cuerpo = self._leer_cuerpo_json()
+                    self._json(200, api_template_libtyp_put(
+                        slug, nombre, cuerpo.get("contenido", ""), cuerpo.get("mensaje", "")))
+                else:
+                    self._error(405, "método no soportado")
+                return
+            if sub == "miniatura" and len(segs) == 5 and metodo == "GET":
+                ruta_png = api_template_miniatura(slug, nombre)
+                self._binario(200, ruta_png.read_bytes(), "image/png")
+                return
+            if sub == "vista-previa" and len(segs) == 5 and metodo == "POST":
+                cuerpo = self._leer_cuerpo_json()
+                ruta_pdf = api_template_vista_previa(slug, nombre, cuerpo.get("contenido", ""))
+                self._binario(200, ruta_pdf.read_bytes(), "application/pdf")
+                return
+            if sub == "historia" and len(segs) == 5 and metodo == "GET":
+                self._json(200, api_template_historia(slug, nombre))
+                return
+            if sub == "historia" and len(segs) == 7 and segs[6] == "contenido" and metodo == "GET":
+                version = segs[5]
+                self._json(200, {"contenido": api_template_historia_contenido(slug, nombre, version)})
                 return
             self._error(404, "ruta de API desconocida")
             return

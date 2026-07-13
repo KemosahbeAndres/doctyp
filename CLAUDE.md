@@ -44,6 +44,8 @@
 │                        #   Ya NO es registro de documentos (ver org.json).
 ├── web/                 # SPA Vue 3 (código fuente + dist/) servida por `doctyp web`.
 │   └── dist/            # Build estático que sirve el backend.
+├── templates_base/      # Esqueletos base para "Nueva plantilla" (Etapa 9), fuera de organizations/:
+│   └── minimal/lib.typ  #   sin marca institucional; origen de la opción "en blanco".
 └── organizations/       # CONFIG + PLANTILLAS: una carpeta por organización (NO documentos).
     └── <org-slug>/
         ├── org.json     # REGISTRO de la org: metadatos, equipos, autores,
@@ -51,8 +53,10 @@
         └── templates/   # Plantillas propias de la organización.
             └── <plantilla>/
                 ├── lib.typ
-                ├── Images/          # logos y assets de la plantilla
-                └── fonts/           # opcional (ojo licencia Museo Sans — NO redistribuir)
+                ├── Images/            # logos y assets de la plantilla
+                ├── fonts/             # opcional (ojo licencia Museo Sans — NO redistribuir)
+                └── .snapshots/        # historial de versiones de lib.typ (Etapa 9, sin git;
+                                       #   único índice, org.json no registra plantillas)
 ```
 
 **Los documentos NO viven en el repo.** Se guardan en la carpeta **Documentos del usuario**
@@ -193,9 +197,14 @@ doctyp author use <id>                   # fija el autor activo (settings.json)
 ### Plantillas
 
 ```bash
-doctyp template add <ruta> [--nombre …]  # importa una carpeta de plantilla a la org activa
+doctyp template add <ruta> [--nombre …]        # importa una carpeta de plantilla a la org activa
 doctyp template list
-doctyp template default <nombre>         # fija config.plantilla_default
+doctyp template default <nombre>               # fija config.plantilla_default
+doctyp template new <nombre> [--clonar-de …]   # clona otra plantilla, o el esqueleto base en blanco
+doctyp template rm <nombre> [--y]              # elimina (bloquea si es la default o la única)
+doctyp template save <nombre> --m "…"          # snapshot de lib.typ + registro de versión
+doctyp template history <nombre>               # versiones de una plantilla y su snapshot
+doctyp template restore <nombre> [--version N] # extrae una versión anterior de lib.typ
 ```
 
 ### Documentos
@@ -416,8 +425,10 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 6 | Generacion de snapshots propios. Las versiones futuras se almacenaran en un sistema de control de versiones propio y simple dejando de lado git. generacion de snapshots, similar a git, con algoritmo propio y sistema de gestion de versiones propio pero simple. almacenar snapshots en: 'carpeta de cada documento > .snapshots' y acceder a ellos para verlos y hacer comparaciones (funcionalidad futura).  | **Completada** |
 | 7 | Vista de documentos en formato de cuadricula como pantalla principal con una pequeña vista previa de la primera pagina de cada documento de su ultima compilacion o una compilacion temporal del documento actual. Barra de estado inferior indicando la version actual, con desplegable para seleccionar otras versiones y ver sus diferencias con la actual. Tambien la barra de estado indicara si hay cambios y tendra los botones para guardar y para hacer commit de una nueva version. Tambien indicara la cantidad de palabras y otra informacion relevante como tamaño de archivo y un boton para que typst compile. | **Completada** |
 | 8 | La vista de documento solo se dividira en dos debajo del navbar: editor y vista previa. La App Web debe mostrar una vista previa del informe/doumento generado para poder editar y visualizar directamente en la interfaz de la misma manera que la app web typst. Se debe generar un compilado fresco on-demand cada vez para mostrar la vista previa, el archivo compilado no se guardara o se guardara de manera temporal con un nombre temporal en el directorio raiz del documento. | **Completada** |
-| 9 | Editor de plantillas con CRUD completo y seleccion de plantilla en el modal al crear documento nuevo. Usar vista dividida: editor y vista previa similar a typst. Al editar una plantilla se debera mostrar un documento. Explorar otras soluciones de compilado/precompilado/vistaprevia/cache. | Pendiente |
-| 10 | Editor de texto/codigo debe mostrar en colores los codigos/funciones/variables de typst como un editor de codigo moderno. La division por colores permite una mejor edicion para el usuario. Usar la convencion de colores de Typst y/o la que usa VSCode con la extension de Typst. | Pendiente |
+| 9 | Editor de plantillas con CRUD completo y seleccion de plantilla en el modal al crear documento nuevo. Usar vista dividida: editor y vista previa similar a typst. Al editar una plantilla se debera mostrar un documento. Explorar otras soluciones de compilado/precompilado/vistaprevia/cache. | **Completada** |
+| 10 | Editor de plantillas en el cliente web debe poder accederse desde pantalla principal con boton junto al boton 'organizacion' y la vista debe ser a pantalla completa como el editor de documentos. El editor de texto/codigo debe mostrar en colores los codigos/funciones/variables de typst como un editor de codigo moderno. La division por colores permite una mejor edicion para el usuario. Usar la convencion de colores de Typst y/o la que usa VSCode con la extension de Typst. | Pendiente |
+| 11 | Cambiar renderizado de vista previa en el cliente web (editor documentos y editor plantillas) por un renderizado de typst WASM <typst.ts> dentro del cliente web. El editor debe seguir el documento cuando se haga click en el texto y lo mismo para la vista previa, al hacer click en una seccion o parrafo o titulo/encabezado el editor se debe mover hasta donde este el cursor en la vista previa. Renderizar en HTML <canvas> igual que la app web de typst. El boton de actualizar vista previa debe estar en la barra superior donde esta el nombre del archivo alineado a la derecha. | Pendiente |
+
 
 **Nota sobre el alcance real de las Etapas 2 y 3** (decisión explícita, amplía lo descrito arriba):
 - Todos los comandos (`new`, `save`, `compile`, `edit`, `add`, `delete`, `import`, `history`,
@@ -554,6 +565,46 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 - `DocEditor.vue` pasa de editor a ancho completo a un split de dos columnas
   (`.editor-preview-split`: textarea + `VistaPrevia.vue`), con `StatusBar` sin cambios,
   abarcando el ancho completo debajo del split.
+
+**Nota sobre el alcance real de la Etapa 9**:
+- Las plantillas son solo carpetas (`organizations/<org>/templates/<nombre>/`) — **nunca
+  tuvieron** fila en `org["documentos"]` ni ningún otro registro en `org.json` más allá de
+  `config.plantilla_default`. Su historial de versiones (nuevo en esta etapa) vive
+  íntegramente en su propio `.snapshots/index.json`: a diferencia del mismo archivo para
+  documentos (que es un respaldo de solo lectura, `org.json` manda), aquí **es la única fuente
+  de verdad** — no hay otro lugar donde guardarlo. `guardar_version_plantilla()` (`doctyp.py`)
+  snapshotea el `lib.typ` *actual* antes de sobrescribirlo (mismo principio de
+  "cerrar la versión anterior" que `realizar_save_org`, pero sin `version:` embebido que
+  bumpear — el número de versión vive solo en el índice).
+- **"Al editar una plantilla se deberá mostrar un documento"** se resolvió generando, en
+  memoria/disco oculto, un documento de muestra ficticio (`_muestra_meta()` +
+  `build_typ()`) que importa el `lib.typ` de la plantilla — y delegando la compilación
+  íntegramente a `compilar_vista_previa()`/`generar_miniatura()` de la Etapa 8 (ninguna de
+  las dos se modificó). `compilar_vista_previa_plantilla()` escribe el `lib.typ` en edición a
+  un archivo oculto paralelo (`.<nombre>.preview.lib.typ`) para no pisar jamás el real;
+  `generar_miniatura_plantilla()` mantiene un `.typ` de muestra persistente (importa el
+  `lib.typ` real) cacheado por mtime, igual que la miniatura de documento.
+- **"Crear" una plantilla siempre es clonar algo** (decisión explícita) — `lib.typ` es código
+  Typst completo (~350 líneas: paleta, portada, todas las funciones del API de §11); no existe
+  un "crear desde cero" real. La opción "en blanco" clona `templates_base/minimal/lib.typ`, un
+  esqueleto nuevo (fuera de `organizations/`, junto a `doctyp.py`) que implementa el mismo API
+  público sin marca institucional ni imágenes (evita necesitar logos placeholder).
+- Eliminar una plantilla (`plantilla_eliminar`, CLI `template rm` / `DELETE
+  .../plantillas/<nombre>`) se bloquea si es la `plantilla_default` de la org o si es la única
+  plantilla que queda — la org siempre necesita al menos una para `doctyp new`. Documentos ya
+  creados con una plantilla eliminada no se ven afectados (la plantilla se copia completa a
+  cada documento al crearlo, §3 — inmutabilidad ya existente, no tocada por esta etapa).
+- El editor de plantillas (`TemplateEditor.vue`) es un overlay propio (`.modal-box-editor`)
+  lanzado desde la pestaña "Plantillas" de `OrgManager.vue` — no se tocó el enrutamiento
+  `vista` (`"grid"`/`"documento"`) de `App.vue`: gestionar plantillas es una acción de
+  organización, no una vista del espacio de documentos. Reusa `VistaPrevia.vue` (Etapa 8) tal
+  cual, generalizado con una prop opcional `compilar-fn` (por defecto `compilarVistaPrevia`,
+  sin cambio de comportamiento para `DocEditor.vue`) para inyectar
+  `vistaPreviaPlantilla` sin duplicar el componente.
+- Sin diff de versiones para plantillas (a diferencia de documentos, que sí lo tienen desde la
+  Etapa 7) — se dejó fuera de alcance; el historial permite ver/cargar una versión anterior en
+  el editor, no compararla línea a línea. El selector de plantilla en `NewDocumentModal.vue`
+  ahora se muestra siempre que la org tenga ≥1 plantilla (antes solo con >1).
 
 ---
 

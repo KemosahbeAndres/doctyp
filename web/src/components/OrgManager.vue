@@ -3,8 +3,10 @@ import { ref, computed, onMounted } from "vue";
 import {
   listAutores, crearAutor, editarAutor, eliminarAutor, activarAutor,
   listEquipos, crearEquipo, editarEquipo, eliminarEquipo,
-  listPlantillas, fijarPlantillaDefault,
+  listPlantillas, fijarPlantillaDefault, eliminarPlantilla, urlMiniaturaPlantilla,
 } from "../api.js";
+import NewTemplateModal from "./NewTemplateModal.vue";
+import TemplateEditor from "./TemplateEditor.vue";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -127,6 +129,10 @@ async function borrarEquipo(e) {
 }
 
 // ── Plantillas ───────────────────────────────────────────────────────────
+const mostrarNuevaPlantilla = ref(false);
+const plantillaEnEdicion = ref(null); // null | nombre
+const sinMiniaturaPlantilla = ref(new Set());
+
 async function marcarDefault(p) {
   error.value = "";
   try {
@@ -135,6 +141,30 @@ async function marcarDefault(p) {
   } catch (e) {
     error.value = e.message;
   }
+}
+
+async function borrarPlantilla(p) {
+  if (!window.confirm(`¿Eliminar la plantilla "${p.nombre}"? Los documentos ya creados con ella no se ven afectados.`)) return;
+  error.value = "";
+  try {
+    await eliminarPlantilla(props.slug, p.nombre);
+    await cargarTodo();
+  } catch (e) {
+    error.value = e.message;
+  }
+}
+
+function onPlantillaCreada() {
+  mostrarNuevaPlantilla.value = false;
+  cargarTodo();
+}
+
+function onMiniaturaError(nombre) {
+  sinMiniaturaPlantilla.value = new Set(sinMiniaturaPlantilla.value).add(nombre);
+}
+
+function onPlantillaGuardada() {
+  sinMiniaturaPlantilla.value = new Set();
 }
 </script>
 
@@ -220,20 +250,48 @@ async function marcarDefault(p) {
       </div>
 
       <div v-if="tab === 'plantillas'" class="tab-panel">
+        <button class="primary" @click="mostrarNuevaPlantilla = true">+ Nueva plantilla</button>
         <table class="crud-table">
-          <thead><tr><th></th><th>Nombre</th><th></th></tr></thead>
+          <thead><tr><th></th><th></th><th>Nombre</th><th></th></tr></thead>
           <tbody>
             <tr v-for="p in plantillas" :key="p.nombre">
               <td><span v-if="p.default" class="badge-activo" title="Plantilla por defecto">●</span></td>
+              <td>
+                <img
+                  v-if="!sinMiniaturaPlantilla.has(p.nombre)"
+                  class="plantilla-miniatura"
+                  :src="urlMiniaturaPlantilla(slug, p.nombre)"
+                  :alt="p.nombre"
+                  @error="onMiniaturaError(p.nombre)"
+                />
+                <div v-else class="plantilla-miniatura-placeholder" title="Sin vista previa aún"></div>
+              </td>
               <td>{{ p.nombre }}</td>
               <td class="acciones">
                 <button :disabled="p.default" @click="marcarDefault(p)">Fijar como default</button>
+                <button @click="plantillaEnEdicion = p.nombre">Editar</button>
+                <button :disabled="p.default" @click="borrarPlantilla(p)">Eliminar</button>
               </td>
             </tr>
           </tbody>
         </table>
-        <p class="estado">Importar plantillas nuevas sigue siendo solo por CLI (`doctyp template add`).</p>
+        <p class="estado">Importar plantillas externas (carpeta con lib.typ) sigue siendo solo por CLI (`doctyp template add`).</p>
       </div>
     </div>
+
+    <NewTemplateModal
+      v-if="mostrarNuevaPlantilla"
+      :slug="slug"
+      :plantillas="plantillas"
+      @creada="onPlantillaCreada"
+      @cancelar="mostrarNuevaPlantilla = false"
+    />
+    <TemplateEditor
+      v-if="plantillaEnEdicion"
+      :slug="slug"
+      :nombre="plantillaEnEdicion"
+      @cerrar="plantillaEnEdicion = null"
+      @guardado="onPlantillaGuardada"
+    />
   </div>
 </template>

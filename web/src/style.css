@@ -436,6 +436,34 @@ button.primary {
   overflow-y: auto;
 }
 
+.modal-box-editor {
+  width: 90vw;
+  height: 85vh;
+  max-width: 1400px;
+  overflow: hidden;
+}
+
+.template-editor-split {
+  min-height: 0;
+}
+
+.plantilla-miniatura {
+  width: 40px;
+  height: 56px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-panel);
+}
+
+.plantilla-miniatura-placeholder {
+  width: 40px;
+  height: 56px;
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  background: var(--bg-panel);
+}
+
 .org-manager-header {
   display: flex;
   align-items: center;

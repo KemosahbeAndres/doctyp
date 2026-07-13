@@ -949,6 +949,156 @@ def build_typ(f: dict, lib_import: str) -> str:
 '''
 
 
+# ── Plantillas: muestra para preview, miniatura, clonado y versionado (Etapa 9) ────────────
+#
+# Las plantillas son solo carpetas (organizations/<org>/templates/<nombre>/) -- a diferencia
+# de los documentos, no tienen fila en org["documentos"]. Su historial de versiones vive
+# íntegramente en su propio .snapshots/index.json: aquí SÍ es la única fuente de verdad (no
+# hay ningún otro lugar donde guardarlo, a diferencia del respaldo de solo lectura que ese
+# mismo archivo cumple para los documentos).
+
+TEMPLATES_BASE_DIR = SCRIPT_DIR / "templates_base"
+PLANTILLA_MINIMA = "minimal"
+
+
+def _muestra_meta() -> dict:
+    """Metadatos ficticios para el documento de ejemplo usado al previsualizar una plantilla
+    (nunca se guarda en org.json ni cuenta como documento real)."""
+    hoy = datetime.date.today()
+    return {
+        "area": "TI", "tipo": "INF", "categoria": "GOB",
+        "anio": hoy.year, "correlativo": 0, "version": "1.0",
+        "fecha": hoy.strftime("%Y%m%d"),
+        "tipo_largo": "Documento de ejemplo",
+        "titulo": "Documento de ejemplo", "subtitulo": "Vista previa de plantilla",
+        "estado": "BORRADOR", "clasificacion": "INTERNO",
+        "autor": "Autor de ejemplo", "cargo": "Cargo de ejemplo", "correo": "autor@ejemplo.cl",
+        "revisor": None, "aprobador": None,
+    }
+
+
+def compilar_vista_previa_plantilla(slug: str, nombre: str, lib_texto: str) -> tuple[Path | None, str | None]:
+    """Vista previa "en caliente" de una plantilla: escribe `lib_texto` (con cambios sin
+    guardar) a un lib.typ temporal oculto -- nunca pisa el lib.typ real -- y genera un
+    documento de muestra que lo importa, delegando la compilación a compilar_vista_previa()
+    (Etapa 8, sin modificarla: ya acepta dest_dir/codigo_base/texto genéricos)."""
+    dest_dir = plantilla_dir(slug, nombre)
+    lib_temp_nombre = f".{nombre}.preview.lib.typ"
+    (dest_dir / lib_temp_nombre).write_text(lib_texto, encoding="utf-8")
+    texto_muestra = build_typ(_muestra_meta(), lib_temp_nombre)
+    return compilar_vista_previa(dest_dir, "_muestra", texto_muestra)
+
+
+def _muestra_typ_path(slug: str, nombre: str) -> Path:
+    return plantilla_dir(slug, nombre) / f".{nombre}.muestra.typ"
+
+
+def generar_miniatura_plantilla(slug: str, nombre: str) -> Path | None:
+    """Miniatura de la plantilla: mantiene un .typ de muestra persistente (importa el lib.typ
+    real, no el temporal de preview), regenerado solo si lib.typ es más nuevo que la muestra
+    existente; delega el PNG cacheado a generar_miniatura() (Etapa 7, sin modificarla)."""
+    dest_dir = plantilla_dir(slug, nombre)
+    lib_path = dest_dir / "lib.typ"
+    if not lib_path.exists():
+        return None
+    muestra_path = _muestra_typ_path(slug, nombre)
+    if not muestra_path.exists() or muestra_path.stat().st_mtime < lib_path.stat().st_mtime:
+        muestra_path.write_text(build_typ(_muestra_meta(), "lib.typ"), encoding="utf-8")
+    return generar_miniatura(muestra_path)
+
+
+def plantilla_clonar(slug: str, nombre_nuevo: str, origen_dir: Path) -> Path:
+    """Crea una plantilla nueva clonando una carpeta origen (otra plantilla de la org, o el
+    esqueleto base de templates_base/). "Crear" plantilla en la Etapa 9 siempre es clonar
+    algo existente -- lib.typ es código Typst completo, no tiene sentido un "en blanco" que
+    no sea, en sí mismo, un esqueleto ya clonable."""
+    destino = plantilla_dir(slug, nombre_nuevo)
+    if destino.exists():
+        sys.exit(f"ERROR: ya existe una plantilla '{nombre_nuevo}' en '{slug}'.")
+    if not (origen_dir / "lib.typ").exists():
+        sys.exit(f"ERROR: '{origen_dir}' no contiene lib.typ; no es una plantilla válida.")
+    shutil.copytree(origen_dir, destino)
+    return destino
+
+
+def plantilla_eliminar(org: dict, nombre: str) -> None:
+    """Elimina la carpeta de una plantilla de la org. Aborta si es la plantilla por defecto
+    o si es la única que queda (doctyp new siempre necesita al menos una)."""
+    slug = org.get("slug", "")
+    default = org.get("config", {}).get("plantilla_default")
+    if nombre == default:
+        sys.exit(f"ERROR: '{nombre}' es la plantilla por defecto de '{slug}'; fija otra "
+                 f"con 'doctyp template default' antes de eliminarla.")
+    base = org_dir(slug) / "templates"
+    nombres = sorted(p.name for p in base.iterdir() if p.is_dir()) if base.exists() else []
+    if len(nombres) <= 1:
+        sys.exit(f"ERROR: '{nombre}' es la única plantilla de '{slug}'; la organización "
+                 f"necesita al menos una para crear documentos.")
+    destino = plantilla_dir(slug, nombre)
+    if not destino.exists():
+        sys.exit(f"ERROR: no existe la plantilla '{nombre}' en '{slug}'.")
+    shutil.rmtree(destino)
+
+
+def _plantilla_indice_path(slug: str, nombre: str) -> Path:
+    return plantilla_dir(slug, nombre) / SNAPSHOTS_DIRNAME / INDICE_SNAPSHOTS
+
+
+def _leer_indice_plantilla(slug: str, nombre: str) -> dict:
+    p = _plantilla_indice_path(slug, nombre)
+    if not p.exists():
+        return {"nombre": nombre, "versiones": []}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {"nombre": nombre, "versiones": []}
+
+
+def listar_versiones_plantilla(slug: str, nombre: str) -> list[dict]:
+    """Versiones más recientes primero (espejo de cómo se muestran las de documento)."""
+    return list(reversed(_leer_indice_plantilla(slug, nombre).get("versiones", [])))
+
+
+def contenido_version_plantilla(slug: str, nombre: str, version: int) -> str:
+    """Lee el snapshot de una versión anterior (solo lectura; no escribe archivos)."""
+    indice = _leer_indice_plantilla(slug, nombre)
+    fila = next((v for v in indice.get("versiones", []) if v["version"] == version), None)
+    if fila is None:
+        sys.exit(f"ERROR: la plantilla '{nombre}' no tiene la versión {version}.")
+    snap_path = plantilla_dir(slug, nombre) / fila["snapshot"]
+    if not snap_path.exists():
+        sys.exit(f"ERROR: el snapshot registrado no existe en disco: {snap_path}")
+    return snap_path.read_text(encoding="utf-8")
+
+
+def guardar_version_plantilla(slug: str, nombre: str, lib_texto_nuevo: str, mensaje: str) -> dict:
+    """Snapshotea el lib.typ ACTUAL (antes de sobrescribir) como la versión que se cierra
+    ahora, y luego escribe `lib_texto_nuevo` como el lib.typ vigente. A diferencia de
+    realizar_save_org(), aquí no hay 'version:' embebido que bumpear -- lib.typ no tiene meta
+    propia -- el número de versión vive solo en el índice local."""
+    dest_dir = plantilla_dir(slug, nombre)
+    lib_path = dest_dir / "lib.typ"
+    if not lib_path.exists():
+        sys.exit(f"ERROR: la plantilla '{nombre}' no tiene lib.typ ({lib_path}).")
+    indice = _leer_indice_plantilla(slug, nombre)
+    n = len(indice.get("versiones", [])) + 1
+    snap_rel = f"{SNAPSHOTS_DIRNAME}/lib_v{n}.typ"
+    snap_path = dest_dir / snap_rel
+    snap_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(lib_path, snap_path)
+
+    ahora = datetime.datetime.now().isoformat(timespec="seconds")
+    fila = {
+        "version": n, "fecha": datetime.date.today().strftime("%Y%m%d"),
+        "creado": ahora, "mensaje": mensaje, "snapshot": snap_rel,
+    }
+    indice.setdefault("versiones", []).append(fila)
+    indice["nombre"] = nombre
+    lib_path.write_text(lib_texto_nuevo, encoding="utf-8")
+    _escribir_json_atomico(_plantilla_indice_path(slug, nombre), indice)
+    return fila
+
+
 # ── Metadatos: edición quirúrgica del bloque crear-meta((...)) ────────────────────────────
 #
 # No hay parser de Typst en el proyecto (deliberado, stdlib-only) — mismo patrón que
@@ -1359,6 +1509,116 @@ def cmd_template_default(args):
     plantilla_fijar_default(org, args.nombre)
     guardar_org(slug, org)
     _ok(f"Plantilla por defecto: {_c(_C.BOLD, org['config']['plantilla_default'])}")
+
+
+def cmd_template_new(args):
+    slug = org_activa_slug()
+    cargar_org(slug)  # valida que la org exista
+    nombre = args.nombre.strip()
+    if args.clonar_de:
+        origen = plantilla_dir(slug, args.clonar_de)
+        if not origen.exists():
+            sys.exit(f"ERROR: no existe la plantilla '{args.clonar_de}' en '{slug}'.")
+        etiqueta = f"clonada de '{args.clonar_de}'"
+    else:
+        origen = TEMPLATES_BASE_DIR / PLANTILLA_MINIMA
+        etiqueta = "esqueleto en blanco"
+    destino = plantilla_clonar(slug, nombre, origen)
+    _ok(f"Plantilla creada: {_c(_C.BOLD, nombre)} en {_c(_C.CYAN, slug)} ({etiqueta})")
+    print(f"       {_c(_C.DIM, str(destino))}\n")
+
+
+def cmd_template_rm(args):
+    slug = org_activa_slug()
+    org = cargar_org(slug)
+    nombre = args.nombre.strip()
+    if not args.yes:
+        try:
+            resp = input(f"  ¿Eliminar la plantilla '{nombre}' de '{slug}'? [s/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        if resp not in ("s", "si", "sí", "y", "yes"):
+            print("  Cancelado.")
+            return
+    plantilla_eliminar(org, nombre)
+    _ok(f"Plantilla eliminada: {_c(_C.BOLD, nombre)}")
+
+
+def cmd_template_save(args):
+    slug = org_activa_slug()
+    cargar_org(slug)
+    nombre = args.nombre.strip()
+    lib_path = plantilla_dir(slug, nombre) / "lib.typ"
+    if not lib_path.exists():
+        sys.exit(f"ERROR: no existe la plantilla '{nombre}' en '{slug}' (o le falta lib.typ).")
+    mensaje = args.mensaje or pedir_mensaje_version()
+    if mensaje is None:
+        return
+    lib_texto = lib_path.read_text(encoding="utf-8")
+    fila = guardar_version_plantilla(slug, nombre, lib_texto, mensaje)
+    print()
+    _ok(f"Versión registrada: {_c(_C.BOLD + _C.CYAN, 'v' + str(fila['version']))}")
+    print(f"       Plantilla: {_c(_C.BOLD, nombre)}")
+    print(f"       Mensaje:   {mensaje}\n")
+
+
+def cmd_template_history(args):
+    slug = org_activa_slug()
+    cargar_org(slug)
+    nombre = args.nombre.strip()
+    vers = listar_versiones_plantilla(slug, nombre)
+    print(f"\n  {_c(_C.BOLD, nombre)}")
+    if not vers:
+        print(f"  {_c(_C.YELLOW, '!')} Sin versiones registradas.\n")
+        return
+    dest_dir = plantilla_dir(slug, nombre)
+    print()
+    for v in vers:
+        snapshot = v.get("snapshot")
+        existe = bool(snapshot) and (dest_dir / snapshot).exists()
+        snap = _c(_C.GREEN, "✔") if existe else _c(_C.DIM, "–")
+        fecha = v.get("fecha", "")
+        fecha_fmt = f"{fecha[:4]}-{fecha[4:6]}-{fecha[6:]}" if len(fecha) == 8 else fecha
+        ver_col = _c(_C.BOLD + _C.CYAN, f"v{v['version']:<8}")
+        print(f"  {snap}  {ver_col} {fecha_fmt:<12} {v.get('mensaje', '')}")
+    print()
+
+
+def cmd_template_restore(args):
+    slug = org_activa_slug()
+    cargar_org(slug)
+    nombre = args.nombre.strip()
+    vers = listar_versiones_plantilla(slug, nombre)  # más reciente primero
+    if not vers:
+        _warn(f"La plantilla '{nombre}' no tiene versiones registradas.")
+        return
+
+    if args.version is not None:
+        version = args.version
+        disponibles = [v["version"] for v in vers]
+        if version not in disponibles:
+            sys.exit(f"ERROR: la plantilla '{nombre}' no tiene la versión {version}. "
+                     f"Disponibles: {', '.join(str(x) for x in disponibles)}")
+    else:
+        version = vers[0]["version"]
+        _ok(f"Sin versión indicada: se usará la más reciente con snapshot "
+            f"({_c(_C.CYAN, 'v' + str(version))}).")
+
+    contenido = contenido_version_plantilla(slug, nombre, version)
+    if args.stdout:
+        print(contenido, end="" if contenido.endswith("\n") else "\n")
+        return
+
+    dest_dir = plantilla_dir(slug, nombre)
+    destino = dest_dir / f"lib_v{version}.typ"
+    if destino.exists():
+        sys.exit(f"ERROR: ya existe {destino}; no se sobreescribe. "
+                 f"Bórralo o renómbralo antes de restaurar.")
+    destino.write_text(contenido, encoding="utf-8")
+    print()
+    _ok(f"Restaurado: {_c(_C.DIM, str(destino))}  (v{version}, el lib.typ vigente no se modifica)")
+    print()
 
 
 def cmd_listar(args):
@@ -2223,6 +2483,37 @@ def build_parser() -> argparse.ArgumentParser:
     ptp_default = ptp_sub.add_parser("default", help="Fija la plantilla por defecto de la org activa.")
     ptp_default.add_argument("nombre", metavar="NOMBRE")
     ptp_default.set_defaults(func=cmd_template_default)
+
+    ptp_new = ptp_sub.add_parser("new", help="Crea una plantilla nueva (clonada o en blanco).")
+    ptp_new.add_argument("nombre", metavar="NOMBRE")
+    ptp_new.add_argument("--clonar-de", dest="clonar_de",
+                         help="Plantilla existente a clonar. Por defecto: esqueleto mínimo en blanco.")
+    ptp_new.set_defaults(func=cmd_template_new)
+
+    ptp_rm = ptp_sub.add_parser("rm", help="Elimina una plantilla de la org activa.")
+    ptp_rm.add_argument("nombre", metavar="NOMBRE")
+    ptp_rm.add_argument("--y", dest="yes", action="store_true", help="Confirmar sin preguntar.")
+    ptp_rm.set_defaults(func=cmd_template_rm)
+
+    ptp_save = ptp_sub.add_parser("save", help="Registra una nueva versión de una plantilla (snapshot de lib.typ).")
+    ptp_save.add_argument("nombre", metavar="NOMBRE")
+    ptp_save.add_argument("--mensaje", "--m", dest="mensaje",
+                          help="Mensaje descriptivo. Si se omite, se pide interactivo.")
+    ptp_save.set_defaults(func=cmd_template_save)
+
+    ptp_hist = ptp_sub.add_parser("history", aliases=["h", "log"],
+                                  help="Lista las versiones de una plantilla y si tienen snapshot.")
+    ptp_hist.add_argument("nombre", metavar="NOMBRE")
+    ptp_hist.set_defaults(func=cmd_template_history)
+
+    ptp_restore = ptp_sub.add_parser("restore",
+                                     help="Extrae una versión anterior del lib.typ desde su snapshot.")
+    ptp_restore.add_argument("nombre", metavar="NOMBRE")
+    ptp_restore.add_argument("--version", type=int,
+                             help="Número de versión (por defecto: la más reciente con snapshot).")
+    ptp_restore.add_argument("--stdout", action="store_true",
+                             help="Imprime el contenido en stdout en vez de escribir un archivo.")
+    ptp_restore.set_defaults(func=cmd_template_restore)
 
     pn = sub.add_parser("new", aliases=["n"],
                         help="Crea un nuevo documento .typ con correlativo secuencial.")

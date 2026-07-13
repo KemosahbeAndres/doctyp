@@ -6,6 +6,9 @@ const props = defineProps({
   slug: { type: String, required: true },
   codigo: { type: String, required: true },
   texto: { type: String, default: "" },
+  // Permite reusar este componente para otras vistas previas "en caliente" (p. ej. plantillas)
+  // que compilan sobre un documento de muestra en vez del documento vigente.
+  compilarFn: { type: Function, default: null },
 });
 
 const pdfUrl = ref(null);
@@ -24,7 +27,8 @@ function revocarUrlAnterior() {
 async function compilar() {
   compilando.value = true;
   try {
-    const blob = await compilarVistaPrevia(props.slug, props.codigo, props.texto);
+    const fn = props.compilarFn || compilarVistaPrevia;
+    const blob = await fn(props.slug, props.codigo, props.texto);
     const nuevaUrl = URL.createObjectURL(blob);
     revocarUrlAnterior();
     pdfUrl.value = nuevaUrl;
