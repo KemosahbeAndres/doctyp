@@ -22,7 +22,13 @@ async function compilar() {
   compilando.value = true;
   try {
     const { mainTexto, archivos } = await props.cargarArchivos(props.slug, props.codigo, props.texto);
-    const res = await compilarYRenderizar({ mainTexto, archivos, contenedor: contenedor.value });
+    const res = await compilarYRenderizar({
+      slug: props.slug,
+      codigo: props.codigo,
+      mainTexto,
+      archivos,
+      contenedor: contenedor.value,
+    });
     error.value = res.ok ? "" : res.diagnosticos.join("\n");
   } catch (e) {
     error.value = e.message;

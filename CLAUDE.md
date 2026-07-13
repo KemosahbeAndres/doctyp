@@ -247,8 +247,11 @@ doctyp web [--port 8787] [--host 127.0.0.1] [--no-browser]  # (alias: serve)
 - **Backend:** `http.server` de la stdlib (ThreadingHTTPServer). API JSON bajo `/api/…` +
   **SSE** (`/api/events`) para actualizaciones en tiempo real del árbol de carpetas y del
   registro. Sirve `web/dist/` como estáticos.
-- **Arranque:** `doctyp web` levanta el servidor y **abre automáticamente el navegador**
-  en la URL local (`webbrowser.open`, stdlib). `--no-browser` lo suprime (scripts/headless).
+- **Arranque:** `doctyp web` primero compila la SPA (`npm install` si falta `web/node_modules`,
+  luego `npm run build` sobre `web/`) y después levanta el servidor, **abriendo automáticamente
+  el navegador** en la URL local (`webbrowser.open`, stdlib). El build se omite solo si no hay
+  `npm` en el PATH, si falta `web/package.json`, o si se pasa `--no-build` (usa `web/dist/` tal
+  cual, o el placeholder). `--no-browser` suprime la apertura del navegador (scripts/headless).
 - **Frontend:** SPA **Vue 3** (Vite). Funcionalidad: **gestión completa (CRUD) de autores y
   equipos dentro de cada organización**, gestión de organizaciones y plantillas; explorador
   de carpetas de documentos en tiempo real; edición del `.typ` y metadatos;

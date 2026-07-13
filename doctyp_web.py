@@ -5,7 +5,8 @@ doctyp_web — Backend HTTP de `doctyp web` (Etapa 4 de la arquitectura v3, ver 
 Servidor stdlib puro (http.server.ThreadingHTTPServer): API JSON bajo /api/... que envuelve
 la lógica ya existente de doctyp.py (nunca reimplementa lógica de negocio aquí), SSE en
 /api/events para notificar cambios en org.json/documentos, y estáticos desde web/dist/ (o un
-placeholder si la Etapa 5 aún no generó el build).
+placeholder si la Etapa 5 aún no generó el build). `cmd_web` compila la SPA (npm install +
+npm run build sobre web/) antes de levantar el servidor, salvo --no-build o si no hay npm.
 
 Seguridad: bind por defecto a 127.0.0.1; toda ruta se resuelve y valida contra las dos raíces
 permitidas (organizations/ y DOCS_ROOT) sin path traversal; escrituras atómicas (reusa
@@ -15,14 +16,15 @@ reutiliza exactamente compilar_typ().
 No requiere paquetes externos (solo stdlib).
 """
 from __future__ import annotations
-import datetime, difflib, json, mimetypes, os, queue, threading, time, webbrowser
+import datetime, difflib, json, mimetypes, os, queue, shutil, subprocess, threading, time, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote
 
 import doctyp as core
 
-WEB_DIST = core.SCRIPT_DIR / "web" / "dist"
+WEB_DIR = core.SCRIPT_DIR / "web"
+WEB_DIST = WEB_DIR / "dist"
 
 _PLACEHOLDER_HTML = b"""<!doctype html>
 <html><head><meta charset="utf-8"><title>doctyp web</title></head>
@@ -962,9 +964,41 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
 
 # ── Arranque ───────────────────────────────────────────────────────────────────────────
 
+def _build_frontend() -> None:
+    """Compila la SPA (web/ -> web/dist/) con npm antes de levantar el servidor.
+
+    Se salta si no hay npm disponible o no existe web/package.json (entornos donde
+    el frontend aun no se agrego); en ese caso el servidor sirve el placeholder.
+    """
+    pkg_json = WEB_DIR / "package.json"
+    if not pkg_json.exists():
+        return
+
+    npm = shutil.which("npm")
+    if not npm:
+        core._warn("npm no esta disponible en PATH; se omite el build de la SPA "
+                    "(se sirve el placeholder).")
+        return
+
+    if not (WEB_DIR / "node_modules").exists():
+        print(f"  {core._c(core._C.DIM, 'Instalando dependencias de la SPA (npm install)...')}")
+        subprocess.run([npm, "install"], cwd=str(WEB_DIR), check=True)
+
+    print(f"  {core._c(core._C.DIM, 'Compilando la SPA (npm run build)...')}")
+    subprocess.run([npm, "run", "build"], cwd=str(WEB_DIR), check=True)
+    core._ok("Build de la SPA lista.")
+
+
 def cmd_web(args) -> None:
     host = args.host or "127.0.0.1"
     port = args.port or 8787
+
+    if not getattr(args, "no_build", False):
+        try:
+            _build_frontend()
+        except subprocess.CalledProcessError as e:
+            core._warn(f"Build de la SPA fallo ({e}); se sirve el contenido de web/dist/ "
+                        "existente (o el placeholder) sin actualizar.")
 
     servidor = ThreadingHTTPServer((host, port), _DoctypRequestHandler)
     servidor.daemon_threads = True

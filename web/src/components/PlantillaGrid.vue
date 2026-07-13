@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from "vue";
-import { urlMiniaturaPlantilla } from "../api.js";
+import { urlMiniaturaPlantilla, getArchivosPlantilla, getArchivoPlantilla, getMuestraPlantilla, getPlantillaLibTyp } from "../api.js";
+import { prefetch } from "../typst-wasm/client.js";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -14,6 +15,30 @@ const sinMiniatura = ref(new Set());
 
 function onImgError(nombre) {
   sinMiniatura.value = new Set(sinMiniatura.value).add(nombre);
+}
+
+// Igual que en DocumentGrid: precompila en background al pasar el mouse, para que la vista
+// previa de la plantilla ya esté en cache cuando el usuario entra al editor.
+const prefetchedas = new Set();
+async function onHoverPlantilla(nombre) {
+  if (prefetchedas.has(nombre)) return;
+  prefetchedas.add(nombre);
+  try {
+    const [libTexto, rutas, muestra] = await Promise.all([
+      getPlantillaLibTyp(props.slug, nombre),
+      getArchivosPlantilla(props.slug, nombre),
+      getMuestraPlantilla(props.slug, nombre),
+    ]);
+    const archivos = await Promise.all(
+      rutas
+        .filter((r) => !r.startsWith("fonts/"))
+        .map(async (ruta) => ({ ruta, bytes: await getArchivoPlantilla(props.slug, nombre, ruta) })),
+    );
+    archivos.push({ ruta: "lib.typ", bytes: new TextEncoder().encode(libTexto) });
+    await prefetch(props.slug, nombre, muestra, archivos);
+  } catch {
+    prefetchedas.delete(nombre);
+  }
 }
 </script>
 
@@ -30,6 +55,7 @@ function onImgError(nombre) {
         :key="p.nombre"
         class="tarjeta-doc"
         @click="emit('seleccionar', p.nombre)"
+        @mouseenter="onHoverPlantilla(p.nombre)"
       >
         <div class="tarjeta-miniatura">
           <img

@@ -2604,6 +2604,9 @@ def build_parser() -> argparse.ArgumentParser:
     pw.add_argument("--host", default="127.0.0.1", help="Host de bind. Por defecto: 127.0.0.1.")
     pw.add_argument("--no-browser", action="store_true", dest="no_browser",
                     help="No abrir el navegador automáticamente.")
+    pw.add_argument("--no-build", action="store_true", dest="no_build",
+                    help="No compilar la SPA (web/) antes de levantar el servidor; "
+                         "usa el build existente en web/dist/ (o el placeholder).")
     pw.set_defaults(func=_cmd_web)
 
     return p
