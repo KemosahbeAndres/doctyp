@@ -1,11 +1,17 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
-import { listOrgs, listDocs, listAutores, activarOrg, activarAutor, suscribirEventos } from "./api.js";
+import {
+  listOrgs, listDocs, listAutores, activarOrg, activarAutor, suscribirEventos,
+  listPlantillas, fijarPlantillaDefault, eliminarPlantilla,
+} from "./api.js";
 import DocumentGrid from "./components/DocumentGrid.vue";
 import DocEditor from "./components/DocEditor.vue";
 import NewDocumentModal from "./components/NewDocumentModal.vue";
 import NewOrgModal from "./components/NewOrgModal.vue";
 import OrgManager from "./components/OrgManager.vue";
+import PlantillaGrid from "./components/PlantillaGrid.vue";
+import TemplateEditor from "./components/TemplateEditor.vue";
+import NewTemplateModal from "./components/NewTemplateModal.vue";
 
 const orgs = ref([]);
 const orgSlug = ref(null);
@@ -14,12 +20,17 @@ const autores = ref([]);
 const autorActivoId = ref(null);
 const cargandoDocs = ref(false);
 const docSeleccionado = ref(null);
-const vista = ref("grid"); // "grid" | "documento"
+const vista = ref("grid"); // "grid" | "documento" | "plantillas" | "plantilla"
 const error = ref("");
 const editorSucio = ref(false);
 const mostrarNuevo = ref(false);
 const mostrarNuevaOrg = ref(false);
 const mostrarGestor = ref(false);
+const plantillas = ref([]);
+const cargandoPlantillas = ref(false);
+const plantillaSeleccionada = ref(null);
+const plantillaEditorSucio = ref(false);
+const mostrarNuevaPlantilla = ref(false);
 
 const docActivo = computed(() => docs.value.find((d) => d.codigo_base === docSeleccionado.value) || null);
 const docsFiltrados = computed(() =>
@@ -68,11 +79,28 @@ async function cargarAutores() {
   }
 }
 
+async function cargarPlantillas() {
+  if (!orgSlug.value) {
+    plantillas.value = [];
+    return;
+  }
+  cargandoPlantillas.value = true;
+  try {
+    plantillas.value = await listPlantillas(orgSlug.value);
+  } catch (e) {
+    error.value = `No se pudieron cargar las plantillas: ${e.message}`;
+  } finally {
+    cargandoPlantillas.value = false;
+  }
+}
+
 watch(orgSlug, (slug) => {
   docSeleccionado.value = null;
+  plantillaSeleccionada.value = null;
   vista.value = "grid";
   cargarDocs();
   cargarAutores();
+  cargarPlantillas();
   if (slug) activarOrg(slug).catch(() => {});
 });
 
@@ -91,6 +119,55 @@ function volverAGrid() {
     return;
   }
   vista.value = "grid";
+}
+
+function irAPlantillas() {
+  if (plantillaEditorSucio.value && !window.confirm("Tienes cambios sin guardar en la plantilla. ¿Salir igualmente?")) {
+    return;
+  }
+  vista.value = "plantillas";
+  cargarPlantillas();
+}
+
+function seleccionarPlantilla(nombre) {
+  if (nombre !== plantillaSeleccionada.value) {
+    if (plantillaEditorSucio.value && !window.confirm("Tienes cambios sin guardar en la plantilla. ¿Descartarlos y cambiar de plantilla?")) {
+      return;
+    }
+    plantillaSeleccionada.value = nombre;
+  }
+  vista.value = "plantilla";
+}
+
+function volverAPlantillas() {
+  if (plantillaEditorSucio.value && !window.confirm("Tienes cambios sin guardar en la plantilla. ¿Volver a la cuadrícula igualmente?")) {
+    return;
+  }
+  vista.value = "plantillas";
+}
+
+async function marcarDefaultPlantilla(p) {
+  try {
+    await fijarPlantillaDefault(orgSlug.value, p.nombre);
+    await cargarPlantillas();
+  } catch (e) {
+    error.value = e.message;
+  }
+}
+
+async function eliminarPlantillaGrid(p) {
+  if (!window.confirm(`¿Eliminar la plantilla "${p.nombre}"? Los documentos ya creados con ella no se ven afectados.`)) return;
+  try {
+    await eliminarPlantilla(orgSlug.value, p.nombre);
+    await cargarPlantillas();
+  } catch (e) {
+    error.value = e.message;
+  }
+}
+
+function onPlantillaCreada() {
+  mostrarNuevaPlantilla.value = false;
+  cargarPlantillas();
 }
 
 async function cambiarAutorActivo(id) {
@@ -168,6 +245,7 @@ onUnmounted(() => {
           {{ a.nombre }}{{ a.activo ? " (yo)" : "" }}
         </option>
       </select>
+      <button title="Editor de plantillas" @click="irAPlantillas">Plantillas</button>
       <button title="Gestionar organización" @click="mostrarGestor = true">⚙ Organización</button>
     </div>
     <div v-if="error" class="error-banner">{{ error }}</div>
@@ -180,7 +258,7 @@ onUnmounted(() => {
       @seleccionar="seleccionarDoc"
       @nuevo="mostrarNuevo = true"
     />
-    <div v-else class="vista-documento">
+    <div v-else-if="vista === 'documento'" class="vista-documento">
       <div class="documento-header">
         <button @click="volverAGrid">← Documentos</button>
         <strong>{{ docActivo?.codigo_base || docSeleccionado }}</strong>
@@ -191,6 +269,28 @@ onUnmounted(() => {
         :codigo="docSeleccionado"
         @sucio-cambio="editorSucio = $event"
         @cambio-en-servidor="onCambioEnServidor"
+      />
+    </div>
+    <PlantillaGrid
+      v-else-if="vista === 'plantillas'"
+      :slug="orgSlug"
+      :plantillas="plantillas"
+      :cargando="cargandoPlantillas"
+      @seleccionar="seleccionarPlantilla"
+      @nuevo="mostrarNuevaPlantilla = true"
+      @default="marcarDefaultPlantilla"
+      @eliminar="eliminarPlantillaGrid"
+    />
+    <div v-else-if="vista === 'plantilla'" class="vista-documento">
+      <div class="documento-header">
+        <button @click="volverAPlantillas">← Plantillas</button>
+        <strong>{{ plantillaSeleccionada }}</strong>
+      </div>
+      <TemplateEditor
+        :slug="orgSlug"
+        :nombre="plantillaSeleccionada"
+        @sucio-cambio="plantillaEditorSucio = $event"
+        @guardado="cargarPlantillas"
       />
     </div>
 
@@ -206,6 +306,13 @@ onUnmounted(() => {
       :slug="orgSlug"
       @cerrar="mostrarGestor = false"
       @cambio="onCambioOrgManager"
+    />
+    <NewTemplateModal
+      v-if="mostrarNuevaPlantilla"
+      :slug="orgSlug"
+      :plantillas="plantillas"
+      @creada="onPlantillaCreada"
+      @cancelar="mostrarNuevaPlantilla = false"
     />
   </div>
 </template>

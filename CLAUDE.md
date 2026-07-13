@@ -426,7 +426,7 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 7 | Vista de documentos en formato de cuadricula como pantalla principal con una pequeña vista previa de la primera pagina de cada documento de su ultima compilacion o una compilacion temporal del documento actual. Barra de estado inferior indicando la version actual, con desplegable para seleccionar otras versiones y ver sus diferencias con la actual. Tambien la barra de estado indicara si hay cambios y tendra los botones para guardar y para hacer commit de una nueva version. Tambien indicara la cantidad de palabras y otra informacion relevante como tamaño de archivo y un boton para que typst compile. | **Completada** |
 | 8 | La vista de documento solo se dividira en dos debajo del navbar: editor y vista previa. La App Web debe mostrar una vista previa del informe/doumento generado para poder editar y visualizar directamente en la interfaz de la misma manera que la app web typst. Se debe generar un compilado fresco on-demand cada vez para mostrar la vista previa, el archivo compilado no se guardara o se guardara de manera temporal con un nombre temporal en el directorio raiz del documento. | **Completada** |
 | 9 | Editor de plantillas con CRUD completo y seleccion de plantilla en el modal al crear documento nuevo. Usar vista dividida: editor y vista previa similar a typst. Al editar una plantilla se debera mostrar un documento. Explorar otras soluciones de compilado/precompilado/vistaprevia/cache. | **Completada** |
-| 10 | Editor de plantillas en el cliente web debe poder accederse desde pantalla principal con boton junto al boton 'organizacion' y la vista debe ser a pantalla completa como el editor de documentos. El editor de texto/codigo debe mostrar en colores los codigos/funciones/variables de typst como un editor de codigo moderno. La division por colores permite una mejor edicion para el usuario. Usar la convencion de colores de Typst y/o la que usa VSCode con la extension de Typst. | Pendiente |
+| 10 | Editor de plantillas en el cliente web debe poder accederse desde pantalla principal con boton junto al boton 'organizacion' y la vista debe ser a pantalla completa como el editor de documentos. El editor de texto/codigo debe mostrar en colores los codigos/funciones/variables de typst como un editor de codigo moderno. La division por colores permite una mejor edicion para el usuario. Usar la convencion de colores de Typst y/o la que usa VSCode con la extension de Typst. | **Completada** |
 | 11 | Cambiar renderizado de vista previa en el cliente web (editor documentos y editor plantillas) por un renderizado de typst WASM <typst.ts> dentro del cliente web. El editor debe seguir el documento cuando se haga click en el texto y lo mismo para la vista previa, al hacer click en una seccion o parrafo o titulo/encabezado el editor se debe mover hasta donde este el cursor en la vista previa. Renderizar en HTML <canvas> igual que la app web de typst. El boton de actualizar vista previa debe estar en la barra superior donde esta el nombre del archivo alineado a la derecha. | Pendiente |
 
 
@@ -595,9 +595,8 @@ y estructuras **no existen** — no los uses ni los des por hechos.
   creados con una plantilla eliminada no se ven afectados (la plantilla se copia completa a
   cada documento al crearlo, §3 — inmutabilidad ya existente, no tocada por esta etapa).
 - El editor de plantillas (`TemplateEditor.vue`) es un overlay propio (`.modal-box-editor`)
-  lanzado desde la pestaña "Plantillas" de `OrgManager.vue` — no se tocó el enrutamiento
-  `vista` (`"grid"`/`"documento"`) de `App.vue`: gestionar plantillas es una acción de
-  organización, no una vista del espacio de documentos. Reusa `VistaPrevia.vue` (Etapa 8) tal
+  lanzado desde la pestaña "Plantillas" de `OrgManager.vue` (nota: en la Etapa 10 pasó a ser
+  una vista de primer nivel de `App.vue`, ver más abajo). Reusa `VistaPrevia.vue` (Etapa 8) tal
   cual, generalizado con una prop opcional `compilar-fn` (por defecto `compilarVistaPrevia`,
   sin cambio de comportamiento para `DocEditor.vue`) para inyectar
   `vistaPreviaPlantilla` sin duplicar el componente.
@@ -605,6 +604,42 @@ y estructuras **no existen** — no los uses ni los des por hechos.
   Etapa 7) — se dejó fuera de alcance; el historial permite ver/cargar una versión anterior en
   el editor, no compararla línea a línea. El selector de plantilla en `NewDocumentModal.vue`
   ahora se muestra siempre que la org tenga ≥1 plantilla (antes solo con >1).
+
+**Nota sobre el alcance real de la Etapa 10**:
+- **Sin paquete de resaltado Typst maduro para CodeMirror 6** — se investigó
+  `codemirror-lang-typst` (kxxt): experimental, bindings WASM sin documentación de uso y sin
+  releases estables, descartado explícitamente. En su lugar, `web/src/codemirror/typst-lang.js`
+  define un modo propio con `StreamLanguage.define(...)` (mecanismo estándar de
+  `@codemirror/language` para tokenizers simples estilo regex/estados, sin gramática Lezer
+  completa): comentarios `//`/`/* */`, strings, encabezados `=`/`==` (solo fuera de modo
+  código), palabras clave tras `#` o dentro de una expresión de código, e identificadores
+  seguidos de `(`/`[` coloreados como nombre de función (`variableName.function` vía tags
+  reales de `@lezer/highlight`, no la tabla de compatibilidad "legacy" de CM5 — se usan
+  directamente `tags.comment`, `tags.keyword`, `tags.heading`, etc.). Verificado con Playwright
+  (colores computados por pantalla, no solo lectura de código) contra `lib.typ` real y un
+  documento real: los 7 tipos de token (comentario, string, heading, keyword, function,
+  variable, bracket/puntuación) renderizan con el color esperado.
+- `web/src/components/CodeEditor.vue` (nuevo, wrapper único reusado por `DocEditor.vue` y
+  `TemplateEditor.vue` vía `v-model` — evita duplicar el setup de CodeMirror): historial nativo
+  (undo/redo), `lineWrapping`, numeración de línea. Reemplaza el `<textarea class="editor-
+  textarea">` en ambos editores; el contenedor conserva la clase `editor-textarea` (ahora sobre
+  un `<div>` host) para no tocar el layout flex ya existente en `.editor-preview-split`.
+- **El editor de plantillas deja de ser modal**: `TemplateEditor.vue` pasa de
+  `.modal-backdrop`/`.modal-box-editor` a `.panel-editor` (mismas clases que `DocEditor.vue`,
+  sin CSS nueva) y cambia sus emits de `cerrar`/`guardado` a `sucio-cambio`/`guardado` — la
+  navegación de "volver" y la confirmación de cambios sin guardar ahora las maneja `App.vue`,
+  igual que ya hacía con el editor de documentos.
+- **Plantillas pasa a ser una vista de primer nivel**: nuevo botón "Plantillas" en la topbar
+  (`App.vue`, junto a "⚙ Organización"), nuevos valores de `vista`
+  (`"plantillas"`/`"plantilla"`, además de `"grid"`/`"documento"`) y `PlantillaGrid.vue` (nuevo,
+  mismo patrón que `DocumentGrid.vue`, reusando sus clases `.tarjeta-doc`/`.tarjeta-miniatura`).
+  La pestaña "Plantillas" de `OrgManager.vue` (Etapa 9) se eliminó por completo —
+  `OrgManager.vue` vuelve a tener solo Autores/Equipos; `NewTemplateModal.vue` (Etapa 9, sin
+  cambios) ahora se monta desde `App.vue`.
+- Verificación: se instaló Playwright + Chromium temporalmente (fuera del repo, en el `/tmp`
+  del host) para levantar `doctyp web` en un puerto separado (8799) y navegar la app real
+  end-to-end con capturas de pantalla — no quedó ninguna dependencia nueva ni archivo temporal
+  en el repositorio ni en `organizations/`.
 
 ---
 

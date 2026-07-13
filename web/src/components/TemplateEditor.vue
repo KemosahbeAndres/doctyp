@@ -5,13 +5,14 @@ import {
   getHistoriaPlantilla, getVersionContenidoPlantilla,
 } from "../api.js";
 import VistaPrevia from "./VistaPrevia.vue";
+import CodeEditor from "./CodeEditor.vue";
 
 const props = defineProps({
   slug: { type: String, required: true },
   nombre: { type: String, required: true },
 });
 
-const emit = defineEmits(["cerrar", "guardado"]);
+const emit = defineEmits(["sucio-cambio", "guardado"]);
 
 const texto = ref("");
 const original = ref("");
@@ -22,6 +23,8 @@ const mensajeEsError = ref(false);
 const versiones = ref([]);
 
 const sucio = computed(() => texto.value !== original.value);
+watch(sucio, (v) => emit("sucio-cambio", v));
+
 const palabras = computed(() => {
   const t = texto.value.trim();
   return t ? t.split(/\s+/).length : 0;
@@ -93,51 +96,38 @@ function onCambioVersion(ev) {
   ev.target.value = "";
   if (version) cargarVersionEnEditor(version);
 }
-
-function cerrar() {
-  if (sucio.value && !window.confirm("Tienes cambios sin guardar en la plantilla. ¿Cerrar igualmente?")) {
-    return;
-  }
-  emit("cerrar");
-}
 </script>
 
 <template>
-  <div class="modal-backdrop" @click.self="cerrar">
-    <div class="modal-box modal-box-editor">
-      <div class="org-manager-header">
-        <h2>Editar plantilla: {{ nombre }}</h2>
-        <button @click="cerrar">Cerrar</button>
+  <div class="panel panel-editor">
+    <div v-if="cargando" class="empty-state">Cargando…</div>
+    <template v-else>
+      <div v-if="mensaje" class="estado editor-mensaje" :style="{ color: mensajeEsError ? 'var(--danger)' : undefined }">
+        {{ mensaje }}
       </div>
-      <div v-if="cargando" class="empty-state">Cargando…</div>
-      <template v-else>
-        <div v-if="mensaje" class="estado" :style="{ color: mensajeEsError ? 'var(--danger)' : undefined }">
-          {{ mensaje }}
+      <div class="editor-preview-split">
+        <CodeEditor class="editor-textarea" v-model="texto" />
+        <VistaPrevia
+          :slug="slug"
+          :codigo="nombre"
+          :texto="texto"
+          :compilar-fn="vistaPreviaPlantilla"
+        />
+      </div>
+      <div class="status-bar">
+        <div class="status-bar-fila">
+          <span class="estado">{{ sucio ? "cambios sin guardar" : "sin cambios pendientes" }}</span>
+          <select @change="onCambioVersion">
+            <option value="">Ver / cargar versión anterior…</option>
+            <option v-for="v in versiones" :key="v.version" :value="v.version" :disabled="!v.snapshot_disponible">
+              v{{ v.version }} · {{ v.mensaje }}
+            </option>
+          </select>
+          <span class="estado">{{ palabras }} palabras · {{ tamanoKB }} KB</span>
+          <span class="status-bar-spacer"></span>
+          <button class="primary" :disabled="ocupado" @click="guardar">Guardar plantilla</button>
         </div>
-        <div class="editor-preview-split template-editor-split">
-          <textarea class="editor-textarea" v-model="texto" spellcheck="false"></textarea>
-          <VistaPrevia
-            :slug="slug"
-            :codigo="nombre"
-            :texto="texto"
-            :compilar-fn="vistaPreviaPlantilla"
-          />
-        </div>
-        <div class="status-bar">
-          <div class="status-bar-fila">
-            <span class="estado">{{ sucio ? "cambios sin guardar" : "sin cambios pendientes" }}</span>
-            <select @change="onCambioVersion">
-              <option value="">Ver / cargar versión anterior…</option>
-              <option v-for="v in versiones" :key="v.version" :value="v.version" :disabled="!v.snapshot_disponible">
-                v{{ v.version }} · {{ v.mensaje }}
-              </option>
-            </select>
-            <span class="estado">{{ palabras }} palabras · {{ tamanoKB }} KB</span>
-            <span class="status-bar-spacer"></span>
-            <button class="primary" :disabled="ocupado" @click="guardar">Guardar plantilla</button>
-          </div>
-        </div>
-      </template>
-    </div>
+      </div>
+    </template>
   </div>
 </template>

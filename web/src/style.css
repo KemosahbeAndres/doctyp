@@ -166,6 +166,18 @@ button.primary {
   font-size: 0.85rem;
 }
 
+.tarjeta-acciones {
+  display: flex;
+  gap: 0.3em;
+  padding: 0 0.6em 0.6em;
+}
+
+.tarjeta-acciones button {
+  flex: 1;
+  padding: 0.25em 0.4em;
+  font-size: 0.75rem;
+}
+
 .vista-documento {
   flex: 1;
   display: flex;
@@ -266,18 +278,8 @@ button.primary {
 .editor-textarea {
   flex: 1;
   min-width: 0;
-  border: none;
-  resize: none;
-  padding: 1em;
-  font-family: var(--mono);
-  font-size: 0.9rem;
-  line-height: 1.5;
   background: var(--bg);
   color: var(--text);
-}
-
-.editor-textarea:focus {
-  outline: none;
 }
 
 .vista-previa {
@@ -434,34 +436,6 @@ button.primary {
   width: 42em;
   max-height: 85vh;
   overflow-y: auto;
-}
-
-.modal-box-editor {
-  width: 90vw;
-  height: 85vh;
-  max-width: 1400px;
-  overflow: hidden;
-}
-
-.template-editor-split {
-  min-height: 0;
-}
-
-.plantilla-miniatura {
-  width: 40px;
-  height: 56px;
-  object-fit: cover;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: var(--bg-panel);
-}
-
-.plantilla-miniatura-placeholder {
-  width: 40px;
-  height: 56px;
-  border: 1px dashed var(--border);
-  border-radius: 3px;
-  background: var(--bg-panel);
 }
 
 .org-manager-header {
