@@ -634,7 +634,7 @@ def compilar_typ(out_file: Path) -> bool:
         _warn("'typst' no disponible (ni en el PATH ni vía flatpak-spawn).")
         return False
     cmd = base + ["compile"]
-    font_dir = SCRIPT_DIR / "museo-sans"
+    font_dir = out_file.parent / "fonts"
     if font_dir.is_dir():
         cmd += ["--font-path", str(font_dir)]
     cmd.append(str(out_file))

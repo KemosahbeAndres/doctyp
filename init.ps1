@@ -3,15 +3,19 @@
   init.ps1 — Instalador de doctyp (generador de informes Typst · SLEP Chinchorro) para Windows.
 
 .DESCRIPTION
-  Instala dependencias (Python 3, Typst, fuentes), crea lanzadores .cmd y añade la carpeta de
-  scripts al PATH del usuario. No actualiza dependencias ya instaladas.
+  Instala dependencias (Python 3, Typst), crea lanzadores .cmd y añade la carpeta de scripts
+  al PATH del usuario. No actualiza dependencias ya instaladas.
 
   Comportamiento:
-    - Python 3, Typst y fuentes: pide confirmación antes de instalar (predeterminado: Sí).
+    - Python 3 y Typst: piden confirmación antes de instalar (predeterminado: Sí).
     - Lanzadores .cmd (doctyp, ty, tp, dt) y PATH: se configuran automáticamente.
 
   En Windows no se usan symlinks (requieren Developer Mode): se crean lanzadores .cmd que
   invocan "python doctyp.py", lo que permite usar el comando desde cualquier carpeta.
+
+  Fuentes: las fuentes oficiales (Museo Sans + gobCL) viven en
+  organizations/<org>/templates/<plantilla>/fonts/ y NO se instalan en el sistema — `doctyp
+  compile` las pasa a Typst vía --font-path para cada documento, sin tocar las fuentes del SO.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\init.ps1
@@ -23,7 +27,6 @@ $ErrorActionPreference = 'Stop'
 
 $RepoDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $BinDir  = Join-Path $env:USERPROFILE 'bin'
-$FontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
 $Script  = Join-Path $RepoDir 'doctyp.py'
 $Aliases = @('doctyp', 'ty', 'tp', 'dt')
 
@@ -102,39 +105,7 @@ if (Get-Command typst -ErrorAction SilentlyContinue) {
 }
 
 # ──────────────────────────────────────────────────────
-# 3) Fuentes (Museo Sans + gobCL)
-# ──────────────────────────────────────────────────────
-Info 'Fuentes (Museo Sans + gobCL)'
-$fontSrc = @()
-foreach ($d in @((Join-Path $RepoDir 'museo-sans'), (Join-Path $RepoDir 'GobCLFontsFiles'))) {
-  if (Test-Path $d) {
-    $found = Get-ChildItem -Path $d -Include '*.otf','*.ttf' -File -Recurse -ErrorAction SilentlyContinue
-    if ($found) { $fontSrc += $found }
-  }
-}
-
-if ($fontSrc.Count -eq 0) {
-  Warn 'No se encontraron fuentes en el repositorio (museo-sans/, GobCLFontsFiles/).'
-} else {
-  $toInstall = @($fontSrc | Where-Object { -not (Test-Path (Join-Path $FontDir $_.Name)) })
-  if ($toInstall.Count -eq 0) {
-    Ok "Ya instaladas ($($fontSrc.Count) archivos en $FontDir)."
-  } else {
-    Warn "$($toInstall.Count) de $($fontSrc.Count) fuente(s) pendientes."
-    if (Ask-Confirm '¿Instalar fuentes?') {
-      New-Item -ItemType Directory -Force -Path $FontDir | Out-Null
-      $toInstall | ForEach-Object { Copy-Item -Force $_.FullName (Join-Path $FontDir $_.Name) }
-      Ok "Instaladas ($($toInstall.Count) archivos)."
-      Warn 'Puede requerir reiniciar la sesión para que las apps las reconozcan.'
-      Warn 'Typst las usa con --font-path sin necesidad de instalarlas globalmente.'
-    } else {
-      Warn 'Omitidas. Typst usará Liberation Sans como respaldo.'
-    }
-  }
-}
-
-# ──────────────────────────────────────────────────────
-# 4) Lanzadores .cmd  [automático]
+# 3) Lanzadores .cmd  [automático]
 # ──────────────────────────────────────────────────────
 Info "Lanzadores .cmd ($($Aliases -join ', '))"
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
@@ -150,7 +121,7 @@ foreach ($n in $Aliases) {
 }
 
 # ──────────────────────────────────────────────────────
-# 5) PATH del usuario  [automático]
+# 4) PATH del usuario  [automático]
 # ──────────────────────────────────────────────────────
 Info 'PATH del usuario'
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -164,7 +135,7 @@ if ($userPath -and ($userPath.Split(';') -icontains $BinDir)) {
 }
 
 # ──────────────────────────────────────────────────────
-# 6) Datos del autor
+# 5) Datos del autor
 # ──────────────────────────────────────────────────────
 Info 'Datos del autor'
 if ($py) {

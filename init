@@ -2,10 +2,14 @@
 #
 # init — Instalador de doctyp (generador de informes Typst · SLEP Chinchorro).
 #
-# Asegura las dependencias (Python 3, Typst), instala las fuentes oficiales y crea los symlinks
-# del comando (doctyp + alias ty/tp/dt) en ~/.local/bin. Pensado para ejecutarse una sola vez
-# tras clonar el repositorio. Soporta Ubuntu, Debian, Fedora/RHEL, Arch, openSUSE y macOS.
+# Asegura las dependencias (Python 3, Typst) y crea los symlinks del comando (doctyp + alias
+# ty/tp/dt) en ~/.local/bin. Pensado para ejecutarse una sola vez tras clonar el repositorio.
+# Soporta Ubuntu, Debian, Fedora/RHEL, Arch, openSUSE y macOS.
 # En Windows usa el instalador equivalente init.ps1 (PowerShell).
+#
+# Nota sobre fuentes: las fuentes oficiales (Museo Sans + gobCL) viven en
+# organizations/<org>/templates/<plantilla>/fonts/ y NO se instalan en el sistema — `doctyp
+# compile` las pasa a Typst vía --font-path para cada documento, sin tocar fontconfig.
 #
 # Uso:
 #   ./init
@@ -15,7 +19,6 @@ set -euo pipefail
 # Directorio real del repositorio (donde vive este script).
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="$HOME/.local/bin"
-FONT_DIR="$HOME/.local/share/fonts"
 ALIASES=(doctyp ty tp dt)
 
 info()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -57,9 +60,6 @@ case "$DISTRO" in
   macos)          if command -v brew >/dev/null 2>&1; then PM_INSTALL="brew install"; else PM_INSTALL=""; fi ;;
   *)              PM_INSTALL="" ;;
 esac
-
-# En macOS las fuentes de usuario van a ~/Library/Fonts.
-[ "$DISTRO" = "macos" ] && FONT_DIR="$HOME/Library/Fonts"
 
 # Instala un paquete del sistema (o avisa si no hay gestor soportado).
 pkg_install() {
@@ -123,27 +123,7 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# 3) Fuentes oficiales (Museo Sans + gobCL)
-# --------------------------------------------------------------------------
-info "Instalando fuentes oficiales en ${FONT_DIR}..."
-mkdir -p "$FONT_DIR/doctyp"
-copied=0
-for d in "$REPO_DIR/museo-sans" "$REPO_DIR/GobCLFontsFiles"; do
-  [ -d "$d" ] || continue
-  for f in "$d"/*.otf "$d"/*.ttf; do
-    [ -e "$f" ] || continue
-    cp -f "$f" "$FONT_DIR/doctyp/" && copied=$((copied + 1))
-  done
-done
-if [ "$copied" -gt 0 ]; then
-  command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$FONT_DIR" >/dev/null 2>&1 || true
-  ok "Fuentes instaladas (${copied} archivos) y caché actualizada."
-else
-  warn "No se encontraron archivos de fuente en el repositorio."
-fi
-
-# --------------------------------------------------------------------------
-# 4) Symlinks del comando (doctyp + alias)
+# 3) Symlinks del comando (doctyp + alias)
 # --------------------------------------------------------------------------
 info "Creando symlinks en ${BIN_DIR}..."
 chmod +x "$REPO_DIR/doctyp.py"
@@ -154,7 +134,7 @@ for n in "${ALIASES[@]}"; do
 done
 
 # --------------------------------------------------------------------------
-# 5) Datos del autor (settings.json -> local.author)
+# 4) Datos del autor (settings.json -> local.author)
 # --------------------------------------------------------------------------
 # Se piden interactivamente y se guardan globalmente; al crear documentos, doctyp los usa por
 # defecto. Se delega en el propio script (config-author) para tener una única fuente de la lógica.
@@ -169,7 +149,7 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# 6) PATH
+# 5) PATH
 # --------------------------------------------------------------------------
 if printf '%s' ":$PATH:" | grep -q ":$BIN_DIR:"; then
   ok "${BIN_DIR} ya está en el PATH."
