@@ -261,6 +261,32 @@ def api_doc_typ_get(slug: str, codigo_base: str) -> str:
 
 # ── Plan 15 F2/F3: gestión de la instancia de PreviewServer (una a la vez) ────────────────
 
+def _lsp_root_y_editable(tipo: str, slug: str, nombre: str) -> tuple[Path, Path]:
+    """Resuelve (root del workspace, archivo editable) para (tipo, slug, nombre) -- compartido
+    entre GET /api/lsp/info (Fase 1B, resuelve el URI antes de conectar) y GET /api/lsp (Fase
+    1A, el puente WS, que solo necesita el root para lanzar/reasociar el proceso)."""
+    if tipo == "plantilla":
+        root = _plantilla_o_404(slug, nombre)
+        archivo_editable = root / "lib.typ"
+    else:
+        org = _cargar_org_api(slug)
+        _doc_o_404(org, nombre)
+        ruta = _ruta_typ_segura(slug, nombre)
+        root = ruta.parent
+        archivo_editable = ruta
+    return root, archivo_editable.resolve()
+
+
+def _archivo_editable_para(tipo: str, slug: str, nombre: str, main_typ: Path) -> Path:
+    """El archivo que el usuario realmente edita (D4): el .typ principal para documentos;
+    `lib.typ` -- no `main_typ`, que ahí es el .typ de MUESTRA -- para plantillas. Compartido
+    entre el bridge de preview (H2, Fase 3.1) y el endpoint /api/lsp/info (Fase 1B) para no
+    duplicar la distinción doc/plantilla en dos lugares."""
+    return (
+        core.plantilla_dir(slug, nombre) / "lib.typ" if tipo == "plantilla" else main_typ
+    ).resolve()
+
+
 def _asegurar_preview_generico(
     tipo: str, slug: str, nombre: str, main_typ: Path, root: Path,
 ) -> PreviewServer | None:
@@ -307,9 +333,7 @@ def _asegurar_preview_generico(
         # documentos interpretaba como si fuera del .typ principal -- por D4 (cabecera del plan),
         # lib.typ nunca se edita/visualiza desde el editor de documentos, así que ese salto debe
         # descartarse, no aplicarse.
-        archivo_editable = (
-            core.plantilla_dir(slug, nombre) / "lib.typ" if tipo == "plantilla" else main_typ
-        ).resolve()
+        archivo_editable = _archivo_editable_para(tipo, slug, nombre, main_typ)
 
         def _bridge_scroll_to(datos, _editable=archivo_editable):
             try:
@@ -358,6 +382,96 @@ def _asegurar_preview_plantilla(slug: str, nombre: str) -> PreviewServer | None:
     if muestra is None:
         raise ApiError(404, f"la plantilla '{nombre}' no tiene lib.typ")
     return _asegurar_preview_generico("plantilla", slug, nombre, muestra, core.plantilla_dir(slug, nombre))
+
+
+# Fase 1D (D5, exportadores rápidos): solo pdf/text/markdown -- svg/png quedan fuera por una
+# limitación real de tinymist 0.15.2 encontrada en vivo (ver nota de la Etapa 16 en CLAUDE.md):
+# para documentos multi-página exigen una plantilla de numeración ({p}) en la ruta de salida, y
+# ni `arguments[1]` (extraOpts) ni `workspace/didChangeConfiguration` lograron fijar esa ruta en
+# las pruebas -- solo se pudo hacer funcionar la ruta "natural" de un archivo único.
+_EXPORTADORES = {
+    "pdf": ("tinymist.exportPdf", ".pdf", "application/pdf"),
+    "text": ("tinymist.exportText", ".txt", "text/plain; charset=utf-8"),
+    "markdown": ("tinymist.exportMarkdown", ".md", "text/markdown; charset=utf-8"),
+}
+
+
+def _archivo_compilable_para(tipo: str, slug: str, nombre: str) -> Path:
+    """El archivo que tinymist debe compilar para exportar/previsualizar: el .typ principal
+    para documentos; el .typ de MUESTRA (no lib.typ, que no es compilable por sí solo) para
+    plantillas -- mismo criterio que _asegurar_preview_plantilla."""
+    if tipo == "plantilla":
+        muestra = core.asegurar_muestra_typ(slug, nombre)
+        if muestra is None:
+            raise ApiError(404, f"la plantilla '{nombre}' no tiene lib.typ")
+        return muestra
+    return _ruta_typ_segura(slug, nombre)
+
+
+def api_lsp_exportar(slug: str, codigo: str, tipo: str, formato: str) -> tuple[bytes, str, str]:
+    """POST /api/lsp/exportar -- Fase 1D, D5 (exportación rápida, sin versión/snapshot,
+    rotulada explícitamente distinta de "Compilar" -- CLAUDE.md §0/§14). Devuelve (bytes,
+    content_type, nombre_para_la_descarga)."""
+    if formato not in _EXPORTADORES:
+        raise ApiError(400, f"formato de exportación no soportado: {formato}")
+    comando, ext, content_type = _EXPORTADORES[formato]
+
+    root, _archivo_editable = _lsp_root_y_editable(tipo, slug, codigo)
+    archivo = _archivo_compilable_para(tipo, slug, codigo)
+    if not archivo.exists():
+        raise ApiError(404, f"el archivo no existe: {archivo}")
+
+    font_dir = root / "fonts"
+    lsp = _asegurar_lsp(root, font_dir if font_dir.is_dir() else None)
+    if lsp is None:
+        raise ApiError(503, "tinymist no está disponible para exportar (sin instalar o --legacy-preview).")
+
+    # tinymist escribe SIEMPRE en la ruta "natural" (mismo nombre base que el .typ, con la
+    # extensión del formato) -- para documentos eso coincide con el <código-base>.pdf/.txt/.md
+    # que también usan "Compilar"/otros flujos oficiales. Se respalda lo que hubiera ahí, se
+    # deja que tinymist escriba, se lee el resultado, y se restaura el respaldo (o se borra si
+    # no había nada) -- nunca debe quedar el artefacto de exportación pisando algo oficial.
+    ruta_natural = archivo.with_suffix(ext)
+    respaldo = ruta_natural.with_name(ruta_natural.name + ".doctyp-respaldo-export")
+    habia_respaldo = False
+    if ruta_natural.exists():
+        shutil.move(str(ruta_natural), str(respaldo))
+        habia_respaldo = True
+    try:
+        resultado = lsp.ejecutar_comando(comando, [str(archivo)], timeout=30.0)
+        ruta_generada = Path(resultado.get("path") or ruta_natural)
+        if not ruta_generada.exists():
+            raise ApiError(500, "la exportación no generó el archivo esperado")
+        contenido = ruta_generada.read_bytes()
+    except LspServerError as e:
+        raise ApiError(500, f"error al exportar: {e}")
+    finally:
+        try:
+            ruta_natural.unlink(missing_ok=True)
+        except OSError:
+            pass
+        if habia_respaldo:
+            shutil.move(str(respaldo), str(ruta_natural))
+
+    return contenido, content_type, f"{archivo.stem}{ext}"
+
+
+def api_lsp_info(slug: str | None, codigo: str | None, tipo: str) -> dict:
+    """GET /api/lsp/info?slug=...&codigo=...&tipo=doc|plantilla -- Fase 1B: el frontend necesita
+    el URI del archivo ANTES de conectar el WebSocket (para textDocument/didOpen), y saber si
+    tinymist está disponible para degradar (sin LSP: sin diagnósticos/completion/hover, el
+    editor sigue funcionando con StreamLanguage, Etapa 10)."""
+    if not slug or not codigo or tipo not in ("doc", "plantilla"):
+        return {"enabled": False}
+    if resolver_tinymist_utilizable() is None:
+        return {"enabled": False}
+    try:
+        _root, archivo_editable = _lsp_root_y_editable(tipo, slug, codigo)
+    except ApiError:
+        return {"enabled": False}
+    if not archivo_editable.exists():
+        return {"enabled": False}
+    return {"enabled": True, "uri": archivo_editable.as_uri()}
 
 
 def api_preview_info(slug: str | None, codigo_base: str | None) -> dict:
@@ -977,10 +1091,12 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
     def _error(self, status: int, mensaje: str) -> None:
         self._json(status, {"error": mensaje})
 
-    def _binario(self, status: int, cuerpo: bytes, content_type: str) -> None:
+    def _binario(self, status: int, cuerpo: bytes, content_type: str, nombre_descarga: str | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(cuerpo)))
+        if nombre_descarga:
+            self.send_header("Content-Disposition", f'attachment; filename="{nombre_descarga}"')
         self.end_headers()
         self.wfile.write(cuerpo)
 
@@ -1041,6 +1157,25 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
     def _api(self, metodo: str, segs: list[str], query: dict) -> None:
         if segs and segs[0] == "tipos-documento" and len(segs) == 1 and metodo == "GET":
             self._json(200, api_tipos_documento())
+            return
+
+        if segs and segs[0] == "lsp" and len(segs) == 2 and segs[1] == "info" and metodo == "GET":
+            slug = (query.get("slug") or [None])[0]
+            codigo = (query.get("codigo") or [None])[0]
+            tipo = (query.get("tipo") or ["doc"])[0]
+            self._json(200, api_lsp_info(slug, codigo, tipo))
+            return
+
+        if segs and segs[0] == "lsp" and len(segs) == 2 and segs[1] == "exportar" and metodo == "POST":
+            cuerpo = self._leer_cuerpo_json()
+            slug = cuerpo.get("slug")
+            codigo = cuerpo.get("codigo")
+            tipo = cuerpo.get("tipo", "doc")
+            formato = cuerpo.get("formato")
+            if not slug or not codigo or not formato:
+                raise ApiError(400, "faltan slug/codigo/formato")
+            contenido, content_type, nombre = api_lsp_exportar(slug, codigo, tipo, formato)
+            self._binario(200, contenido, content_type, nombre_descarga=nombre)
             return
 
         if segs and segs[0] == "preview" and len(segs) == 2 and segs[1] == "info" and metodo == "GET":
@@ -1339,12 +1474,7 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            if tipo == "plantilla":
-                root = _plantilla_o_404(slug, codigo)
-            else:
-                org = _cargar_org_api(slug)
-                _doc_o_404(org, codigo)
-                root = _ruta_typ_segura(slug, codigo).parent
+            root, _archivo_editable = _lsp_root_y_editable(tipo, slug, codigo)
         except ApiError as e:
             self._error(e.status, e.mensaje)
             return
@@ -1413,6 +1543,31 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                                 "error": {"code": -32601, "message": f"comando no permitido: {comando}"},
                             }))
                         continue
+                elif metodo == "initialize":
+                    # Fase 1B: @codemirror/lsp-client hace SIEMPRE su propio initialize al
+                    # conectar (no hay forma de desactivarlo desde su config) -- pero el proceso
+                    # tinymist ya fue inicializado UNA vez por el backend al arrancar (Fase 1A) y
+                    # LSP no permite un segundo initialize sobre la misma sesión. Se responde acá
+                    # mismo con las capabilities ya cacheadas, sin reenviar nada a tinymist.
+                    if "id" in datos:
+                        resultado = {"capabilities": lsp.capabilities or {}}
+                        if lsp.server_info:
+                            resultado["serverInfo"] = lsp.server_info
+                        conexion.enviar_texto(json.dumps({
+                            "jsonrpc": "2.0", "id": datos["id"], "result": resultado,
+                        }, ensure_ascii=False))
+                    continue
+                elif metodo == "shutdown":
+                    # Mismo motivo: el ciclo de vida del proceso lo controla el backend
+                    # (_detener_lsp_activo(), finally de cmd_web) -- un `disconnect()` del
+                    # cliente JS no debe apagar el proceso que otras pestañas siguen usando.
+                    if "id" in datos:
+                        conexion.enviar_texto(json.dumps({
+                            "jsonrpc": "2.0", "id": datos["id"], "result": None,
+                        }))
+                    continue
+                elif metodo in ("initialized", "exit"):
+                    continue  # notificaciones -- se descartan, sin reenviar ni responder
                 try:
                     lsp.enviar_crudo(payload)
                 except LspServerError:

@@ -273,12 +273,18 @@ doctyp web [--port 8787] [--host 127.0.0.1] [--no-browser] [--no-build] [--legac
   automáticamente a la vista previa typst.ts (Etapa 12) por editor si `tinymist` no está
   instalado, o si se pasa `--legacy-preview`. Indicador de estado de compilación en vivo
   (Compilando/OK/Error) y de guardado ("Guardando…"/"Guardado ✓ hh:mm:ss") en ambos editores.
-- **LSP de tinymist (Etapa 16 Fase 1A):** `doctyp web` también gestiona un proceso único
-  `tinymist lsp` por sesión (`doctyp_lsp_server.py`, framing `Content-Length` por stdio) y lo
-  expone al navegador mediante `GET /api/lsp` (upgrade a WebSocket propio, `doctyp_ws_server.py`
-  — RFC 6455 servidor, sin dependencias externas). El frontend **todavía no lo consume**
-  (Fase 1B-1E, no ejecutadas) — por ahora es infraestructura probada de punta a punta pero sin
-  UI conectada; ver la nota de la Etapa 16 en §14.
+- **LSP de tinymist (Etapa 16, Fases 1A-1D completadas):** `doctyp web` gestiona un proceso
+  único `tinymist lsp` por sesión (`doctyp_lsp_server.py`, framing `Content-Length` por stdio),
+  expuesto al navegador vía `GET /api/lsp` (WebSocket propio, `doctyp_ws_server.py` — RFC 6455
+  servidor, sin dependencias externas) y consumido en `CodeEditor.vue` con el paquete oficial
+  `@codemirror/lsp-client` + extensiones propias (`web/src/lsp/`). Diagnósticos, autocompletado,
+  hover, signature help, ir a definición/referencias, rename, formatear (Ctrl+Shift+F),
+  esquema del documento (botón "≡"), quick-open de símbolos (Ctrl+T), folding, expandir/
+  contraer selección (Alt+↑/↓), semantic tokens, inlay hints (toggle), colores con selector,
+  code actions (Ctrl+.) y exportación rápida (PDF/texto/markdown, menú en la barra de estado)
+  — todo con degradación automática si `tinymist` no está disponible (el editor sigue
+  funcionando con el resaltado StreamLanguage de la Etapa 10). La vista previa (arriba) sigue
+  siendo un proceso `tinymist preview` aparte, decisión deliberada — ver Fase 1E en §14.
 - Claude Code **no levanta el servidor por su cuenta** salvo petición explícita.
 
 ---
@@ -452,7 +458,7 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 13 | FIX. En el canvas de renderizado no puede hacerse scroll horizontal, el documento debe ocupar todo el espacio en ese eje. | Pendiente (aplica solo al modo legacy typst.ts, ver Etapa 15) |
 | 14 | FIX. El debounce no debe re-renderizar el documento sino guardar el documento en caso que tenga cambios. Si el documento tiene cambios se guarda y despues de guardar se re-renderiza el documento. | Pendiente (aplica solo al modo legacy typst.ts, ver Etapa 15) |
 | 15 | Preview vía servidor standalone (`tinymist preview`) lanzado por `doctyp`: clic↔cursor bidireccional real, memoria en vivo (sin guardar), salto explícito editor→preview, eliminación del scroll sync automático (Etapa 12.4). Ver nota debajo de la tabla y `plan15_progreso.md` (registro completo de la ejecución, incluye hallazgos de protocolo y bugs corregidos). | **Completada** |
-| 16 | Auditoría y plan de continuación sobre la Etapa 15 (`tinymist-implementation-plan.md`, en la raíz del repo): Fase 2 (robustez de la preview, sin decisiones) → Fase 3 (fix clic→archivo equivocado, jump automático al clic sin botón, autoguardado a 300 ms) → Fase 1 (adopción completa de `tinymist lsp`: diagnósticos, completion, hover, navegación, semantic tokens, rename, formateo, exportadores rápidos). Decisiones ya tomadas por el usuario: LSP al 100 %, sin pestaña de `lib.typ` en el editor de documentos, sí exportadores rápidos, autoguardado 300 ms (documentos **y plantillas**, decidido 2026-07-14), jump automático e implícito al clic. Ver nota debajo de la tabla para el detalle de lo ejecutado. | Fase 2, Fase 3 y Fase 1A **completadas**; Fase 1B-1E pendientes |
+| 16 | Auditoría y plan de continuación sobre la Etapa 15 (`tinymist-implementation-plan.md`, en la raíz del repo): Fase 2 (robustez de la preview, sin decisiones) → Fase 3 (fix clic→archivo equivocado, jump automático al clic sin botón, autoguardado a 300 ms) → Fase 1 (adopción completa de `tinymist lsp`: diagnósticos, completion, hover, navegación, semantic tokens, rename, formateo, exportadores rápidos). Decisiones ya tomadas por el usuario: LSP al 100 %, sin pestaña de `lib.typ` en el editor de documentos, sí exportadores rápidos, autoguardado 300 ms (documentos **y plantillas**, decidido 2026-07-14), jump automático e implícito al clic, y (2026-07-14) mantener la preview en su propio proceso en vez de unificarla bajo el LSP (Fase 1E). Ver nota debajo de la tabla para el detalle de lo ejecutado. | **Completada** (Fase 1E: decisión explícita de no migrar, ver nota) |
 
 
 **Nota sobre el alcance real de la Etapa 12** (investigación hecha leyendo el paquete instalado
@@ -619,9 +625,9 @@ usuario):
 
 **Nota sobre el alcance real de la Etapa 16** (auditoría y plan de continuación sobre la Etapa
 15, documento de trabajo `tinymist-implementation-plan.md` en la raíz del repo — decisiones ya
-tomadas por el usuario el 2026-07-14, ver cabecera de ese archivo. **Fase 2, Fase 3 y el "paso 0"
-+ Fase 1A de la Fase 1 están ejecutadas**; Fase 1B-1E (núcleo de edición LSP, navegación,
-presentación avanzada, unificación de la preview) **no**, ver el cierre de esta nota):
+tomadas por el usuario el 2026-07-14, ver cabecera de ese archivo. **Todo el plan está
+ejecutado**: Fase 2, Fase 3, y las cinco sub-fases de la Fase 1 (paso 0, 1A-1D implementadas;
+1E investigada con decisión explícita de NO migrar — ver el cierre de esta nota).
 
 - **Fase 2 completada (H1, H3, H4 del plan; sin decisiones pendientes):** `compileStatus`
   cableado a SSE → `StatusBar.vue`/`TemplateEditor.vue` (indicador "Compilando…/Vista previa
@@ -786,15 +792,158 @@ presentación avanzada, unificación de la preview) **no**, ver el cierre de est
   instalador oficial (env vars `TINYMIST_INSTALL_DIR`/`TINYMIST_NO_MODIFY_PATH`, idénticas en
   ambos scripts según su propio código fuente), pero sin ejecución real que lo confirme.
 
-- **Fase 1B-1E — NO ejecutadas.** Núcleo de edición (diagnósticos, completion, hover,
-  signature help — 1B), navegación/símbolos (1C), presentación avanzada y refactor (semantic
-  tokens, inlay hints, colores, code actions/lens, rename, formateo, exportación rápida — 1D),
-  y unificación de la preview bajo el proceso LSP (1E) siguen descritas con detalle (snippets
-  de referencia, checklist de pruebas) en `tinymist-implementation-plan.md` §2-§4. No asumir
-  que existe integración LSP visible en el editor (diagnósticos, autocompletado, hover, etc.)
-  ni que la preview ya corre unificada con el LSP — mientras esta nota no diga lo contrario, el
-  editor sigue sin diagnósticos/completion/hover y la preview sigue siendo un proceso
-  `tinymist preview` aparte del `tinymist lsp` de la Fase 1A.
+- **Fase 1B completada — núcleo de edición, usando el paquete oficial `@codemirror/lsp-client`
+  (D3 resuelta: no hizo falta puente manual, el paquete cubre didOpen/didChange/didSave/
+  didClose vía su `Workspace` por defecto, diagnósticos, completion, hover y signatureHelp de
+  una vez).**
+  - `web/src/lsp/transport.js`: adapta un `WebSocket` del navegador a la forma `Transport`
+    exacta que pide la librería (`{send, subscribe, unsubscribe}`); `web/src/lsp/client.js`:
+    `conectarLsp(slug, codigo, tipo)` resuelve el URI vía `GET /api/lsp/info` (nuevo endpoint,
+    devuelve el archivo editable — D4, mismo criterio que H2), abre el WebSocket, crea el
+    `LSPClient` con `serverDiagnostics()`/`hoverTooltips()`/`serverCompletion()`/
+    `signatureHelp()`, y expone un handler de `textDocument/publishDiagnostics` propio (además
+    del interno del paquete) que alimenta `web/src/composables/lspDiagnosticsBus.js` para el
+    contador de errores/avisos en `StatusBar.vue`/`TemplateEditor.vue`.
+  - **Hallazgo de protocolo que obligó a un ajuste en el backend:** `LSPClient.connect()`
+    siempre manda su propio `initialize` (no hay forma de desactivarlo desde la config), pero
+    el proceso `tinymist lsp` ya fue inicializado UNA vez por el backend al arrancar (Fase 1A) y
+    LSP no permite un segundo `initialize` sobre la misma sesión. Se agregó una 4ª/5ª excepción
+    al puente (`doctyp_web.py: _lsp_bridge`, junto a la allowlist de `executeCommand` y las 3
+    respuestas locales de la Fase 1A): `initialize` se responde con las capabilities ya
+    cacheadas (`LspServer.capabilities`/`server_info`, sin tocar tinymist); `shutdown` responde
+    `null` local (el ciclo de vida del proceso lo sigue controlando solo el backend,
+    `_detener_lsp_activo()`); `initialized`/`exit` del navegador se descartan sin reenviar.
+  - `CodeEditor.vue` conecta de forma asíncrona en `onMounted` (el editor ya es usable con
+    StreamLanguage mientras tanto) y agrega las extensiones LSP vía un `Compartment` una vez
+    que `conectarLsp()` resuelve — degradación obligatoria intacta: sin tinymist o si falla la
+    conexión, el editor sigue exactamente igual que antes de la Etapa 16.
+  - **Verificado en vivo con Playwright** (org de prueba aislada, ver nota de metodología más
+    abajo): diagnósticos aparecen/desaparecen correctamente al introducir/corregir un error de
+    sintaxis; autocompletado con `#tab` sugiere `tabla`/`tabla-kv`/`tabla-prioridad` (símbolos
+    propios de `lib.typ`, prueba de que el root es correcto) junto a `table`/`table.paren`
+    (builtins); hover sobre `report.with` muestra la firma real de tipos que devuelve tinymist.
+
+- **Fase 1C completada — navegación y símbolos.**
+  - `definition`/`references`/`rename` ya venían del paquete (Fase 1B: `jumpToDefinitionKeymap`
+    F12, `findReferencesKeymap` Shift-F12, `renameKeymap` F2) — D4 la cubre gratis el
+    `Workspace` por defecto del paquete: `displayFile()`/`updateFile()` sin una vista activa
+    para ese archivo simplemente no hacen nada, así que un salto a `lib.typ` desde el editor de
+    documentos no abre ni edita nada, sin código adicional.
+  - `documentSymbol` (outline) y `workspace/symbol` (quick-open) NO los cubre el paquete —
+    `web/src/lsp/navigation.js` no los necesitó (se resuelven con `client.request()` directo
+    desde `CodeEditor.vue`): botón "≡" flotante abre un panel con el esquema completo del
+    documento (headings + variables, aplanado con indentación); Ctrl+T abre un quick-open con
+    debounce de 200 ms.
+  - `foldingRange`: `foldService` de `@codemirror/language` es **síncrono**
+    (`(state, from, to) => rango`) pero la petición LSP es async — se cachean los rangos en un
+    `StateField` (`crearFoldingLsp`), refrescado al conectar y con debounce de 600 ms tras cada
+    cambio (mismo temporizador que semantic tokens/inlay hints/colores, Fase 1D).
+  - `selectionRange` (Alt+↑ expandir / Alt+↓ contraer): **bug encontrado y corregido** —
+    `Alt-ArrowUp`/`Alt-ArrowDown` ya estaban tomados por `defaultKeymap`
+    (`@codemirror/commands`: `moveLineUp`/`moveLineDown`), y como ese keymap se registra antes
+    en la lista de extensiones, ganaba por precedencia aunque el nuevo keymap se agregara
+    después. Fix: `Prec.highest()` sobre el keymap de selectionRange. Trade-off consciente:
+    mover línea deja de estar disponible por Alt+↑/↓ en este editor (no hay combinación libre
+    que no choque con algo — `Ctrl-Shift-ArrowUp/Down` ya los toma `signatureHelp()` del propio
+    paquete, `Shift-Alt-Arrow*` ya los toma `selectSyntaxLeft/Right`).
+  - **`workspace/symbol` devuelve `[]` siempre en tinymist 0.15.2** — confirmado por protocolo
+    crudo (cliente WS propio, no solo el navegador), incluso con query vacía y buscando un
+    heading que sí existe en el archivo abierto. No es un bug de esta integración; queda
+    documentado como limitación del servidor. La función sigue en la UI (Ctrl+T), solo no
+    tiene resultados que mostrar hasta que tinymist la implemente funcionalmente.
+  - **Verificado en vivo con Playwright:** el esquema mostró la estructura canónica completa
+    del informe (§8: Resumen ejecutivo, Antecedentes…, Anexo B. Firmas — 28 símbolos); folding
+    con marcador real en el gutter; `selectionRange` confirmado por protocolo crudo (devuelve
+    una cadena `parent` anidada real) y por el atajo aplicando una selección real tras el fix
+    de precedencia.
+
+- **Fase 1D completada — presentación avanzada, refactor y exportación rápida (D5).**
+  - `web/src/lsp/presentation.js` (nuevo): semantic tokens (decorations con clases `.cm-lsp-*`
+    que conviven con `typst-lang.js`/StreamLanguage — la Etapa 10 sigue dando color inmediato
+    al tipear, semantic tokens lo refina cuando llega la respuesta async); inlay hints
+    (widgets con toggle, botón dedicado en `CodeEditor.vue`); document colors (swatch clicable
+    antes de cada literal de color + `<input type="color">` nativo, aplica el cambio vía
+    `colorPresentation`); code actions (`Ctrl+.`, lista las acciones disponibles y aplica la
+    elegida solo si el `WorkspaceEdit` toca el archivo abierto — D4, mismo criterio que rename/
+    jump). Los cuatro se refrescan igual que folding: al conectar y con debounce de 600 ms.
+  - `formatDocument` del paquete oficial, atajo **Ctrl+Shift+F** (pedido explícito del plan, no
+    el `Shift-Alt-f` por defecto del paquete) — sin format-on-save, formatear sigue siendo una
+    acción deliberada.
+  - **Exportadores rápidos (D5): `pdf`, `text` y `markdown` implementados; `svg`/`png` NO
+    (limitación real de tinymist 0.15.2, no una decisión de alcance).** Investigación en vivo
+    (protocolo crudo, no solo lectura de código):
+    - `workspace/executeCommand` con `tinymist.exportPdf`/`exportText`/`exportMarkdown` exige
+      `arguments[0]` como **ruta de archivo plana**, NO un URI `file://` — pasar el URI produce
+      un error de "output path is relative" con una ruta duplicada sin sentido. No documentado
+      en ninguna parte encontrada; se dedujo leyendo el código fuente del bundle de la
+      extensión de VS Code instalada (`exportCommand()` en su `extension.js`).
+    - `svg`/`png` exigen una plantilla de numeración de página (`{p}`/`{0p}`) en la ruta de
+      salida para documentos multi-página (que un informe siempre es: portada + ficha +
+      contenido + contraportada). Se probó redirigir esa ruta vía `arguments[1]` (`extraOpts`)
+      y vía `workspace/didChangeConfiguration` (`{"exportSvg": {"output": "..."}}`) — **ninguna
+      de las dos tuvo efecto observable**; el comando siempre usa su ruta "natural" (mismo
+      nombre base que el `.typ`, con la extensión del formato). Sin una forma confirmada de
+      fijar esa plantilla, `svg`/`png` quedan fuera del menú "Exportar…" (solo pdf/texto/
+      markdown) — señalar si se quiere retomar esta investigación.
+    - `markdown` puede fallar en documentos con configuración de página dentro de contenedores
+      (`report.with(meta:)` la define) — error real de tinymist ("page configuration is not
+      allowed inside of containers"), no un bug de la integración; se propaga tal cual al
+      usuario si ocurre.
+    - **La ruta "natural" de pdf/text coincide con el `<código-base>.pdf`/`.txt` que otros
+      flujos usan** (para documentos, el mismo nombre que "Compilar" genera). `api_lsp_exportar`
+      (`doctyp_web.py`) respalda cualquier archivo preexistente en esa ruta antes de invocar el
+      comando, lee el resultado, y SIEMPRE restaura el respaldo (o borra el artefacto si no
+      había nada) en un `finally` — nunca queda pisando algo oficial. Nuevo endpoint
+      `POST /api/lsp/exportar` (`{slug, codigo, tipo, formato}` → binario con
+      `Content-Disposition: attachment`, `web/src/api.js: exportarLsp()` dispara la descarga
+      real en el navegador vía `URL.createObjectURL`). Para plantillas, exporta la MUESTRA
+      (documento ficticio que importa `lib.typ`), no `lib.typ` directamente (no es compilable
+      por sí solo) — `_archivo_compilable_para()`, mismo criterio que la preview.
+    - `LspServer.ejecutar_comando()` (nuevo, `doctyp_lsp_server.py`): wrapper público sobre
+      `_peticion_backend()` (ids negativos, sin colisión con el navegador) para que
+      `doctyp_web.py` invoque `workspace/executeCommand` directamente, sin pasar por el
+      WebSocket del navegador — el export lo dispara el backend, no el frontend por su cuenta.
+  - **Verificado en vivo:** export PDF real (6 páginas) y texto plano (contenido real
+      extraído) vía `curl` contra el endpoint, con la carpeta del documento confirmada limpia
+      después (sin `.pdf`/`.txt` residual); export PDF desde el editor de **plantillas** vía
+      Playwright disparó una descarga real (`informe-ti.muestra.pdf`); semantic tokens pintó
+      137 elementos reales; inlay hints mostró 4 pistas reales (`meta:`, `filas:`, etc.) y el
+      toggle los ocultó/mostró correctamente; colores mostró 11 swatches reales en `lib.typ`
+      (paleta de la plantilla); formatear cambió contenido real desalineado tras Ctrl+Shift+F.
+
+- **Fase 1E — investigada en vivo, decisión explícita del usuario (2026-07-14): NO migrar.**
+  `tinymist.doStartPreview` **sí funciona** invocado como `workspace/executeCommand` sobre el
+  proceso `tinymist lsp` ya vivo (recibe argumentos CLI tal cual, ej.
+  `[ruta_typ, "--data-plane-host", "...", "--no-open"]`, y devuelve `{dataPlanePort,
+  staticServerAddr, ...}` sin lanzar un segundo binario) — confirma que la unificación es
+  técnicamente viable. **Lo que NO se pudo confirmar:** si `editorScrollTo` (clic↔cursor, la
+  función que más se usa de la preview hoy) llega igual en este modo embebido — la prueba en
+  vivo (simular `src-point` sobre el data plane devuelto) no mostró ninguna notificación LSP
+  correspondiente, pero es inconclusa, no negativa: el documento de prueba disponible en ese
+  momento no tenía prosa real en una posición conocida (mismo problema que ya documentó el
+  Plan 15 F4 con el mismo tipo de documento). Dado que esta fase toca directamente un mecanismo
+  de preview que ya está **funcionando y verificado** (Etapa 15, y el fix de PATH del sandbox
+  Flatpak de esta misma sesión), y que el propio plan sanciona explícitamente mantener los dos
+  procesos si la unificación no se confirma limpiamente ("conviven sin conflicto y el resto de
+  la Fase 1 no depende de esta unificación"), el usuario decidió **no migrar por ahora** en vez
+  de arriesgar una función que ya funciona al cierre de una sesión larga. `PreviewServer`
+  (`doctyp_preview_server.py`) y `doctyp_preview_binary.py` **se mantienen** — no retirar. Si se
+  retoma esta fase más adelante, el punto de partida es confirmar cómo llega `editorScrollTo`
+  en modo `doStartPreview` contra un documento con prosa real y clics en píxeles precisos
+  (Playwright, no simulación directa del data plane).
+
+**Nota de metodología (Fase 1B-1E, aplica a toda la Etapa 16):** toda la verificación en vivo
+de esta etapa se hizo contra una **organización de prueba aislada** (`prueba-playwright`,
+creada con `doctyp org new`/`doctyp template new`/`doctyp new` — no contra `slep-chinchorro`),
+después de un incidente real: una prueba de Playwright con autocompletado + deshacer (Ctrl+Z)
+vació por completo el documento real `TI-INF-SFW_2026-0001` (el historial de deshacer de
+CodeMirror incluye la carga inicial del contenido como un paso más, así que un Ctrl+Z de más
+borra el documento entero) y el autoguardado de la Fase 3.3 escribió ese estado vacío a disco.
+Se reconstruyó con el mismo generador de esqueleto que usa `doctyp new` (mismos metadatos que
+`org.json`, con datos de relleno ya que el documento era en sí un documento de prueba desde su
+creación, sin contenido real que recuperar) — confirmado con `typst compile` que el resultado
+es válido. Desde entonces, cualquier prueba que involucre clics/escritura/atajos de teclado
+reales se hace contra la organización de prueba aislada, nunca contra datos reales del usuario.
 
 **Nota sobre el alcance real de las Etapas 2 y 3** (decisión explícita, amplía lo descrito arriba):
 - Todos los comandos (`new`, `save`, `compile`, `edit`, `add`, `delete`, `import`, `history`,

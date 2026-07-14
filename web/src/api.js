@@ -259,6 +259,40 @@ export function getPreviewInfo(slug, codigo) {
   return request(`/api/preview/info?slug=${enc(slug)}&codigo=${enc(codigo)}`);
 }
 
+/** Fase 1B: {enabled, uri} -- uri es el archivo que este editor debe abrir vía LSP (el .typ
+ * principal para documentos, lib.typ para plantillas -- D4, mismo criterio que la preview).
+ * enabled:false si tinymist no está disponible (degrada a StreamLanguage sin LSP). */
+export function getLspInfo(slug, codigo, tipo) {
+  return request(`/api/lsp/info?slug=${enc(slug)}&codigo=${enc(codigo)}&tipo=${enc(tipo)}`);
+}
+
+/** Fase 1D (D5): exportación rápida vía tinymist (pdf/text/markdown -- sin versión/snapshot,
+ * distinta de "Compilar"). Descarga el archivo directo en el navegador (Content-Disposition). */
+export async function exportarLsp(slug, codigo, tipo, formato) {
+  const res = await fetch("/api/lsp/exportar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ slug, codigo, tipo, formato }),
+  });
+  if (!res.ok) {
+    let mensaje = `error ${res.status}`;
+    try { mensaje = (await res.json())?.error || mensaje; } catch { /* sin cuerpo JSON */ }
+    throw new Error(mensaje);
+  }
+  const disposicion = res.headers.get("Content-Disposition") || "";
+  const m = disposicion.match(/filename="([^"]+)"/);
+  const nombre = m ? m[1] : `export.${formato}`;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 /** Plan 15 F6: recompila el contenido no guardado en el subproceso de preview (sin tocar
  * disco). {ok:false} si la preview de este documento no está activa -- no es un error. */
 export function actualizarMemoriaPreview(slug, codigo, contenido) {

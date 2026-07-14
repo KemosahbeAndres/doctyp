@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, watch } from "vue";
-import { getHistoria, getVersionDiff, getVersionContenido } from "../api.js";
+import { getHistoria, getVersionDiff, getVersionContenido, exportarLsp } from "../api.js";
 import { ultimoCompileStatus } from "../composables/compileStatusBus.js";
+import { ultimoDiagnostico } from "../composables/lspDiagnosticsBus.js";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -44,6 +45,25 @@ const compileStatusTexto = computed(() => ({
   ok: "Vista previa OK",
   error: "Error de compilación",
 }[compileStatus.value] || ""));
+
+// Fase 1B de tinymist-implementation-plan.md: contador de diagnósticos LSP (errores/avisos).
+// Severidad LSP 1=Error, 2=Warning, 3=Information, 4=Hint.
+const errores = ref(0);
+const avisos = ref(0);
+watch(ultimoDiagnostico, (evento) => {
+  if (!evento) return;
+  if (evento.tipo !== props.tipo || evento.slug !== props.slug || evento.codigo !== props.codigo) return;
+  const diags = evento.diagnosticos || [];
+  errores.value = diags.filter((d) => (d.severity ?? 1) === 1).length;
+  avisos.value = diags.filter((d) => (d.severity ?? 1) === 2).length;
+});
+const diagnosticosTexto = computed(() => {
+  if (!errores.value && !avisos.value) return "";
+  const partes = [];
+  if (errores.value) partes.push(`${errores.value} error${errores.value === 1 ? "" : "es"}`);
+  if (avisos.value) partes.push(`${avisos.value} aviso${avisos.value === 1 ? "" : "s"}`);
+  return partes.join(", ");
+});
 
 const versionActual = computed(() => versiones.value[0]?.version || "—");
 const estadoGuardado = computed(() => {
@@ -95,6 +115,26 @@ function onCambioVersion(ev) {
   ev.target.value = "";
   if (version) verDiff(version);
 }
+
+// Fase 1D (D5): exportación rápida -- sin versión/snapshot, sin fila en org.json, nunca pisa
+// el <código-base>.pdf oficial de "Compilar" (el backend respalda/restaura, ver
+// api_lsp_exportar en doctyp_web.py). Solo pdf/text/markdown -- svg/png quedan fuera por una
+// limitación real de tinymist 0.15.2 (ver nota de la Etapa 16 en CLAUDE.md).
+const exportando = ref(false);
+async function onCambioExportar(ev) {
+  const formato = ev.target.value;
+  ev.target.value = "";
+  if (!formato) return;
+  exportando.value = true;
+  error.value = "";
+  try {
+    await exportarLsp(props.slug, props.codigo, props.tipo, formato);
+  } catch (e) {
+    error.value = `Error al exportar: ${e.message}`;
+  } finally {
+    exportando.value = false;
+  }
+}
 </script>
 
 <template>
@@ -108,12 +148,21 @@ function onCambioVersion(ev) {
           v{{ v.version }}{{ !v.snapshot_disponible ? " (sin snapshot)" : "" }}
         </option>
       </select>
+      <select :disabled="exportando" @change="onCambioExportar" title="Exportación rápida (sin versión) vía tinymist">
+        <option value="">{{ exportando ? "Exportando…" : "Exportar…" }}</option>
+        <option value="pdf">PDF</option>
+        <option value="text">Texto plano</option>
+        <option value="markdown">Markdown</option>
+      </select>
       <span class="estado">{{ palabras }} palabras · {{ tamanoKB }} KB</span>
       <span
         v-if="compileStatusTexto"
         class="estado"
         :style="{ color: compileStatus === 'error' ? 'var(--danger)' : undefined }"
       >{{ compileStatusTexto }}</span>
+      <span v-if="diagnosticosTexto" class="estado" :style="{ color: errores ? 'var(--danger)' : undefined }">
+        {{ diagnosticosTexto }}
+      </span>
       <span class="status-bar-spacer"></span>
       <span class="estado">{{ estadoGuardado }}</span>
     </div>

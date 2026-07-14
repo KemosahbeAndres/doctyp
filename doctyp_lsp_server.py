@@ -92,6 +92,7 @@ class LspServer:
     _eventos_pendientes: dict[int, threading.Event] = field(default_factory=dict, init=False, repr=False)
 
     capabilities: dict | None = field(default=None, init=False, repr=False)
+    server_info: dict | None = field(default=None, init=False, repr=False)
     _detenido_manualmente: bool = field(default=False, init=False, repr=False)
     _generacion: int = field(default=0, init=False, repr=False)
 
@@ -181,6 +182,15 @@ class LspServer:
     def _notificacion(self, metodo: str, params: dict) -> None:
         self._escribir({"jsonrpc": "2.0", "method": metodo, "params": params})
 
+    def ejecutar_comando(self, comando: str, argumentos: list, timeout: float = 30.0) -> dict:
+        """Fase 1D (exportadores rápidos, D5): invoca workspace/executeCommand desde el propio
+        backend (no desde el navegador) -- mismo mecanismo que _peticion_backend (ids negativos,
+        sin colisión con los del navegador). Público (sin guión bajo): a diferencia de
+        initialize/shutdown, esto lo llama doctyp_web.py directamente, no solo este módulo."""
+        return self._peticion_backend("workspace/executeCommand", {
+            "command": comando, "arguments": argumentos,
+        }, timeout=timeout)
+
     def _initialize(self) -> None:
         # initializationOptions: Fase 1A punto 6 del plan -- configurado desde el backend
         # (única fuente de verdad, mismo criterio que settings.json). No confirmado en vivo
@@ -190,7 +200,12 @@ class LspServer:
         opciones: dict = {
             "formatterMode": "typstyle",
             "semanticTokens": "enable",
-            "exportPdf": "never",  # el PDF oficial lo produce solo `doctyp compile` (CLAUDE.md §0)
+            # NOTA (Fase 1D, investigación en vivo): "exportPdf": "never" NO bloquea la
+            # invocación manual de tinymist.exportPdf vía executeCommand (se probó quitándola
+            # y el error era idéntico) -- el bug real de "output path is relative" era que
+            # arguments[0] debe ser una ruta plana, NO un URI file://. Se deja sin este campo:
+            # no se confirmó que exista en el schema real (paso 0 no lo capturó, era una
+            # suposición) y omitirlo no mostró efecto adverso alguno en las pruebas.
         }
         if self.font_dir is not None and self.font_dir.is_dir():
             opciones["fontPaths"] = [str(self.font_dir)]
@@ -226,6 +241,7 @@ class LspServer:
             "initializationOptions": opciones,
         }, timeout=_TIMEOUT_INITIALIZE_S)
         self.capabilities = resultado.get("capabilities", {})
+        self.server_info = resultado.get("serverInfo")
         self._notificacion("initialized", {})
 
     def cambiar_root(self, nuevo_root: Path) -> None:

@@ -4,12 +4,13 @@ import {
   getPlantillaLibTyp, guardarPlantillaLibTyp, putPlantillaLibTypContenido,
   getHistoriaPlantilla, getVersionContenidoPlantilla,
   getArchivosPlantilla, getArchivoPlantilla, getMuestraPlantilla,
-  saltarAPosicionPreviewPlantilla,
+  saltarAPosicionPreviewPlantilla, exportarLsp,
 } from "../api.js";
 import TypstCanvasPreview from "./TypstCanvasPreview.vue";
 import TinymistPreview from "./TinymistPreview.vue";
 import CodeEditor from "./CodeEditor.vue";
 import { ultimoCompileStatus } from "../composables/compileStatusBus.js";
+import { ultimoDiagnostico } from "../composables/lspDiagnosticsBus.js";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -65,6 +66,24 @@ const compileStatusTexto = computed(() => ({
   ok: "Vista previa OK",
   error: "Error de compilación",
 }[compileStatus.value] || ""));
+
+// Fase 1B de tinymist-implementation-plan.md, mismo indicador que StatusBar.vue.
+const errores = ref(0);
+const avisos = ref(0);
+watch(ultimoDiagnostico, (evento) => {
+  if (!evento) return;
+  if (evento.tipo !== "plantilla" || evento.slug !== props.slug || evento.codigo !== props.nombre) return;
+  const diags = evento.diagnosticos || [];
+  errores.value = diags.filter((d) => (d.severity ?? 1) === 1).length;
+  avisos.value = diags.filter((d) => (d.severity ?? 1) === 2).length;
+});
+const diagnosticosTexto = computed(() => {
+  if (!errores.value && !avisos.value) return "";
+  const partes = [];
+  if (errores.value) partes.push(`${errores.value} error${errores.value === 1 ? "" : "es"}`);
+  if (avisos.value) partes.push(`${avisos.value} aviso${avisos.value === 1 ? "" : "s"}`);
+  return partes.join(", ");
+});
 
 async function cargar() {
   cargando.value = true;
@@ -205,6 +224,25 @@ function onCambioVersion(ev) {
   if (version) cargarVersionEnEditor(version);
 }
 
+// Fase 1D (D5), mismo criterio que StatusBar.vue -- exporta la MUESTRA (documento ficticio que
+// importa lib.typ), no lib.typ directamente (no es compilable por sí solo).
+const exportando = ref(false);
+async function onCambioExportar(ev) {
+  const formato = ev.target.value;
+  ev.target.value = "";
+  if (!formato) return;
+  exportando.value = true;
+  mensaje.value = "";
+  try {
+    await exportarLsp(props.slug, props.nombre, "plantilla", formato);
+  } catch (e) {
+    mensaje.value = `Error al exportar: ${e.message}`;
+    mensajeEsError.value = true;
+  } finally {
+    exportando.value = false;
+  }
+}
+
 async function cargarArchivosPlantilla(slug, nombre, texto) {
   const [rutas, muestra] = await Promise.all([
     getArchivosPlantilla(slug, nombre),
@@ -264,12 +302,21 @@ defineExpose({ ocupado, guardar });
               v{{ v.version }} · {{ v.mensaje }}
             </option>
           </select>
+          <select :disabled="exportando" @change="onCambioExportar" title="Exportación rápida (sin versión) vía tinymist, sobre el documento de muestra">
+            <option value="">{{ exportando ? "Exportando…" : "Exportar…" }}</option>
+            <option value="pdf">PDF</option>
+            <option value="text">Texto plano</option>
+            <option value="markdown">Markdown</option>
+          </select>
           <span class="estado">{{ palabras }} palabras · {{ tamanoKB }} KB</span>
           <span
             v-if="compileStatusTexto"
             class="estado"
             :style="{ color: compileStatus === 'error' ? 'var(--danger)' : undefined }"
           >{{ compileStatusTexto }}</span>
+          <span v-if="diagnosticosTexto" class="estado" :style="{ color: errores ? 'var(--danger)' : undefined }">
+            {{ diagnosticosTexto }}
+          </span>
           <span class="status-bar-spacer"></span>
           <span class="estado">{{ estadoGuardado }}</span>
         </div>
