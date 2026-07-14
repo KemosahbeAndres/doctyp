@@ -128,20 +128,24 @@ async function compilarSolo(compiler, mainTexto, archivos) {
 // canvas. `renderToSvg` (formato "vector", mismo artefacto ya compilado) produce en cambio un
 // único <svg class="typst-doc"> con un <g> hijo directo por página -- estructura confirmada
 // extrayendo strings del propio typst_ts_renderer_bg.wasm (no está documentado en ningún
-// .d.ts). No usamos el modo `renderDom`/`mount_dom` (viewport incremental vía
-// addChangement(['new'|'diff-v1', data]) + addViewportChange(); confirmado con Playwright que
-// sin ese protocolo el documento nunca se pinta, se queda en moduleInitialized=false): está
-// pensado para servir actualizaciones incrementales desde un servidor en vivo, no para "aquí
-// está todo el artefacto, píntalo de una vez", que es nuestro caso.
+// .d.ts).
 //
-// Nota para la Etapa 12.2 (click-to-jump): confirmado con Playwright que NI `renderSvg` /
-// `renderToSvg` (con o sin `compiler.withIncrementalServer()` + `setAttachDebugInfo(true)`) NI
-// `renderDom` producen el atributo `data-span` en esta versión (0.7.x) del paquete -- solo
-// aparecen `data-tid` (identidad para diffing) y `data-hint`. El script de referencia
-// "typstProcessSvg" embebido en el .wasm (que sí sabe leer `data-span`) es de la demo oficial
-// con un pipeline de compilación distinto (probablemente vía `typst-cli`/servidor con
-// `--source-map` o equivalente, no expuesto por este wrapper npm) -- pendiente de investigar
-// antes de poder implementar clic->cursor con precisión exacta.
+// Etapa 12.2 (click-to-jump) queda BLOQUEADA a nivel de código fuente, no de configuración: se
+// clonó github.com/Myriad-Dreamin/typst.ts y se confirmó que `SHOULD_ATTACH_DEBUG_INFO` (el
+// feature flag que gatea si `attach_debug_info()` escribe el atributo `data-span` -- ver
+// crates/conversion/vec2svg/src/backend/mod.rs) está hardcodeado a `false` en las CUATRO
+// implementaciones de `ExportFeature` del repo (vec2svg/src/lib.rs x2,
+// vec2svg/src/frontend/incremental.rs, vec2dom/src/svg_backend.rs), tanto para el backend SVG
+// como para el backend DOM. No es un valor configurable en runtime desde JS -- es una constante
+// de compilación de Rust. Ninguna combinación de API JS (`compiler.withIncrementalServer()` +
+// `setAttachDebugInfo(true)`, `renderSvg`/`renderToSvg`, `renderDom`) puede producir `data-span`
+// contra el binario publicado en npm (probado contra 0.7.0 y 0.8.0-rc3, el más reciente
+// publicado a la fecha -- mismo resultado en ambas). El script "typstProcessSvg" embebido en el
+// .wasm (que sí sabe leer `data-span`) es código vestigial de una build distinta a la publicada.
+// Para desbloquear 12.2 hace falta: (a) compilar el WASM desde el fork de Rust con ese `const`
+// en `true`, o (b) abrir un issue/PR upstream pidiendo exponerlo como opción de runtime, o (c)
+// resolver clic->cursor por una vía completamente distinta (candidato: la misma técnica de
+// metadata+`query()` planeada para 12.3 cursor->preview, aplicada también en esta dirección).
 async function renderEnContenedor(renderer, artifactContent, contenedor) {
   // `renderToSvg` (que manipula el contenedor directamente desde Rust) panickea de forma
   // reproducible en @myriaddreamin/typst-ts-renderer 0.7.x ("Option::unwrap() on a None value"
@@ -155,32 +159,6 @@ async function renderEnContenedor(renderer, artifactContent, contenedor) {
       if (hijo.tagName === "g") hijo.classList.add("pagina-typst");
     }
   }
-
-  // EXPERIMENTO TEMPORAL 12.2 (round 2): completar el protocolo real de mount_dom -- empujar
-  // el artefacto vía addChangement(['new', data]) (lo que hace internamente processQueue() al
-  // recibir un evento 'new'/'diff-v1', ver contrib/dom/typst-doc.mjs) en vez de solo llamar
-  // addViewportChange() como en el intento anterior (que se quedaba en moduleInitialized=false).
-  window.__probarRenderDom2 = async () => {
-    const div = document.createElement("div");
-    div.style.cssText = "position:fixed;top:0;left:0;width:600px;height:800px;background:#eee;z-index:99999;overflow:auto;";
-    document.body.appendChild(div);
-    const doc = await renderer.renderDom({ container: div, artifactContent });
-    doc.addChangement(["new", artifactContent]);
-    await new Promise((r) => setTimeout(r, 300));
-    doc.addViewportChange();
-    await new Promise((r) => setTimeout(r, 2000));
-    const primerG = div.querySelector(".typst-dom-page");
-    const atributos = new Set();
-    primerG?.querySelectorAll("*").forEach((el) => {
-      for (const a of el.attributes) if (a.name.startsWith("data-")) atributos.add(a.name);
-    });
-    return {
-      atributos: [...atributos],
-      htmlLen: div.innerHTML.length,
-      tieneDomPage: !!primerG,
-      numDomPages: div.querySelectorAll(".typst-dom-page").length,
-    };
-  };
 }
 
 /**

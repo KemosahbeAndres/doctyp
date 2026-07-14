@@ -71,6 +71,12 @@ watch(
 onUnmounted(() => {
   view?.destroy();
 });
+
+// Etapa 12.4: expone el elemento con scroll real de CodeMirror (.cm-scroller) para que el
+// padre (DocEditor/TemplateEditor) pueda sincronizarlo con el scroll de la vista previa.
+defineExpose({
+  getScroller: () => view?.scrollDOM ?? null,
+});
 </script>
 
 <template>

@@ -1,10 +1,11 @@
 <script setup>
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onMounted, nextTick } from "vue";
 import { getTyp, putTyp, guardarVersion, compilar, getArchivosDoc, getArchivoDoc } from "../api.js";
 import MetaEditorModal from "./MetaEditorModal.vue";
 import StatusBar from "./StatusBar.vue";
 import TypstCanvasPreview from "./TypstCanvasPreview.vue";
 import CodeEditor from "./CodeEditor.vue";
+import { useScrollSync } from "../composables/useScrollSync.js";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -129,6 +130,23 @@ async function compilarDoc() {
   }
 }
 
+// Etapa 12.4: scroll sincronizado "a la par" entre el editor de código y la vista previa. El
+// contenedor del preview conserva su identidad entre compilaciones (solo cambia su innerHTML),
+// así que basta con conectar una vez que los hijos existen en el DOM -- no hace falta
+// reconectar en cada recompilación. `codigo` empieza en null (nada montado detrás de
+// v-if="!codigo") así que se reconecta también cuando pasa a tener valor, no solo en onMounted.
+const refEditor = ref(null);
+const refPreview = ref(null);
+const { reconectar } = useScrollSync(
+  () => refEditor.value?.getScroller() ?? null,
+  () => refPreview.value?.getScroller() ?? null,
+);
+onMounted(reconectar);
+watch(
+  () => props.codigo,
+  () => nextTick(reconectar),
+);
+
 function onMetaGuardado(res) {
   // El backend ya escribió el .typ en disco (incluye el patch de metadatos) -- resincronizamos
   // texto/original con ese contenido para no arriesgar que "Guardar cambios" lo pise después.
@@ -150,8 +168,8 @@ function onMetaGuardado(res) {
         {{ mensaje }}
       </div>
       <div class="editor-preview-split">
-        <CodeEditor class="editor-textarea" v-model="texto" :disabled="cargando" />
-        <TypstCanvasPreview :slug="slug" :codigo="codigo" :texto="texto" :cargar-archivos="cargarArchivosDoc" />
+        <CodeEditor ref="refEditor" class="editor-textarea" v-model="texto" :disabled="cargando" />
+        <TypstCanvasPreview ref="refPreview" :slug="slug" :codigo="codigo" :texto="texto" :cargar-archivos="cargarArchivosDoc" />
       </div>
       <StatusBar
         :slug="slug"

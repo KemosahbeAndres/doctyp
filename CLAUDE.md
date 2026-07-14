@@ -431,7 +431,7 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 9 | Editor de plantillas con CRUD completo y seleccion de plantilla en el modal al crear documento nuevo. Usar vista dividida: editor y vista previa similar a typst. Al editar una plantilla se debera mostrar un documento. Explorar otras soluciones de compilado/precompilado/vistaprevia/cache. | **Completada** |
 | 10 | Editor de plantillas en el cliente web debe poder accederse desde pantalla principal con boton junto al boton 'organizacion' y la vista debe ser a pantalla completa como el editor de documentos. El editor de texto/codigo debe mostrar en colores los codigos/funciones/variables de typst como un editor de codigo moderno. La division por colores permite una mejor edicion para el usuario. Usar la convencion de colores de Typst y/o la que usa VSCode con la extension de Typst. | **Completada** |
 | 11 | Cambiar renderizado de vista previa en el cliente web (editor documentos y editor plantillas) por un renderizado de typst WASM (typst.ts) dentro del cliente web, a HTML `<canvas>`, con el mismo botón de actualizar vista previa en la barra de estado. Sin click-to-jump (ver Etapa 12). | **Completada** |
-| 12 | Sincronización bidireccional clic↔cursor entre el editor y la vista previa (click-to-jump). Dividida en sub-etapas (ver nota debajo de la tabla): 12.1 migración canvas→SVG (**Completada** — no fue a modo DOM como se planeó originalmente, ver nota), 12.2 clic→cursor (**Bloqueada** — `data-span` no aparece en esta versión del paquete, pendiente investigar), 12.3 cursor→preview (metadata por párrafo + `query()`), 12.4 scroll con rueda sincronizado, 12.5 pulido/verificación final. Aplica a editor de documentos y editor de plantillas. | En curso |
+| 12 | Sincronización bidireccional clic↔cursor entre el editor y la vista previa (click-to-jump). Dividida en sub-etapas (ver nota debajo de la tabla): 12.1 migración canvas→SVG (**Completada**), 12.2 clic→cursor (**Bloqueada** — causa raíz confirmada: `SHOULD_ATTACH_DEBUG_INFO` hardcodeado a `false` en el código fuente de typst.ts, no activable desde npm), 12.3 cursor→preview (metadata por párrafo + `query()`, pendiente), 12.4 scroll sincronizado "a la par" (**Completada**), 12.5 pulido/verificación final (pendiente). Aplica a editor de documentos y editor de plantillas. | En curso |
 | 13 | FIX. En el canvas de renderizado no puede hacerse scroll horizontal, el documento debe ocupar todo el espacio en ese eje. | Pendiente |
 | 14 | FIX. El debounce no debe re-renderizar el documento sino guardar el documento en caso que tenga cambios. Si el documento tiene cambios se guarda y despues de guardar se re-renderiza el documento. | Pendiente |
 
@@ -463,27 +463,60 @@ hipótesis con Playwright real contra `doctyp web`, no solo por lectura de códi
     incluso pasando `artifactContent` directo en `renderDom(...)`. Ese modo está diseñado para
     servir diffs incrementales desde un servidor en vivo, no para "aquí está todo el artefacto,
     píntalo de una vez" (nuestro caso).
-- **12.2 (clic→cursor) sigue bloqueada** por un hallazgo nuevo, distinto del plan original:
-  **ninguna combinación probada produce el atributo `data-span`** en esta versión del paquete.
-  Se probó (todas verificadas con Playwright, inspeccionando `element.attributes` en vivo):
-  `renderSvg`/`renderToSvg` con compilación simple (`compiler.compile({format:'vector'})`);
-  la misma compilación envuelta en `compiler.withIncrementalServer(srv => { srv.setAttachDebugInfo(true); ... })`
-  (el único método relacionado a "debug info" que expone el wrapper, en `IncrementalServer`);
-  y `renderDom` (una vez resuelto el protocolo de inicialización de arriba). En los tres casos
-  solo aparecen `data-tid` (hash de identidad para diffing de parches, no posición) y
-  `data-hint`. El script de referencia `typstProcessSvg`, que sí sabe leer `data-span` (visto
-  como `<script>` embebido en el propio SVG que retorna `render_svg`/`svg_data`), pertenece a
-  la demo oficial de Typst.ts, que probablemente alimenta el compilador con un pipeline
-  distinto (p. ej. `typst-cli`/servidor con flag de source-map no expuesto en este wrapper npm
-  vía `@myriaddreamin/typst.ts@0.7`) — **pendiente de investigar antes de retomar 12.2**: cómo
-  se activa `data-span` realmente en esta versión, o si hay que subir de versión del paquete,
-  o si hay que generar el mapeo por otra vía (p. ej. la de metadata/`query()` de 12.3, aplicada
-  también a la dirección clic→cursor en vez de solo cursor→preview).
+- **12.2 (clic→cursor) BLOQUEADA — causa raíz confirmada, no es cuestión de configuración.**
+  Se probó exhaustivamente contra el wrapper npm (todo verificado con Playwright real, no solo
+  lectura de código): `renderSvg`/`renderToSvg` con compilación simple; la misma compilación
+  envuelta en `compiler.withIncrementalServer(srv => { srv.setAttachDebugInfo(true); ... })`
+  (el único método de "debug info" expuesto, en `IncrementalServer`); y `renderDom` completando
+  correctamente su protocolo de inicialización (`renderer.runWithSession({format, artifactContent}, session => { renderDom({renderSession: session, container}); doc.addChangement(['new', artifactContent]); doc.addViewportChange(); ... })`
+  — todo dentro del callback de `runWithSession`, porque la sesión se libera apenas ese
+  callback retorna). En los tres casos solo aparecen `data-tid` (identidad para diffing) y
+  `data-hint`, nunca `data-span`. Se probó también actualizando a `@myriaddreamin/typst-ts-*@0.8.0-rc3`
+  (el más reciente publicado, vía `npm install --no-save` en un entorno aislado) — mismo
+  resultado. El intento de `renderDom` además reveló dos panics de Rust reproducibles y
+  distintos (`Option::unwrap() on a None value` en `render/svg.rs:132` vía `renderToSvg`, y
+  `Result::unwrap() on an Err value` + trap `unreachable` en `crates/conversion/vec2dom/src/dom.rs:91`
+  vía el modo DOM), en ambas versiones probadas — el modo DOM no es seguro de usar en este
+  wrapper para nuestro caso (compilación puntual, no servidor incremental en vivo).
+  **Causa raíz encontrada clonando el repo fuente** (`github.com/Myriad-Dreamin/typst.ts`,
+  clon superficial `--depth 1`, revisado y borrado tras la investigación): el atributo
+  `data-span` lo escribe `attach_debug_info()` en
+  `crates/conversion/vec2svg/src/backend/mod.rs:558-561`, condicionado a
+  `ctx.should_attach_debug_info()`, que a su vez depende de la constante de compilación
+  `Feat::SHOULD_ATTACH_DEBUG_INFO`. Esa constante está **hardcodeada a `false` en las cuatro
+  implementaciones de `ExportFeature` que existen en el repo** (`vec2svg/src/lib.rs` ×2,
+  `vec2svg/src/frontend/incremental.rs`, `vec2dom/src/svg_backend.rs`) — tanto para el backend
+  SVG como para el DOM. No es una opción de runtime: es imposible de activar desde JS contra el
+  binario publicado en npm, sin importar la API usada. El script `typstProcessSvg` (que sí sabe
+  leer `data-span`, visto embebido en el propio `.wasm`) es código vestigial de una build
+  distinta a la publicada.
+  **Vías para desbloquear** (ninguna intentada aún): (a) compilar el WASM desde un fork de Rust
+  con ese `const` en `true`; (b) abrir issue/PR upstream pidiendo exponerlo en runtime; (c)
+  resolver clic→cursor con la misma técnica de metadata+`query()` planeada para 12.3
+  (aplicada también en esta dirección, en vez de solo cursor→preview).
 - **12.3 (cursor→preview)**: sigue siendo válida la vía de metadata por párrafo +
   `compiler.query({selector})` (confirmado que `query()` existe en el wrapper, aunque no se ha
   probado en la práctica todavía) — no depende de `data-span`, así que no está bloqueada por el
   hallazgo de arriba.
-- **12.4** (scroll con rueda sincronizado): sin dependencias de Typst, no bloqueada.
+- **12.4 completada.** Scroll sincronizado "a la par" (misma posición relativa, misma
+  velocidad) entre el editor de código y la vista previa, en ambas direcciones, con rueda del
+  mouse o barra de scroll. Implementado en `web/src/composables/useScrollSync.js`: sincroniza
+  por **fracción de scroll** (`scrollTop / (scrollHeight - clientHeight)`), no por píxeles 1:1,
+  porque el editor (texto plano) y la vista previa (documento paginado) casi nunca tienen la
+  misma altura total — igualar la fracción es la única forma de que ambos paneles lleguen al
+  inicio/final juntos. Guarda anti-loop simple (`origen`) para que el eco del scroll
+  sincronizado no dispare un segundo ciclo. `CodeEditor.vue` expone `getScroller()` →
+  `EditorView.scrollDOM` (API real de CodeMirror 6, confirmada en sus `.d.ts`);
+  `TypstCanvasPreview.vue` expone `getScroller()` → el mismo `<div ref="contenedor">` donde se
+  inyecta el SVG (ya tiene `overflow:auto`, no hizo falta un elemento nuevo). Cableado en
+  `DocEditor.vue` y `TemplateEditor.vue`. Detalle importante: en ambos editores los hijos
+  `CodeEditor`/`TypstCanvasPreview` están detrás de un `v-if` (`!codigo` en `DocEditor`,
+  `cargando` en `TemplateEditor`) que en el primer render los mantiene fuera del DOM — conectar
+  los listeners solo en `onMounted` del padre no alcanza; hace falta además un `watch` sobre la
+  condición que los revela (`props.codigo` / `cargando`) con `nextTick` antes de reconectar.
+  Verificado con Playwright: sincronización en ambas direcciones con diferencia de fracción
+  ~0.00003–0.00008 (redondeo de píxeles del navegador, no un defecto) en documento real y en
+  plantilla.
 - **12.5**: pulido y verificación final, incluida una revisión de si el cambio a `renderSvg`
   afecta el tiempo de "primer vistazo" optimizado en la Etapa 11 (el cache de artefactos WASM
   sigue aplicando sin cambios; solo cambió la etapa de *render* final).

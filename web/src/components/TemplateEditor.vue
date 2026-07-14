@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from "vue";
+import { ref, computed, watch, onMounted, nextTick } from "vue";
 import {
   getPlantillaLibTyp, guardarPlantillaLibTyp,
   getHistoriaPlantilla, getVersionContenidoPlantilla,
@@ -7,6 +7,7 @@ import {
 } from "../api.js";
 import TypstCanvasPreview from "./TypstCanvasPreview.vue";
 import CodeEditor from "./CodeEditor.vue";
+import { useScrollSync } from "../composables/useScrollSync.js";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -55,6 +56,20 @@ async function cargarHistoria() {
     mensajeEsError.value = true;
   }
 }
+
+// Etapa 12.4: scroll sincronizado "a la par" entre el editor de código y la vista previa (mismo
+// mecanismo que DocEditor.vue -- ver useScrollSync.js). Los hijos están detrás de
+// v-if="cargando" (oculto hasta que `cargar()` termina), así que reconectar debe esperar a que
+// `cargando` pase a false, no alcanza con onMounted.
+const refEditor = ref(null);
+const refPreview = ref(null);
+const { reconectar } = useScrollSync(
+  () => refEditor.value?.getScroller() ?? null,
+  () => refPreview.value?.getScroller() ?? null,
+);
+watch(cargando, (v) => {
+  if (!v) nextTick(reconectar);
+});
 
 onMounted(() => {
   cargar();
@@ -121,8 +136,9 @@ async function cargarArchivosPlantilla(slug, nombre, texto) {
         {{ mensaje }}
       </div>
       <div class="editor-preview-split">
-        <CodeEditor class="editor-textarea" v-model="texto" />
+        <CodeEditor ref="refEditor" class="editor-textarea" v-model="texto" />
         <TypstCanvasPreview
+          ref="refPreview"
           :slug="slug"
           :codigo="nombre"
           :texto="texto"
