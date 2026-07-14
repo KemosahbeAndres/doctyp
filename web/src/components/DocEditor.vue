@@ -205,11 +205,13 @@ function onMetaGuardado(res) {
           :disabled="cargando"
           :slug="slug"
           :codigo="codigo"
+          tipo="doc"
         />
         <TinymistPreview
           v-if="!usarPreviewLegacy"
           :slug="slug"
           :codigo="codigo"
+          tipo="doc"
           @no-disponible="usarPreviewLegacy = true"
           @saltar-aqui="saltarEnPreview"
         />

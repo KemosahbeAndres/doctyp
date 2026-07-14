@@ -66,7 +66,40 @@ async function cargarHistoria() {
 onMounted(() => {
   cargar();
   cargarHistoria();
+  window.addEventListener("keydown", onKeydownGlobal);
 });
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKeydownGlobal);
+});
+
+// Plan 15 F6 (extensión a plantillas): mientras el usuario tipea (sin guardar), se envía
+// lib.typ al subproceso de preview vía updateMemoryFiles -- ver
+// api_preview_update_memory_plantilla en doctyp_web.py (la muestra en disco importa lib.typ,
+// así que tinymist recompila igual sin tocar el archivo real).
+let temporizadorMemoria = null;
+watch(texto, (nuevo) => {
+  if (usarPreviewLegacy.value) return;
+  if (temporizadorMemoria) clearTimeout(temporizadorMemoria);
+  temporizadorMemoria = setTimeout(() => {
+    actualizarMemoriaPreviewPlantilla(props.slug, props.nombre, nuevo).catch(() => {});
+  }, 300);
+});
+
+// Plan 15 F6 (extensión): salto explícito cursor→preview, mismo atajo que documentos.
+function saltarEnPreview() {
+  if (usarPreviewLegacy.value) return;
+  const pos = refEditor.value?.getPosicionCursor();
+  if (!pos) return;
+  saltarAPosicionPreviewPlantilla(props.slug, props.nombre, pos.line, pos.character).catch(() => {});
+}
+
+function onKeydownGlobal(ev) {
+  if (ev.ctrlKey && ev.altKey && ev.key.toLowerCase() === "j") {
+    ev.preventDefault();
+    saltarEnPreview();
+  }
+}
 
 async function guardar() {
   const msg = window.prompt("Mensaje para la nueva versión (qué cambió en la plantilla):");
@@ -128,8 +161,24 @@ async function cargarArchivosPlantilla(slug, nombre, texto) {
         {{ mensaje }}
       </div>
       <div class="editor-preview-split">
-        <CodeEditor class="editor-textarea" v-model="texto" />
+        <CodeEditor
+          ref="refEditor"
+          class="editor-textarea"
+          v-model="texto"
+          :slug="slug"
+          :codigo="nombre"
+          tipo="plantilla"
+        />
+        <TinymistPreview
+          v-if="!usarPreviewLegacy"
+          :slug="slug"
+          :codigo="nombre"
+          tipo="plantilla"
+          @no-disponible="usarPreviewLegacy = true"
+          @saltar-aqui="saltarEnPreview"
+        />
         <TypstCanvasPreview
+          v-else
           :slug="slug"
           :codigo="nombre"
           :texto="texto"
