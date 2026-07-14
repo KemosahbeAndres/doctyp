@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import {
   getTyp, putTyp, guardarVersion, compilar, getArchivosDoc, getArchivoDoc,
-  actualizarMemoriaPreview, saltarAPosicionPreview,
+  saltarAPosicionPreview,
 } from "../api.js";
 import MetaEditorModal from "./MetaEditorModal.vue";
 import StatusBar from "./StatusBar.vue";
@@ -39,9 +39,15 @@ const mensaje = ref("");
 const mensajeEsError = ref(false);
 const mostrarMeta = ref(false);
 const refreshSignalLocal = ref(0);
+const guardando = ref(false);
+const guardadoHora = ref("");
 
 const sucio = computed(() => texto.value !== original.value);
 watch(sucio, (v) => emit("sucio-cambio", v));
+
+function _horaActual() {
+  return new Date().toLocaleTimeString("es-CL", { hour12: false });
+}
 
 async function cargar(codigo) {
   if (!codigo) {
@@ -75,25 +81,73 @@ function onCargarEnEditor(payload) {
   mensajeEsError.value = false;
 }
 
-async function guardarCambios() {
-  ocupado.value = true;
-  mensaje.value = "";
+// Fase 3.3 de tinymist-implementation-plan.md: autoguardado a 300 ms tras la última edición.
+// Reemplaza tanto el botón "Guardar" (retirado de StatusBar.vue) como el debounce de
+// updateMemoryFiles de Plan 15 F6 -- ahora se escribe a disco de verdad y tinymist detecta el
+// cambio y recompila solo (ya no hace falta enviarle el contenido en memoria aparte).
+let temporizadorGuardado = null;
+
+watch(texto, () => {
+  if (!props.codigo) return;
+  if (temporizadorGuardado) clearTimeout(temporizadorGuardado);
+  temporizadorGuardado = setTimeout(autoguardar, 300);
+});
+
+async function autoguardar() {
+  temporizadorGuardado = null;
+  if (!props.codigo || !sucio.value) return;
+  if (ocupado.value) {
+    // Subir versión/Compilar en vuelo: no competir por la escritura -- reprogramar en vez de
+    // perder este ciclo (la próxima edición igual dispararía uno nuevo, pero si el usuario deja
+    // de tipear justo mientras ocupado, sin esto el autoguardado nunca correría).
+    temporizadorGuardado = setTimeout(autoguardar, 300);
+    return;
+  }
+  const contenido = texto.value; // capturar ANTES del await -- ver nota de carrera abajo
+  guardando.value = true;
   try {
-    await putTyp(props.slug, props.codigo, texto.value);
-    original.value = texto.value;
-    mensaje.value = "Cambios guardados.";
-    mensajeEsError.value = false;
+    await putTyp(props.slug, props.codigo, contenido);
+    // Si el usuario siguió tipeando durante el await, texto.value ya no es `contenido`: NO
+    // marcar limpio (perderíamos de vista que lo más nuevo aún no está en disco). El watch(texto)
+    // de arriba ya disparó un temporizador nuevo para ese contenido más reciente.
+    if (texto.value === contenido) {
+      original.value = contenido;
+      guardadoHora.value = _horaActual();
+      mensaje.value = "";
+    }
   } catch (e) {
-    mensaje.value = `Error al guardar: ${e.message}`;
+    mensaje.value = `Autoguardado falló: ${e.message}`;
     mensajeEsError.value = true;
   } finally {
-    ocupado.value = false;
+    guardando.value = false;
   }
 }
+
+/** Flush inmediato, sin esperar los 300 ms -- beforeunload, salir de la vista, o antes de
+ * Subir versión/Compilar (que además ya guardan si `sucio`, ver abajo -- esto es cinturón). */
+function flushGuardado() {
+  if (temporizadorGuardado) {
+    clearTimeout(temporizadorGuardado);
+    temporizadorGuardado = null;
+  }
+  if (sucio.value && !ocupado.value) return autoguardar();
+  return Promise.resolve();
+}
+
+function onBeforeUnload() {
+  flushGuardado(); // best-effort: el navegador no espera un fetch async en beforeunload
+}
+
+onMounted(() => window.addEventListener("beforeunload", onBeforeUnload));
+onUnmounted(() => {
+  window.removeEventListener("beforeunload", onBeforeUnload);
+  flushGuardado();
+});
 
 async function subirVersion() {
   const msg = window.prompt("Mensaje para la nueva versión (qué cambió):");
   if (!msg) return;
+  await flushGuardado();
   ocupado.value = true;
   mensaje.value = "";
   try {
@@ -117,6 +171,7 @@ async function subirVersion() {
 async function compilarDoc() {
   const msg = window.prompt("Mensaje para la versión que se compilará:");
   if (!msg) return;
+  await flushGuardado();
   ocupado.value = true;
   mensaje.value = "";
   try {
@@ -139,43 +194,21 @@ async function compilarDoc() {
   }
 }
 
-const refEditor = ref(null);
-
-// Plan 15 F6: mientras el usuario tipea (sin guardar), se envía el contenido al subproceso de
-// preview vía updateMemoryFiles (recompila en memoria, sin tocar el .typ en disco). Debounce
-// para no saturar con cada tecla. Regla explícita del usuario (§0/§8 del plan): esto reemplaza
-// el "compilar al tipear" de la Etapa 12.1/typst.ts -- NO es lo mismo que el scroll sync
-// eliminado (F7): acá solo se envía contenido, nunca se mueve el cursor/scroll automáticamente.
-let temporizadorMemoria = null;
-watch(texto, (nuevo) => {
-  if (usarPreviewLegacy.value || !props.codigo) return; // legacy usa su propio debounce interno
-  if (temporizadorMemoria) clearTimeout(temporizadorMemoria);
-  temporizadorMemoria = setTimeout(() => {
-    actualizarMemoriaPreview(props.slug, props.codigo, nuevo).catch(() => {
-      // silencioso: si la preview no está activa (p. ej. tinymist cayó), no hay nada que
-      // reportar -- la próxima vez que se abra la preview arrancará con el contenido guardado.
-    });
-  }, 300);
-});
-
-// Plan 15 F6: salto explícito cursor→preview (acción deliberada, NUNCA automática en scroll --
-// regla del usuario). Atajo Ctrl+Alt+J, ajustable si choca con alguna convención del navegador.
-function saltarEnPreview() {
+// Fase 3.2 de tinymist-implementation-plan.md: jump automático editor→preview al clic (sin
+// botón, sin atajo -- reemplaza el salto explícito Ctrl+Alt+J de Plan 15 F6, revertido por
+// decisión del usuario 2026-07-14, ver H6 del plan). El disparador es el evento "clic-en-editor"
+// de CodeEditor.vue (clic de posicionamiento real, no selección/arrastre).
+function onClicEnEditor({ line, character }) {
   if (usarPreviewLegacy.value || !props.codigo) return;
-  const pos = refEditor.value?.getPosicionCursor();
-  if (!pos) return;
-  saltarAPosicionPreview(props.slug, props.codigo, pos.line, pos.character).catch(() => {});
+  saltarAPosicionPreview(props.slug, props.codigo, line, character).catch(() => {});
 }
 
-function onKeydownGlobal(ev) {
-  if (ev.ctrlKey && ev.altKey && ev.key.toLowerCase() === "j") {
-    ev.preventDefault();
-    saltarEnPreview();
-  }
+// H2 (Fase 3.1): el clic en el render resolvió a un archivo que este editor no edita (lib.typ,
+// D4) -- aviso no intrusivo, sin mover el cursor.
+function onSaltoNoEditable() {
+  mensaje.value = "Definido en la plantilla (lib.typ) — edítala desde el editor de plantillas.";
+  mensajeEsError.value = false;
 }
-
-onMounted(() => window.addEventListener("keydown", onKeydownGlobal));
-onUnmounted(() => window.removeEventListener("keydown", onKeydownGlobal));
 
 function onMetaGuardado(res) {
   // El backend ya escribió el .typ en disco (incluye el patch de metadatos) -- resincronizamos
@@ -187,6 +220,11 @@ function onMetaGuardado(res) {
   mensajeEsError.value = false;
   emit("cambio-en-servidor");
 }
+
+// Los botones de acción viven en la cabecera del documento (App.vue, .documento-header), no
+// en este componente -- se exponen ocupado/las acciones para que App.vue los invoque vía
+// template ref, en vez de duplicar la lógica de guardado/versión/compilado allá arriba.
+defineExpose({ ocupado, subirVersion, compilarDoc, abrirMetadatos: () => { mostrarMeta.value = true; } });
 </script>
 
 <template>
@@ -199,13 +237,14 @@ function onMetaGuardado(res) {
       </div>
       <div class="editor-preview-split">
         <CodeEditor
-          ref="refEditor"
           class="editor-textarea"
           v-model="texto"
           :disabled="cargando"
           :slug="slug"
           :codigo="codigo"
           tipo="doc"
+          @clic-en-editor="onClicEnEditor"
+          @salto-no-editable="onSaltoNoEditable"
         />
         <TinymistPreview
           v-if="!usarPreviewLegacy"
@@ -213,7 +252,6 @@ function onMetaGuardado(res) {
           :codigo="codigo"
           tipo="doc"
           @no-disponible="usarPreviewLegacy = true"
-          @saltar-aqui="saltarEnPreview"
         />
         <TypstCanvasPreview
           v-else
@@ -228,12 +266,9 @@ function onMetaGuardado(res) {
         :codigo="codigo"
         :texto="texto"
         :sucio="sucio"
-        :ocupado="ocupado"
+        :guardando="guardando"
+        :guardado-hora="guardadoHora"
         :refresh-signal="refreshSignalLocal"
-        @guardar="guardarCambios"
-        @subir-version="subirVersion"
-        @compilar="compilarDoc"
-        @metadatos="mostrarMeta = true"
         @cargar-en-editor="onCargarEnEditor"
       />
       <MetaEditorModal

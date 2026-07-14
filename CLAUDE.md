@@ -263,12 +263,22 @@ doctyp web [--port 8787] [--host 127.0.0.1] [--no-browser] [--no-build] [--legac
   plantillas) y `DOCS_ROOT` (`<Documentos>/doctyp/`) — sin path traversal fuera de ellas;
   escrituras del registro atómicas; sin ejecución de comandos arbitrarios desde la API; la
   compilación vía web reutiliza exactamente la lógica de `doctyp compile`.
-- **Vista previa (Etapa 15):** el editor de documentos usa `tinymist preview` como servidor
-  standalone (subproceso supervisado por `doctyp_preview_server.py`), con clic↔cursor
-  bidireccional real y memoria en vivo — ver la nota de la Etapa 15 en §14 para el detalle
-  completo del protocolo y la arquitectura. Degrada automáticamente a la vista previa typst.ts
-  (Etapa 12) si `tinymist` no está instalado, o si se pasa `--legacy-preview`. El editor de
-  **plantillas** sigue siempre en modo typst.ts (fuera del alcance de la Etapa 15).
+- **Vista previa (Etapa 15, extendida tras cerrarla):** tanto el editor de **documentos** como
+  el editor de **plantillas** usan `tinymist preview` como servidor standalone (subproceso
+  supervisado por `doctyp_preview_server.py`), con clic↔cursor bidireccional real y
+  **autoguardado a 300 ms** (Etapa 16 Fase 3 — ver más abajo; reemplaza la "memoria en vivo" y
+  el "salto explícito con botón/Ctrl+Alt+J" que tenía la Etapa 15 original: el jump editor→
+  preview ahora es automático al clic, sin botón) — ver la nota de la Etapa 15 en §14 para el
+  protocolo/arquitectura base, y la de la Etapa 16 para lo que cambió después. Degrada
+  automáticamente a la vista previa typst.ts (Etapa 12) por editor si `tinymist` no está
+  instalado, o si se pasa `--legacy-preview`. Indicador de estado de compilación en vivo
+  (Compilando/OK/Error) y de guardado ("Guardando…"/"Guardado ✓ hh:mm:ss") en ambos editores.
+- **LSP de tinymist (Etapa 16 Fase 1A):** `doctyp web` también gestiona un proceso único
+  `tinymist lsp` por sesión (`doctyp_lsp_server.py`, framing `Content-Length` por stdio) y lo
+  expone al navegador mediante `GET /api/lsp` (upgrade a WebSocket propio, `doctyp_ws_server.py`
+  — RFC 6455 servidor, sin dependencias externas). El frontend **todavía no lo consume**
+  (Fase 1B-1E, no ejecutadas) — por ahora es infraestructura probada de punta a punta pero sin
+  UI conectada; ver la nota de la Etapa 16 en §14.
 - Claude Code **no levanta el servidor por su cuenta** salvo petición explícita.
 
 ---
@@ -416,6 +426,7 @@ Sugerencia: deja `typst watch <archivo>.typ` corriendo (desde la carpeta del doc
 | Portada numerada / doble contraportada | se alteró `report` | No edites `report`; no escribas portada/contraportada a mano |
 | No encuentra la carpeta Documentos | `xdg-user-dir` ausente o `user-dirs.dirs` sin `XDG_DOCUMENTS_DIR` | Fallback automático a `~/Documents` (se crea); revisa que `DOCS_ROOT` impreso por `doctyp list` sea el esperado |
 | El servidor web no responde en la red | bind por defecto a localhost | Es intencional (seguridad); usa `--host` solo bajo criterio del usuario |
+| `doctyp web` avisa "No se encontró el binario 'tinymist'" aunque ya lo instalaste | El terminal integrado de VS Code corre en un sandbox Flatpak cuyo `PATH` no incluye `~/.local/bin` (mismo problema que `typst`, §10) | Ya resuelto: `find_tinymist()` (`doctyp_preview_binary.py`) revisa `~/.local/bin/tinymist` como fallback aunque no esté en el `PATH` del sandbox (Etapa 16). Si persiste, corre `doctyp web` desde una terminal fuera del sandbox, o fija `local.preview_tinymist_path` en `settings.json` |
 
 ---
 
@@ -437,10 +448,11 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 9 | Editor de plantillas con CRUD completo y seleccion de plantilla en el modal al crear documento nuevo. Usar vista dividida: editor y vista previa similar a typst. Al editar una plantilla se debera mostrar un documento. Explorar otras soluciones de compilado/precompilado/vistaprevia/cache. | **Completada** |
 | 10 | Editor de plantillas en el cliente web debe poder accederse desde pantalla principal con boton junto al boton 'organizacion' y la vista debe ser a pantalla completa como el editor de documentos. El editor de texto/codigo debe mostrar en colores los codigos/funciones/variables de typst como un editor de codigo moderno. La division por colores permite una mejor edicion para el usuario. Usar la convencion de colores de Typst y/o la que usa VSCode con la extension de Typst. | **Completada** |
 | 11 | Cambiar renderizado de vista previa en el cliente web (editor documentos y editor plantillas) por un renderizado de typst WASM (typst.ts) dentro del cliente web, a HTML `<canvas>`, con el mismo botón de actualizar vista previa en la barra de estado. Sin click-to-jump (ver Etapa 12). | **Completada** |
-| 12 | Sincronización bidireccional clic↔cursor entre el editor y la vista previa (click-to-jump) vía typst.ts/canvas en el navegador. **Reemplazada por la Etapa 15** (ver nota debajo de la tabla): 12.1-12.4 quedan como historial (canvas→SVG, bloqueo de `data-span`, scroll sync ya retirado en 15/F7); 12.2/12.3 (clic↔cursor) se resolvieron por una vía distinta (servidor `tinymist preview` standalone, no typst.ts en el navegador). Solo aplica hoy al editor de **plantillas** (modo legacy); el editor de **documentos** usa el motor de la Etapa 15. | Reemplazada por Etapa 15 |
+| 12 | Sincronización bidireccional clic↔cursor entre el editor y la vista previa (click-to-jump) vía typst.ts/canvas en el navegador. **Reemplazada por la Etapa 15** (ver nota debajo de la tabla): 12.1-12.4 quedan como historial (canvas→SVG, bloqueo de `data-span`, scroll sync ya retirado en 15/F7); 12.2/12.3 (clic↔cursor) se resolvieron por una vía distinta (servidor `tinymist preview` standalone, no typst.ts en el navegador). Aplica solo cuando un editor cae al modo legacy typst.ts (tinymist no instalado, o `--legacy-preview`) — por defecto, tanto documentos como plantillas usan el motor de la Etapa 15 (ver su addendum "plantillas ya no quedan fuera"). | Reemplazada por Etapa 15 |
 | 13 | FIX. En el canvas de renderizado no puede hacerse scroll horizontal, el documento debe ocupar todo el espacio en ese eje. | Pendiente (aplica solo al modo legacy typst.ts, ver Etapa 15) |
 | 14 | FIX. El debounce no debe re-renderizar el documento sino guardar el documento en caso que tenga cambios. Si el documento tiene cambios se guarda y despues de guardar se re-renderiza el documento. | Pendiente (aplica solo al modo legacy typst.ts, ver Etapa 15) |
 | 15 | Preview vía servidor standalone (`tinymist preview`) lanzado por `doctyp`: clic↔cursor bidireccional real, memoria en vivo (sin guardar), salto explícito editor→preview, eliminación del scroll sync automático (Etapa 12.4). Ver nota debajo de la tabla y `plan15_progreso.md` (registro completo de la ejecución, incluye hallazgos de protocolo y bugs corregidos). | **Completada** |
+| 16 | Auditoría y plan de continuación sobre la Etapa 15 (`tinymist-implementation-plan.md`, en la raíz del repo): Fase 2 (robustez de la preview, sin decisiones) → Fase 3 (fix clic→archivo equivocado, jump automático al clic sin botón, autoguardado a 300 ms) → Fase 1 (adopción completa de `tinymist lsp`: diagnósticos, completion, hover, navegación, semantic tokens, rename, formateo, exportadores rápidos). Decisiones ya tomadas por el usuario: LSP al 100 %, sin pestaña de `lib.typ` en el editor de documentos, sí exportadores rápidos, autoguardado 300 ms (documentos **y plantillas**, decidido 2026-07-14), jump automático e implícito al clic. Ver nota debajo de la tabla para el detalle de lo ejecutado. | Fase 2, Fase 3 y Fase 1A **completadas**; Fase 1B-1E pendientes |
 
 
 **Nota sobre el alcance real de la Etapa 12** (investigación hecha leyendo el paquete instalado
@@ -575,11 +587,22 @@ usuario):
   clic↔cursor. `editorScrollToBus.js` es un bus mínimo (un solo `ref` reactivo) para que el
   evento SSE, recibido en `App.vue` (raíz del árbol), llegue hasta `CodeEditor.vue` sin
   tunelizar por cada componente intermedio — el proyecto no usa un store (Vuex/Pinia).
-- **`TemplateEditor.vue` (plantillas) queda fuera del alcance**, en modo legacy typst.ts sin
+- **⚠ Nota superada — plantillas ya NO quedan fuera del alcance.** Al cerrar la Etapa 15,
+  `TemplateEditor.vue` sí quedó en modo legacy typst.ts, por el motivo descrito abajo. En un
+  commit posterior (`0b59d0f`, fuera de las fases F0-F8 registradas en `plan15_progreso.md`) se
+  extendió: `TemplateEditor.vue` usa `TinymistPreview` por defecto igual que `DocEditor.vue`
+  (clic↔cursor, memoria en vivo con debounce de 300 ms vía `actualizarMemoriaPreviewPlantilla`,
+  salto explícito con botón/Ctrl+Alt+J), degradando a `TypstCanvasPreview` solo si tinymist no
+  está disponible. El bloqueo original — sin ruta de archivo persistente para
+  `tinymist preview --root` — se resolvió reusando `core.asegurar_muestra_typ()` (ya existente
+  desde la Etapa 9/11 para el modo typst.ts), que materializa el documento de muestra en disco
+  junto a la plantilla; `_asegurar_preview_plantilla()` en `doctyp_web.py` la reusa tal cual, sin
+  necesitar una decisión de diseño nueva. Texto original de la nota, conservado como historial:
+  *"`TemplateEditor.vue` (plantillas) queda fuera del alcance, en modo legacy typst.ts sin
   clic↔cursor: su vista previa es un documento de muestra generado en memoria
   (`core.build_typ(_muestra_meta(), "lib.typ")`), sin una ruta de archivo persistente que darle
   a `tinymist preview --root` — extenderlo requiere decidir dónde materializar ese documento de
-  muestra en disco, una decisión de diseño no cubierta por el plan original.
+  muestra en disco, una decisión de diseño no cubierta por el plan original."*
 - **Flag `doctyp web --legacy-preview`**: fuerza typst.ts aunque tinymist esté disponible.
   Config `local.preview_tinymist_path` en `settings.json` (mismo patrón que
   `local.org_activa`/`local.autor_activo`) para fijar la ruta del binario si no está en el PATH.
@@ -593,6 +616,185 @@ usuario):
   SIGINT (Ctrl+C), nunca `pkill -9` directo al proceso Python — eso saltea el `finally` que
   detiene el subproceso `tinymist` y puede dejar procesos huérfanos relanzándose solos vía el
   mecanismo de reintento automático.
+
+**Nota sobre el alcance real de la Etapa 16** (auditoría y plan de continuación sobre la Etapa
+15, documento de trabajo `tinymist-implementation-plan.md` en la raíz del repo — decisiones ya
+tomadas por el usuario el 2026-07-14, ver cabecera de ese archivo. **Fase 2, Fase 3 y el "paso 0"
++ Fase 1A de la Fase 1 están ejecutadas**; Fase 1B-1E (núcleo de edición LSP, navegación,
+presentación avanzada, unificación de la preview) **no**, ver el cierre de esta nota):
+
+- **Fase 2 completada (H1, H3, H4 del plan; sin decisiones pendientes):** `compileStatus`
+  cableado a SSE → `StatusBar.vue`/`TemplateEditor.vue` (indicador "Compilando…/Vista previa
+  OK/Error de compilación"); colas SSE acotadas (`maxsize=100` + `put_nowait`/`except Full`);
+  `resolver_tinymist_utilizable()` cacheado por mtime de `settings.json`; retirado el
+  `console.log` `TEMP` de `App.vue`. Detalle igual al de la primera ejecución de esta nota
+  (sin cambios adicionales en esta sesión).
+
+- **Paso 0 de la Fase 1 — capabilities reales capturadas.** `tinymist lsp` **no estaba
+  instalado como binario CLI** (ni en el PATH del sandbox ni en el del host) — se localizó el
+  binario real que sí existe en la máquina: el que trae empaquetado la extensión de VS Code,
+  `~/.var/app/com.visualstudio.code/data/vscode/extensions/myriad-dreamin.tinymist-0.15.2-linux-x64/out/tinymist`
+  (versión 0.15.2, la misma que `MIN_TINYMIST_VERSION`). Se lanzó `initialize` contra ese
+  binario real (script de trabajo en el scratchpad, no en el repo) y se volcó la respuesta a
+  `lsp-capabilities-0.15.2.json` (junto al plan, como pide el paso 0). Hallazgos que corrigen
+  supuestos del plan: **sin** `completionItem/resolve`, **sin** `declaration` ni
+  `callHierarchy`, `semanticTokensProvider` solo `full+delta` (**sin** `range`),
+  `positionEncoding: "utf-16"`, `textDocumentSync.change: 2` (incremental),
+  `workspace.workspaceFolders.changeNotifications: true` (confirma que
+  `workspace/didChangeWorkspaceFolders` sirve para cambiar de root sin relanzar el proceso —
+  ver Fase 1A). `executeCommandProvider.commands` trae 29 comandos `tinymist.*` reales; la
+  allowlist implementada (`_ALLOWLIST_COMANDOS_LSP`, `doctyp_web.py`) solo habilita los 11 que
+  el plan ya nombraba como necesarios para 1D/1E (exportadores, preview, `pinMain`,
+  `getDocumentMetrics`, `doClearCache`) — el resto del catálogo real queda documentado en el
+  JSON pero fuera de la allowlist hasta que una sub-fase futura los necesite explícitamente.
+
+- **Fase 1A completada (transporte + infraestructura del LSP, sin frontend consumidor
+  todavía):**
+  - `doctyp_ws_server.py` (nuevo): lado servidor RFC 6455 sobre stdlib puro, espejo de
+    `doctyp_ws_client.py` (Plan 15 F2) — a diferencia del cliente, este SÍ reensambla
+    fragmentación de entrada (frames de continuación) y exige frames enmascarados del
+    navegador (RFC 6455 §5.1); el envío propio no fragmenta (la longitud extendida de 64 bits
+    ya cubre payloads grandes en un solo frame).
+  - `doctyp_lsp_server.py` (nuevo): clase `LspServer`, gestiona `tinymist lsp` por **stdio
+    binario** (`text=False`, framing `Content-Length`, distinto del `Popen` de texto de
+    `PreviewServer`). Un solo proceso por sesión de `doctyp web`: `start()` hace el
+    `initialize`/`initialized` una vez (ids "backend-owned" con enteros **negativos**, para no
+    colisionar nunca con los ids del navegador, que convencionalmente empiezan en 1);
+    `cambiar_root()` reasocia el mismo proceso a otro documento/plantilla vía
+    `workspace/didChangeWorkspaceFolders` **sin relanzar** (confirmado en el paso 0); `stop()`
+    hace `shutdown`/`exit` antes de terminar el proceso.
+  - `GET /api/lsp` (`doctyp_web.py`, método `_lsp_bridge` del handler): valida `slug`/`codigo`/
+    `tipo`, resuelve el `root` (carpeta del documento, o `plantilla_dir` para plantillas —
+    mismo criterio que la preview), hace el handshake WS y bombea JSON-RPC crudo
+    navegador↔`tinymist lsp`. El backend interpreta el protocolo en exactamente **3
+    excepciones** (nada más — CLAUDE.md §6, sin ejecución arbitraria): (1) allowlist de
+    `workspace/executeCommand` (comando fuera de la lista → error `-32601` devuelto directo al
+    navegador, nunca llega a tinymist); (2) responde localmente `workspace/configuration`
+    (`null` por item), `client/registerCapability` y `window/workDoneProgress/create` (si no se
+    respondieran, tinymist quedaría esperando una respuesta que el navegador no sabe dar); (3)
+    reconexión — recargar la página reasocia la conexión WS nueva al proceso LSP vivo
+    (`lsp.on_message` se reapunta), sin un segundo `initialize` (LSP no lo permite sobre la
+    misma sesión). `_detener_lsp_activo()` se llama en el `finally` de `cmd_web`, mismo patrón
+    que `_detener_preview_activa()`.
+  - **Frontend: ninguno todavía.** El endpoint existe y funciona, pero no hay cliente
+    CodeMirror/`@codemirror/lsp-client` conectado (eso es Fase 1B) — `/api/lsp` es
+    infraestructura probada, no una funcionalidad visible para el usuario aún.
+  - **Verificado en vivo** (con el binario real de la extensión VS Code, vía un shim de PATH
+    temporal fuera del repo — no se modificó `settings.json`): `LspServer.start()` en
+    aislamiento (initialize en 0.04 s, capabilities recibidas, `cambiar_root()` reasocia sin
+    relanzar, `stop()` limpio); `doctyp web` levantado en un puerto de prueba (8799) con un
+    cliente WS propio (script de trabajo, no en el repo) conectado a `ws://.../api/lsp` que
+    completó `didOpen` + `textDocument/documentSymbol` (9 símbolos reales del documento
+    `TI-INF-RED_2026-0039`), confirmó el rechazo `-32601` de un comando fuera de la allowlist
+    (`tinymist.doInitTemplate`), y confirmó que reconectar a otro recurso (`tipo=plantilla`)
+    reusa el mismo PID sin relanzar. Apagado con SIGINT: `pgrep tinymist`/`pgrep "doctyp.py
+    web"` vacíos, sin huérfanos. `py_compile` y `npm run build` (66 módulos) sin errores.
+
+- **Fase 3 completada (H2, H6/salto automático, autoguardado — decisiones ya tomadas por el
+  usuario, sin bloqueos):**
+  - **3.1 — H2 arreglado.** `_asegurar_preview_generico()` (`doctyp_web.py`) ahora calcula
+    `archivo_editable` (el `.typ` principal para documentos; `lib.typ` de la plantilla, no la
+    muestra, para plantillas) y etiqueta cada `editor-scroll-to` con `es_editable`. Verificado
+    con un test unitario directo sobre la lógica de comparación de rutas (sin necesitar un
+    clic real dentro del iframe): clic en el archivo editable → `True`; clic en el otro
+    (`lib.typ` desde documentos, o la muestra desde plantillas) → `False`, en los 4 casos
+    cruzados. `CodeEditor.vue` ignora el salto si `es_editable !== true` y emite
+    `salto-no-editable`; `DocEditor.vue` muestra el aviso no intrusivo ("Definido en la
+    plantilla (lib.typ) — edítala desde el editor de plantillas"); `TemplateEditor.vue` lo
+    ignora en silencio (ahí no hay "otro editor" al que mandar al usuario).
+  - **3.2 — jump automático al clic, sin botón.** Se retiró el botón "Ver posición del cursor
+    (Ctrl+Alt+J)" de `TinymistPreview.vue`, el atajo global y `onKeydownGlobal` de
+    `DocEditor.vue`/`TemplateEditor.vue`, y `getPosicionCursor()`/`defineExpose` de
+    `CodeEditor.vue` (sin más consumidores). Nuevo: `EditorView.domEventHandlers({click})` en
+    `CodeEditor.vue` emite `clic-en-editor` **solo** en clic de posicionamiento (selección
+    vacía — descarta arrastres y doble-clic que seleccionan palabra); `DocEditor.vue`/
+    `TemplateEditor.vue` llaman `saltarAPosicionPreview(Plantilla)` directo desde ese handler.
+    La dirección preview→editor no cambió (ya era automática al clic, Plan 15 F5).
+  - **3.3 — autoguardado a 300 ms, documentos Y plantillas** (decisión del usuario 2026-07-14,
+    cierra la pregunta que el plan dejaba abierta — ver punto 6 de la cabecera de
+    `tinymist-implementation-plan.md`). Reemplaza tanto el botón "Guardar" (retirado de
+    `StatusBar.vue`, convertido en indicador "Guardando…"/"Guardado ✓ hh:mm:ss") como el
+    debounce de `updateMemoryFiles` de Plan 15 F6 (`actualizarMemoriaPreview(Plantilla)` ya no
+    se llama desde ningún componente — los endpoints `POST /api/preview/memory` y
+    `.../plantilla/memory` siguen existiendo en el backend, sin retirar, tal como el plan
+    permite "a más tardar en 1E"). Documentos usan el `PUT .../typ` ya existente
+    (`api_doc_typ_put`, ahora con **escritura atómica** vía `core._escribir_texto_atomico`,
+    nueva función write-temp+rename genérica junto a `_escribir_json_atomico`). Plantillas
+    necesitaban una vía nueva: `PUT .../lib-typ` **siempre** versiona (`guardar_version_plantilla`,
+    Etapa 9) — inválido para autoguardar cada 300 ms — así que se agregó
+    `PUT .../plantillas/<nombre>/lib-typ-contenido` (`api_template_libtyp_contenido_put`,
+    escritura atómica, **sin** versión/snapshot), dejando "Guardar plantilla" (con mensaje) como
+    la única vía que versiona, igual criterio que "Subir versión" en documentos. Ambos PUT
+    emiten un evento SSE nuevo (`doc-saved` / `plantilla-guardada`) porque el polling de mtimes
+    de `/api/events` no detecta ediciones de contenido (solo mtime de directorios) — `App.vue`
+    los usa para refrescar `cargarDocs()`/`cargarPlantillas()` en otras pestañas/vistas. Guardas
+    de carrera implementadas tal como especifica el snippet del plan: `contenido` capturado
+    ANTES del `await`, solo se marca limpio si `texto.value` no cambió durante la escritura; si
+    `ocupado` (Subir versión/Compilar en vuelo) el autoguardado se reprograma en vez de
+    perderse; `subirVersion`/`compilarDoc`/`guardar` (plantillas) cancelan el temporizador
+    pendiente antes de escribir ellos mismos (ya escribían si `sucio`, se conserva como
+    cinturón); flush inmediato en `beforeunload` y al desmontar el componente (salir de la
+    vista). El autoguardado **nunca** bumpea versión ni toca `org.json`/el índice de snapshots
+    de la plantilla.
+  - **Verificado en vivo contra `doctyp web` real** (puerto de prueba 8799, binario real de la
+    extensión VS Code): `PUT .../typ` con contenido nuevo → releído desde disco coincide,
+    evento SSE `doc-saved` recibido, contenido restaurado al original al terminar (no se dejó
+    ningún cambio permanente en los documentos reales del usuario). `PUT .../lib-typ-contenido`
+    → releído coincide, **el conteo de versiones de la plantilla no cambió** (criterio de
+    aceptación: el autoguardado no debe versionar), evento SSE `plantilla-guardada` recibido,
+    contenido restaurado. `py_compile` y `npm run build` sin errores.
+  - **No verificado con un navegador real (sin Playwright en esta sesión):** el disparo del
+    clic (`domEventHandlers` de CodeMirror), la reactividad de los indicadores en
+    `StatusBar.vue`/`TemplateEditor.vue`, y el comportamiento visual del jump automático en el
+    iframe de tinymist. La lógica de backend que sostiene todo eso sí se verificó en vivo (ver
+    arriba); lo pendiente es específicamente la capa de interacción DOM/Vue en un navegador.
+    Señalar si quieres una pasada con Playwright (`doctyp web` + Chromium temporal, mismo
+    patrón que la Etapa 10) para cerrar esa verificación.
+
+- **Bug real encontrado y corregido tras cerrar lo de arriba: `tinymist` no se encontraba
+  dentro del sandbox Flatpak de VS Code aunque SÍ estaba instalado.** El usuario reportó
+  `doctyp web` avisando "No se encontró el binario 'tinymist'" en su terminal real. Investigado
+  en vivo: el binario ya existía en `~/.local/bin/tinymist` (versión 0.15.2, correcta) — el
+  problema era que `find_tinymist()` (`doctyp_preview_binary.py`) solo probaba
+  `shutil.which("tinymist")`, y el `PATH` del sandbox Flatpak del terminal integrado de VS Code
+  no incluye `~/.local/bin` (mismo tipo de problema que `typst`, ya documentado en §10/§13 —
+  pero confirmado que ejecutar el binario por **ruta completa** sí funciona sin
+  `flatpak-spawn --host`, a diferencia de `typst`: `~/.local/bin` SÍ es visible/ejecutable
+  dentro del sandbox, solo no está en su `PATH`). Fix: `find_tinymist()` ahora prueba
+  `~/.local/bin/tinymist` como fallback directo si `shutil.which()` falla. Verificado en vivo
+  contra `doctyp web` real (sin ningún shim de PATH): `/api/preview/info` pasó de degradar a
+  legacy a `{"enabled": true, ...}`, con el proceso `tinymist preview` real corriendo desde
+  `~/.local/bin/tinymist`; apagado limpio con SIGINT, sin huérfanos. Fila nueva en la tabla de
+  Edge Cases (§13).
+- **`init`/`init.ps1` ahora instalan tinymist automáticamente** (pedido explícito del usuario:
+  "asegúrate que el binario se descargue al inicializar doctyp en un equipo por primera vez" —
+  **revierte** la decisión de Plan 15 F1 de "no descargar binarios automáticamente"). Usan el
+  instalador oficial de tinymist (`tinymist-installer.sh`/`.ps1`, generado por `cargo-dist`,
+  publicado como asset de cada release en GitHub — detecta arquitectura/SO solo, sin que
+  `doctyp` tenga que mapear nombres de asset a mano) con `TINYMIST_INSTALL_DIR` fijado al mismo
+  directorio donde ya se instalan los symlinks/lanzadores de `doctyp` (`~/.local/bin` en
+  bash, `%USERPROFILE%\bin` en PowerShell) y `TINYMIST_NO_MODIFY_PATH=1` (el paso de PATH del
+  propio script ya se encarga). Versión pineada a `0.15.2` en ambos scripts (duplicada a mano,
+  no leída de `MIN_TINYMIST_VERSION` en Python -- decisión deliberada por simplicidad, ver el
+  comentario en el código; mantenerlas en sincronía si se actualiza la versión mínima). Solo
+  instala si `tinymist` no se encuentra ya (`command -v`/`Get-Command`); si falla la descarga
+  (sin red, GitHub inalcanzable), avisa y continúa -- `doctyp web` degrada a typst.ts igual que
+  siempre, no es un requisito duro. **Verificado en vivo (bash, Linux x86_64):** instalación
+  real contra el release v0.15.2 real de GitHub, binario funcional resultante (`tinymist -V`
+  correcto). **No verificado (`init.ps1`, Windows):** sin entorno Windows/PowerShell disponible
+  en esta sesión para probarlo; implementado siguiendo el mismo patrón documentado del
+  instalador oficial (env vars `TINYMIST_INSTALL_DIR`/`TINYMIST_NO_MODIFY_PATH`, idénticas en
+  ambos scripts según su propio código fuente), pero sin ejecución real que lo confirme.
+
+- **Fase 1B-1E — NO ejecutadas.** Núcleo de edición (diagnósticos, completion, hover,
+  signature help — 1B), navegación/símbolos (1C), presentación avanzada y refactor (semantic
+  tokens, inlay hints, colores, code actions/lens, rename, formateo, exportación rápida — 1D),
+  y unificación de la preview bajo el proceso LSP (1E) siguen descritas con detalle (snippets
+  de referencia, checklist de pruebas) en `tinymist-implementation-plan.md` §2-§4. No asumir
+  que existe integración LSP visible en el editor (diagnósticos, autocompletado, hover, etc.)
+  ni que la preview ya corre unificada con el LSP — mientras esta nota no diga lo contrario, el
+  editor sigue sin diagnósticos/completion/hover y la preview sigue siendo un proceso
+  `tinymist preview` aparte del `tinymist lsp` de la Fase 1A.
 
 **Nota sobre el alcance real de las Etapas 2 y 3** (decisión explícita, amplía lo descrito arriba):
 - Todos los comandos (`new`, `save`, `compile`, `edit`, `add`, `delete`, `import`, `history`,

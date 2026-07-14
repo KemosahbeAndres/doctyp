@@ -52,7 +52,19 @@ def find_tinymist() -> Path | None:
         core._warn(f"local.preview_tinymist_path apunta a '{p}', que no existe. Se ignora.")
 
     encontrado = shutil.which("tinymist")
-    return Path(encontrado) if encontrado else None
+    if encontrado:
+        return Path(encontrado)
+
+    # Fallback: ~/.local/bin -- el mismo directorio donde `init` instala tinymist (Etapa 16) y
+    # los symlinks del propio `doctyp`. Necesario en el sandbox Flatpak de VS Code (CLAUDE.md
+    # §13): el $HOME del usuario SÍ es visible/ejecutable ahí (confirmado: correr el binario por
+    # ruta completa funciona sin flatpak-spawn), pero el PATH del sandbox no incluye
+    # ~/.local/bin, así que shutil.which() falla aunque el binario exista y funcione.
+    candidato = Path.home() / ".local" / "bin" / "tinymist"
+    if candidato.is_file():
+        return candidato
+
+    return None
 
 
 def check_version(path: Path) -> tuple[int, int, int] | None:
@@ -72,9 +84,12 @@ def version_str(v: tuple[int, int, int]) -> str:
     return f"{v[0]}.{v[1]}.{v[2]}"
 
 
-def resolver_tinymist_utilizable() -> tuple[Path, tuple[int, int, int]] | None:
-    """Punto de entrada único para doctyp_preview_server.py: encuentra el binario Y valida que
-    su versión sea suficiente. Devuelve (ruta, version) o None (registra el motivo con _warn)."""
+_cache_resultado: tuple[Path, tuple[int, int, int]] | None = None
+_cache_mtime_settings: float | None = None
+_cache_poblado = False
+
+
+def _resolver_tinymist_utilizable_sin_cache() -> tuple[Path, tuple[int, int, int]] | None:
     ruta = find_tinymist()
     if ruta is None:
         core._warn(
@@ -100,3 +115,29 @@ def resolver_tinymist_utilizable() -> tuple[Path, tuple[int, int, int]] | None:
         return None
 
     return ruta, version
+
+
+def resolver_tinymist_utilizable() -> tuple[Path, tuple[int, int, int]] | None:
+    """Punto de entrada único para doctyp_preview_server.py: encuentra el binario Y valida que
+    su versión sea suficiente. Devuelve (ruta, version) o None (registra el motivo con _warn).
+
+    Cachea el resultado en variable de módulo (Fase 2.3 de tinymist-implementation-plan.md, H4):
+    sin esto, `_asegurar_preview_generico()` ejecuta `tinymist -V` (subproceso) en cada
+    apertura de editor y en cada relanzamiento. La caché se invalida solo si cambia el mtime de
+    settings.json (donde vive `local.preview_tinymist_path`) -- mismo criterio que el resto de
+    `doctyp` usa para detectar cambios de config local."""
+    global _cache_resultado, _cache_mtime_settings, _cache_poblado
+
+    settings_path = core.registro_path(core.SCRIPT_DIR)
+    try:
+        mtime_actual = settings_path.stat().st_mtime
+    except OSError:
+        mtime_actual = None
+
+    if _cache_poblado and mtime_actual == _cache_mtime_settings:
+        return _cache_resultado
+
+    _cache_resultado = _resolver_tinymist_utilizable_sin_cache()
+    _cache_mtime_settings = mtime_actual
+    _cache_poblado = True
+    return _cache_resultado

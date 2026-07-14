@@ -1,0 +1,136 @@
+{
+  "serverInfo": {
+    "name": "tinymist",
+    "version": "0.15.2"
+  },
+  "capabilities": {
+    "codeActionProvider": true,
+    "codeLensProvider": {
+      "resolveProvider": false
+    },
+    "colorProvider": true,
+    "completionProvider": {
+      "triggerCharacters": [
+        "#",
+        "(",
+        "<",
+        ",",
+        ".",
+        ":",
+        "/",
+        "\"",
+        "@"
+      ]
+    },
+    "definitionProvider": true,
+    "documentFormattingProvider": true,
+    "documentHighlightProvider": true,
+    "documentLinkProvider": {},
+    "documentRangeFormattingProvider": true,
+    "documentSymbolProvider": true,
+    "executeCommandProvider": {
+      "commands": [
+        "tinymist.getResources",
+        "tinymist.exportHtml",
+        "tinymist.exportTeX",
+        "tinymist.doInitTemplate",
+        "tinymist.doStartBrowsingPreview",
+        "tinymist.exportText",
+        "tinymist.doStartPreview",
+        "tinymist.exportQuery",
+        "tinymist.getDocumentTrace",
+        "tinymist.exportPdf",
+        "tinymist.exportAnsiHighlight",
+        "tinymist.pinMain",
+        "tinymist.focusMain",
+        "tinymist.exportBundle",
+        "tinymist.getDocumentMetrics",
+        "tinymist.doClearCache",
+        "tinymist.exportSvg",
+        "tinymist.exportMarkdown",
+        "tinymist.getWorkspaceLabels",
+        "tinymist.doKillPreview",
+        "tinymist.startServerProfiling",
+        "tinymist.startDefaultPreview",
+        "tinymist.doGetTemplateEntry",
+        "tinymist.exportAst",
+        "tinymist.interactCodeContext",
+        "tinymist.getServerInfo",
+        "tinymist.scrollPreview",
+        "tinymist.stopServerProfiling",
+        "tinymist.exportPng"
+      ]
+    },
+    "experimental": {
+      "onEnter": true
+    },
+    "foldingRangeProvider": true,
+    "hoverProvider": true,
+    "inlayHintProvider": true,
+    "positionEncoding": "utf-16",
+    "referencesProvider": true,
+    "renameProvider": {
+      "prepareProvider": true
+    },
+    "selectionRangeProvider": true,
+    "semanticTokensProvider": {
+      "full": {
+        "delta": true
+      },
+      "legend": {
+        "tokenModifiers": [
+          "strong",
+          "emph",
+          "math",
+          "readonly",
+          "static",
+          "defaultLibrary"
+        ],
+        "tokenTypes": [
+          "comment",
+          "string",
+          "keyword",
+          "operator",
+          "number",
+          "function",
+          "decorator",
+          "type",
+          "namespace",
+          "bool",
+          "punct",
+          "escape",
+          "link",
+          "raw",
+          "label",
+          "ref",
+          "heading",
+          "marker",
+          "term",
+          "delim",
+          "pol",
+          "error",
+          "text"
+        ]
+      }
+    },
+    "signatureHelpProvider": {
+      "triggerCharacters": [
+        "(",
+        ",",
+        ":"
+      ]
+    },
+    "textDocumentSync": {
+      "change": 2,
+      "openClose": true,
+      "save": true
+    },
+    "workspace": {
+      "workspaceFolders": {
+        "changeNotifications": true,
+        "supported": true
+      }
+    },
+    "workspaceSymbolProvider": true
+  }
+}

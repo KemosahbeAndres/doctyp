@@ -17,7 +17,7 @@ const props = defineProps({
   tipo: { type: String, default: "doc" }, // "doc" | "plantilla" -- debe calzar con recurso_tipo del evento
 });
 
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits(["update:modelValue", "salto-no-editable", "clic-en-editor"]);
 
 const host = ref(null);
 let view = null;
@@ -52,6 +52,20 @@ onMounted(() => {
             if (value !== props.modelValue) emit("update:modelValue", value);
           }
         }),
+        // Fase 3.2 de tinymist-implementation-plan.md: jump automático editor→preview al clic
+        // (sin botón, sin atajo -- reemplaza el salto explícito de Plan 15 F6). Dispara SOLO en
+        // clic de posicionamiento: una selección no vacía (arrastre, doble-clic que selecciona
+        // palabra) descarta el disparo. Tipear, mover el cursor con flechas o scrollear no pasan
+        // por acá -- el disparador es únicamente el evento DOM "click".
+        EditorView.domEventHandlers({
+          click(_ev, vista) {
+            const sel = vista.state.selection.main;
+            if (!sel.empty) return false;
+            const linea = vista.state.doc.lineAt(sel.head);
+            emit("clic-en-editor", { line: linea.number - 1, character: sel.head - linea.from });
+            return false; // no consumir el evento: el posicionamiento normal sigue su curso
+          },
+        }),
       ],
     }),
   });
@@ -83,6 +97,13 @@ watch(
 watch(ultimoEditorScrollTo, (evento) => {
   if (!evento || !view || !props.slug || !props.codigo) return;
   if (evento.recurso_tipo !== props.tipo || evento.slug !== props.slug || evento.nombre !== props.codigo) return;
+  // H2 (tinymist-implementation-plan.md, Fase 3.1): el clic resolvió a un archivo que este
+  // editor no edita (p. ej. lib.typ desde el editor de documentos, D4) -- comportamiento
+  // definitivo, no un paliativo: nunca se abre/mueve el cursor a ese otro archivo.
+  if (evento.es_editable !== true) {
+    emit("salto-no-editable");
+    return;
+  }
   if (!evento.start) return;
   const [fila, columna] = evento.start;
   const linea = view.state.doc.line(Math.min(fila + 1, view.state.doc.lines));
@@ -96,17 +117,6 @@ watch(ultimoEditorScrollTo, (evento) => {
 
 onUnmounted(() => {
   view?.destroy();
-});
-
-// Plan 15 F6: expone la posición actual del cursor (línea/columna 0-based, mismo criterio que
-// editorScrollTo) para el salto explícito editor→preview.
-defineExpose({
-  getPosicionCursor: () => {
-    if (!view) return null;
-    const pos = view.state.selection.main.head;
-    const linea = view.state.doc.lineAt(pos);
-    return { line: linea.number - 1, character: pos - linea.from };
-  },
 });
 </script>
 

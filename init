@@ -134,7 +134,40 @@ for n in "${ALIASES[@]}"; do
 done
 
 # --------------------------------------------------------------------------
-# 4) Datos del autor (settings.json -> local.author)
+# 4) tinymist (motor de vista previa con clic↔cursor -- Etapa 15/16, ver CLAUDE.md §6)
+# --------------------------------------------------------------------------
+# Sin tinymist, `doctyp web` degrada automáticamente a la vista previa typst.ts (sin
+# clic↔cursor) -- no es un requisito duro, pero sin él se pierde esa funcionalidad. Versión
+# pineada a la verificada empíricamente contra el protocolo real (ver MIN_TINYMIST_VERSION en
+# doctyp_preview_binary.py -- mantener ambas en sincronía si se actualiza).
+TINYMIST_VERSION="0.15.2"
+info "Comprobando tinymist..."
+if command -v tinymist >/dev/null 2>&1; then
+  ok "tinymist presente: $(tinymist -V 2>&1)"
+elif ! command -v curl >/dev/null 2>&1; then
+  warn "curl no disponible; no se puede instalar tinymist automáticamente."
+  warn "Instálalo manualmente: https://github.com/Myriad-Dreamin/tinymist/releases"
+else
+  info "Instalando tinymist ${TINYMIST_VERSION} en ${BIN_DIR} (binario oficial vía GitHub releases)..."
+  # Instalador oficial de tinymist (cargo-dist): detecta plataforma/arquitectura solo.
+  # TINYMIST_INSTALL_DIR fuerza layout "flat" (el binario queda directo en $BIN_DIR, sin
+  # subcarpeta bin/ propia) -- mismo directorio que los symlinks de arriba, ya en el PATH.
+  # TINYMIST_NO_MODIFY_PATH evita que además intente tocar el shell rc (el paso 6 ya lo hace).
+  if TINYMIST_INSTALL_DIR="$BIN_DIR" TINYMIST_NO_MODIFY_PATH=1 \
+      curl --proto '=https' --tlsv1.2 -LsSf \
+      "https://github.com/Myriad-Dreamin/tinymist/releases/download/v${TINYMIST_VERSION}/tinymist-installer.sh" \
+      | sh
+  then
+    ok "tinymist instalado: $("$BIN_DIR/tinymist" -V 2>&1)"
+  else
+    warn "No se pudo instalar tinymist automáticamente. La vista previa usará el motor"
+    warn "typst.ts (sin clic↔cursor). Instálalo manualmente:"
+    warn "  https://github.com/Myriad-Dreamin/tinymist/releases"
+  fi
+fi
+
+# --------------------------------------------------------------------------
+# 5) Datos del autor (settings.json -> local.author)
 # --------------------------------------------------------------------------
 # Se piden interactivamente y se guardan globalmente; al crear documentos, doctyp los usa por
 # defecto. Se delega en el propio script (config-author) para tener una única fuente de la lógica.
@@ -149,7 +182,7 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# 5) PATH
+# 6) PATH
 # --------------------------------------------------------------------------
 if printf '%s' ":$PATH:" | grep -q ":$BIN_DIR:"; then
   ok "${BIN_DIR} ya está en el PATH."

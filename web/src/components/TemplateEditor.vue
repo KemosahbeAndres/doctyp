@@ -1,14 +1,15 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import {
-  getPlantillaLibTyp, guardarPlantillaLibTyp,
+  getPlantillaLibTyp, guardarPlantillaLibTyp, putPlantillaLibTypContenido,
   getHistoriaPlantilla, getVersionContenidoPlantilla,
   getArchivosPlantilla, getArchivoPlantilla, getMuestraPlantilla,
-  actualizarMemoriaPreviewPlantilla, saltarAPosicionPreviewPlantilla,
+  saltarAPosicionPreviewPlantilla,
 } from "../api.js";
 import TypstCanvasPreview from "./TypstCanvasPreview.vue";
 import TinymistPreview from "./TinymistPreview.vue";
 import CodeEditor from "./CodeEditor.vue";
+import { ultimoCompileStatus } from "../composables/compileStatusBus.js";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -20,7 +21,6 @@ const emit = defineEmits(["sucio-cambio", "guardado"]);
 // Plan 15 (extensión): tinymist es el motor de preview por defecto también para plantillas;
 // si no está disponible, degrada a typst.ts (Etapa 12.1), igual que DocEditor.vue.
 const usarPreviewLegacy = ref(false);
-const refEditor = ref(null);
 
 const texto = ref("");
 const original = ref("");
@@ -29,6 +29,12 @@ const ocupado = ref(false);
 const mensaje = ref("");
 const mensajeEsError = ref(false);
 const versiones = ref([]);
+const guardando = ref(false);
+const guardadoHora = ref("");
+
+function _horaActual() {
+  return new Date().toLocaleTimeString("es-CL", { hour12: false });
+}
 
 const sucio = computed(() => texto.value !== original.value);
 watch(sucio, (v) => emit("sucio-cambio", v));
@@ -38,6 +44,27 @@ const palabras = computed(() => {
   return t ? t.split(/\s+/).length : 0;
 });
 const tamanoKB = computed(() => (new Blob([texto.value]).size / 1024).toFixed(1));
+const estadoGuardado = computed(() => {
+  if (guardando.value) return "Guardando…";
+  if (sucio.value) return "cambios sin guardar";
+  return guardadoHora.value ? `Guardado ✓ ${guardadoHora.value}` : "sin cambios pendientes";
+});
+
+// Fase 2.1 de tinymist-implementation-plan.md (H1), mismo indicador que StatusBar.vue.
+const compileStatus = ref(""); // "" | "compiling" | "ok" | "error"
+watch(ultimoCompileStatus, (evento) => {
+  if (!evento) return;
+  if (evento.recurso_tipo !== "plantilla" || evento.slug !== props.slug || evento.nombre !== props.nombre) return;
+  const kind = evento.kind || "";
+  if (/compil/i.test(kind) && !/success|error|fail/i.test(kind)) compileStatus.value = "compiling";
+  else if (/error|fail/i.test(kind)) compileStatus.value = "error";
+  else if (/success|ok/i.test(kind)) compileStatus.value = "ok";
+});
+const compileStatusTexto = computed(() => ({
+  compiling: "Compilando…",
+  ok: "Vista previa OK",
+  error: "Error de compilación",
+}[compileStatus.value] || ""));
 
 async function cargar() {
   cargando.value = true;
@@ -66,49 +93,89 @@ async function cargarHistoria() {
 onMounted(() => {
   cargar();
   cargarHistoria();
-  window.addEventListener("keydown", onKeydownGlobal);
+  window.addEventListener("beforeunload", onBeforeUnload);
 });
-
 onUnmounted(() => {
-  window.removeEventListener("keydown", onKeydownGlobal);
+  window.removeEventListener("beforeunload", onBeforeUnload);
+  flushGuardado();
 });
 
-// Plan 15 F6 (extensión a plantillas): mientras el usuario tipea (sin guardar), se envía
-// lib.typ al subproceso de preview vía updateMemoryFiles -- ver
-// api_preview_update_memory_plantilla en doctyp_web.py (la muestra en disco importa lib.typ,
-// así que tinymist recompila igual sin tocar el archivo real).
-let temporizadorMemoria = null;
-watch(texto, (nuevo) => {
-  if (usarPreviewLegacy.value) return;
-  if (temporizadorMemoria) clearTimeout(temporizadorMemoria);
-  temporizadorMemoria = setTimeout(() => {
-    actualizarMemoriaPreviewPlantilla(props.slug, props.nombre, nuevo).catch(() => {});
-  }, 300);
+// Fase 3.3 de tinymist-implementation-plan.md (decisión del usuario 2026-07-14: el
+// autoguardado aplica también al editor de plantillas, mismo mecanismo/debounce que
+// documentos). Reemplaza el debounce de updateMemoryFiles de Plan 15 F6: ahora se escribe
+// lib.typ a disco de verdad (PUT .../lib-typ-contenido, SIN versión/snapshot -- eso lo sigue
+// haciendo únicamente "Guardar plantilla", más abajo) y tinymist detecta el cambio solo.
+let temporizadorGuardado = null;
+
+watch(texto, () => {
+  if (temporizadorGuardado) clearTimeout(temporizadorGuardado);
+  temporizadorGuardado = setTimeout(autoguardar, 300);
 });
 
-// Plan 15 F6 (extensión): salto explícito cursor→preview, mismo atajo que documentos.
-function saltarEnPreview() {
-  if (usarPreviewLegacy.value) return;
-  const pos = refEditor.value?.getPosicionCursor();
-  if (!pos) return;
-  saltarAPosicionPreviewPlantilla(props.slug, props.nombre, pos.line, pos.character).catch(() => {});
-}
-
-function onKeydownGlobal(ev) {
-  if (ev.ctrlKey && ev.altKey && ev.key.toLowerCase() === "j") {
-    ev.preventDefault();
-    saltarEnPreview();
+async function autoguardar() {
+  temporizadorGuardado = null;
+  if (!sucio.value) return;
+  if (ocupado.value) {
+    temporizadorGuardado = setTimeout(autoguardar, 300);
+    return;
+  }
+  const contenido = texto.value;
+  guardando.value = true;
+  try {
+    await putPlantillaLibTypContenido(props.slug, props.nombre, contenido);
+    if (texto.value === contenido) {
+      original.value = contenido;
+      guardadoHora.value = _horaActual();
+      mensaje.value = "";
+    }
+  } catch (e) {
+    mensaje.value = `Autoguardado falló: ${e.message}`;
+    mensajeEsError.value = true;
+  } finally {
+    guardando.value = false;
   }
 }
+
+function flushGuardado() {
+  if (temporizadorGuardado) {
+    clearTimeout(temporizadorGuardado);
+    temporizadorGuardado = null;
+  }
+  if (sucio.value && !ocupado.value) return autoguardar();
+  return Promise.resolve();
+}
+
+function onBeforeUnload() {
+  flushGuardado();
+}
+
+// Fase 3.2 de tinymist-implementation-plan.md (extensión a plantillas, mismo criterio que
+// DocEditor.vue): jump automático al clic, sin botón ni atajo.
+function onClicEnEditor({ line, character }) {
+  if (usarPreviewLegacy.value) return;
+  saltarAPosicionPreviewPlantilla(props.slug, props.nombre, line, character).catch(() => {});
+}
+
+// H2 (Fase 3.1, extensión a plantillas): el clic resolvió al .typ de MUESTRA (lo que el
+// usuario ve renderizado, no lo que edita) -- acá el archivo editable ES lib.typ, así que el
+// caso "no editable" es el espejo del de documentos: prosa generada por la muestra, no por
+// lib.typ. Sin mensaje (a diferencia de DocEditor.vue): es la muestra ficticia, no hay otro
+// editor al que mandar al usuario.
+function onSaltoNoEditable() {}
 
 async function guardar() {
   const msg = window.prompt("Mensaje para la nueva versión (qué cambió en la plantilla):");
   if (!msg) return;
+  if (temporizadorGuardado) {
+    clearTimeout(temporizadorGuardado); // evita una carrera con el autoguardado en vuelo
+    temporizadorGuardado = null;
+  }
   ocupado.value = true;
   mensaje.value = "";
   try {
     const fila = await guardarPlantillaLibTyp(props.slug, props.nombre, texto.value, msg);
     original.value = texto.value;
+    guardadoHora.value = _horaActual();
     mensaje.value = `Versión guardada: v${fila.version}.`;
     mensajeEsError.value = false;
     await cargarHistoria();
@@ -151,6 +218,10 @@ async function cargarArchivosPlantilla(slug, nombre, texto) {
   archivos.push({ ruta: "lib.typ", bytes: new TextEncoder().encode(texto) });
   return { mainTexto: muestra, archivos };
 }
+
+// El botón "Guardar plantilla" vive en la cabecera (App.vue, .documento-header), no acá --
+// mismo criterio que DocEditor.vue.
+defineExpose({ ocupado, guardar });
 </script>
 
 <template>
@@ -162,12 +233,13 @@ async function cargarArchivosPlantilla(slug, nombre, texto) {
       </div>
       <div class="editor-preview-split">
         <CodeEditor
-          ref="refEditor"
           class="editor-textarea"
           v-model="texto"
           :slug="slug"
           :codigo="nombre"
           tipo="plantilla"
+          @clic-en-editor="onClicEnEditor"
+          @salto-no-editable="onSaltoNoEditable"
         />
         <TinymistPreview
           v-if="!usarPreviewLegacy"
@@ -175,7 +247,6 @@ async function cargarArchivosPlantilla(slug, nombre, texto) {
           :codigo="nombre"
           tipo="plantilla"
           @no-disponible="usarPreviewLegacy = true"
-          @saltar-aqui="saltarEnPreview"
         />
         <TypstCanvasPreview
           v-else
@@ -187,7 +258,6 @@ async function cargarArchivosPlantilla(slug, nombre, texto) {
       </div>
       <div class="status-bar">
         <div class="status-bar-fila">
-          <span class="estado">{{ sucio ? "cambios sin guardar" : "sin cambios pendientes" }}</span>
           <select @change="onCambioVersion">
             <option value="">Ver / cargar versión anterior…</option>
             <option v-for="v in versiones" :key="v.version" :value="v.version" :disabled="!v.snapshot_disponible">
@@ -195,8 +265,13 @@ async function cargarArchivosPlantilla(slug, nombre, texto) {
             </option>
           </select>
           <span class="estado">{{ palabras }} palabras · {{ tamanoKB }} KB</span>
+          <span
+            v-if="compileStatusTexto"
+            class="estado"
+            :style="{ color: compileStatus === 'error' ? 'var(--danger)' : undefined }"
+          >{{ compileStatusTexto }}</span>
           <span class="status-bar-spacer"></span>
-          <button class="primary" :disabled="ocupado" @click="guardar">Guardar plantilla</button>
+          <span class="estado">{{ estadoGuardado }}</span>
         </div>
       </div>
     </template>

@@ -17,6 +17,10 @@
 > 5. **Jump bidireccional automático e implícito, sin botón:** el salto ocurre en el
 >    momento del clic, tanto en el editor como en el render (Fase 3.2). Esto **revierte**
 >    la regla anterior de "salto solo explícito" (Plan 15 §8/F7) — ver H6.
+> 6. **Alcance del autoguardado (decidida 2026-07-14, cierra la pregunta abierta de
+>    Fase 3.3):** el autoguardado a 300 ms aplica también al editor de **plantillas**
+>    (`lib.typ`), igual que al de documentos — no se mantiene guardado explícito aparte
+>    para plantillas.
 
 ---
 
@@ -391,10 +395,12 @@ teclado.)*
      ("Guardando…" / "Guardado ✓ hh:mm:ss"). "Subir versión" y "Compilar" siguen siendo
      las únicas acciones que crean versiones/snapshots — **el autoguardado jamás bumpea
      versión ni toca `org.json`**.
-   - **Alcance:** editor de **documentos** (lo pedido). El editor de plantillas mantiene
-     guardado explícito por ahora: autoguardar `lib.typ` afecta a todos los documentos
-     futuros de la org y merece su propia decisión — dejar anotado como pregunta al
-     usuario cuando se llegue aquí.
+   - **Alcance (decidido 2026-07-14, ver punto 6 de la cabecera):** editor de
+     **documentos** y editor de **plantillas** (`lib.typ`), con el mismo mecanismo y
+     debounce de 300 ms. Autoguardar `lib.typ` afecta a todos los documentos futuros de
+     la org que usen esa plantilla (no a los ya creados — la plantilla se copia completa
+     al crear/agregar, inmutabilidad ya vigente, §3 de CLAUDE.md) — riesgo aceptado
+     explícitamente por el usuario, no requiere UI de confirmación adicional.
 
 ### Orden recomendado de ejecución
 

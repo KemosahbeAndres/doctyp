@@ -13,6 +13,7 @@ import PlantillaGrid from "./components/PlantillaGrid.vue";
 import TemplateEditor from "./components/TemplateEditor.vue";
 import NewTemplateModal from "./components/NewTemplateModal.vue";
 import { emitirEditorScrollTo } from "./composables/editorScrollToBus.js";
+import { emitirCompileStatus } from "./composables/compileStatusBus.js";
 
 const orgs = ref([]);
 const orgSlug = ref(null);
@@ -32,6 +33,12 @@ const cargandoPlantillas = ref(false);
 const plantillaSeleccionada = ref(null);
 const plantillaEditorSucio = ref(false);
 const mostrarNuevaPlantilla = ref(false);
+// Los botones de acción del documento/plantilla activo viven en .documento-header (pedido del
+// usuario: pegados a la derecha, junto al nombre) -- estas refs apuntan a las instancias de
+// DocEditor/TemplateEditor (que exponen ocupado + las acciones vía defineExpose) para invocarlas
+// desde acá sin duplicar la lógica de guardado/versión/compilado.
+const refDocEditor = ref(null);
+const refPlantillaEditor = ref(null);
 
 const docActivo = computed(() => docs.value.find((d) => d.codigo_base === docSeleccionado.value) || null);
 const docsFiltrados = computed(() =>
@@ -239,8 +246,16 @@ onMounted(() => {
       cargarOrgs();
       cargarAutores();
     } else if (evento.tipo === "editor-scroll-to") {
-      console.log("[DEBUG] editor-scroll-to recibido por SSE:", evento); // TEMP
       emitirEditorScrollTo(evento);
+    } else if (evento.tipo === "compile-status") {
+      emitirCompileStatus(evento);
+    } else if (evento.tipo === "doc-saved") {
+      // Fase 3.3: el polling de mtimes NO detecta ediciones de contenido (escanea mtime de
+      // directorios) -- este evento explícito es la única forma de que otra pestaña/vista se
+      // entere de un autoguardado.
+      cargarDocs();
+    } else if (evento.tipo === "plantilla-guardada") {
+      cargarPlantillas();
     }
   });
 });
@@ -286,8 +301,13 @@ onUnmounted(() => {
         <button @click="volverAGrid">← Documentos</button>
         <strong>{{ docActivo?.codigo_base || docSeleccionado }}</strong>
         <span class="estado">{{ docActivo?.titulo }}</span>
+        <span class="status-bar-spacer"></span>
+        <button class="primary" :disabled="refDocEditor?.ocupado" @click="refDocEditor?.subirVersion()">Subir versión</button>
+        <button :disabled="refDocEditor?.ocupado" @click="refDocEditor?.compilarDoc()">Compilar</button>
+        <button :disabled="refDocEditor?.ocupado" @click="refDocEditor?.abrirMetadatos()">Metadatos</button>
       </div>
       <DocEditor
+        ref="refDocEditor"
         :slug="orgSlug"
         :codigo="docSeleccionado"
         @sucio-cambio="editorSucio = $event"
@@ -308,8 +328,11 @@ onUnmounted(() => {
       <div class="documento-header">
         <button @click="volverAPlantillas">← Plantillas</button>
         <strong>{{ plantillaSeleccionada }}</strong>
+        <span class="status-bar-spacer"></span>
+        <button class="primary" :disabled="refPlantillaEditor?.ocupado" @click="refPlantillaEditor?.guardar()">Guardar plantilla</button>
       </div>
       <TemplateEditor
+        ref="refPlantillaEditor"
         :slug="orgSlug"
         :nombre="plantillaSeleccionada"
         @sucio-cambio="plantillaEditorSucio = $event"

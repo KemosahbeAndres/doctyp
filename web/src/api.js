@@ -82,6 +82,15 @@ export function guardarPlantillaLibTyp(slug, nombre, contenido, mensaje) {
   });
 }
 
+/** Fase 3.3: escritura cruda de lib.typ para el autoguardado (SIN versión/snapshot) --
+ * distinto de guardarPlantillaLibTyp, que siempre versiona. */
+export function putPlantillaLibTypContenido(slug, nombre, contenido) {
+  return request(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/lib-typ-contenido`, {
+    method: "PUT",
+    body: JSON.stringify({ contenido }),
+  });
+}
+
 /** URL de la miniatura (page 1 del documento de muestra) para usar directo en <img src>. */
 export function urlMiniaturaPlantilla(slug, nombre) {
   return `/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/miniatura`;

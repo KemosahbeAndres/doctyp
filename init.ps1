@@ -121,7 +121,40 @@ foreach ($n in $Aliases) {
 }
 
 # ──────────────────────────────────────────────────────
-# 4) PATH del usuario  [automático]
+# 4) tinymist (motor de vista previa con clic<->cursor -- Etapa 15/16, ver CLAUDE.md §6)
+# ──────────────────────────────────────────────────────
+# Sin tinymist, `doctyp web` degrada automáticamente a la vista previa typst.ts (sin
+# clic<->cursor) -- no es un requisito duro. Versión pineada a la verificada empíricamente
+# contra el protocolo real (ver MIN_TINYMIST_VERSION en doctyp_preview_binary.py -- mantener
+# ambas en sincronía si se actualiza).
+$TinymistVersion = '0.15.2'
+Info 'tinymist'
+if (Get-Command tinymist -ErrorAction SilentlyContinue) {
+  Ok "Ya instalado: $(tinymist -V)"
+} else {
+  Warn 'No encontrado.'
+  if (Ask-Confirm '¿Instalar tinymist (vista previa con clic<->cursor)?') {
+    try {
+      # Instalador oficial de tinymist (cargo-dist): detecta arquitectura solo. Mismo
+      # directorio que los lanzadores .cmd de arriba (ya se agrega al PATH en el paso 5).
+      $env:TINYMIST_INSTALL_DIR = $BinDir
+      $env:TINYMIST_NO_MODIFY_PATH = '1'
+      $installerUrl = "https://github.com/Myriad-Dreamin/tinymist/releases/download/v$TinymistVersion/tinymist-installer.ps1"
+      Invoke-Expression (Invoke-RestMethod -Uri $installerUrl)
+      Remove-Item Env:\TINYMIST_INSTALL_DIR, Env:\TINYMIST_NO_MODIFY_PATH -ErrorAction SilentlyContinue
+      if (Test-Path (Join-Path $BinDir 'tinymist.exe')) { Ok "Instalado en $BinDir." }
+      else { Warn 'El instalador terminó pero no se encontró tinymist.exe en el destino esperado.' }
+    } catch {
+      Err "Instalación automática falló: $_"
+      Warn 'Instálalo manualmente: https://github.com/Myriad-Dreamin/tinymist/releases'
+    }
+  } else {
+    Warn 'Omitido. La vista previa usará el motor typst.ts (sin clic<->cursor).'
+  }
+}
+
+# ──────────────────────────────────────────────────────
+# 5) PATH del usuario  [automático]
 # ──────────────────────────────────────────────────────
 Info 'PATH del usuario'
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -135,7 +168,7 @@ if ($userPath -and ($userPath.Split(';') -icontains $BinDir)) {
 }
 
 # ──────────────────────────────────────────────────────
-# 5) Datos del autor
+# 6) Datos del autor
 # ──────────────────────────────────────────────────────
 Info 'Datos del autor'
 if ($py) {

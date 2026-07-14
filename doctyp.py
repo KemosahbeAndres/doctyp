@@ -296,6 +296,16 @@ def _escribir_json_atomico(path: Path, data: dict) -> None:
     os.replace(tmp, path)
 
 
+def _escribir_texto_atomico(path: Path, texto: str) -> None:
+    """Mismo criterio que _escribir_json_atomico (write-temp + rename) pero para texto plano --
+    usado por el autoguardado (tinymist-implementation-plan.md, Fase 3.3) al subir la
+    frecuencia de escritura de los .typ/lib.typ en edición."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(texto, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def _org_vacia(slug: str, nombre: str) -> dict:
     return {
         "schema": 1,

@@ -24,6 +24,8 @@ from urllib.parse import urlsplit, parse_qs, unquote
 import doctyp as core
 from doctyp_preview_binary import resolver_tinymist_utilizable
 from doctyp_preview_server import PreviewServer, PreviewServerError
+from doctyp_lsp_server import LspServer, LspServerError
+import doctyp_ws_server as ws_server
 
 WEB_DIR = core.SCRIPT_DIR / "web"
 WEB_DIST = WEB_DIR / "dist"
@@ -38,6 +40,25 @@ _preview_lock = threading.Lock()
 _preview_actual: PreviewServer | None = None
 _preview_recurso_actual: tuple[str, str, str] | None = None
 _preview_legacy_forzado = False  # `doctyp web --legacy-preview` (Plan 15 F8)
+
+# ── Fase 1A de tinymist-implementation-plan.md: proceso único `tinymist lsp` de la sesión ──
+# A diferencia de PreviewServer (una instancia por documento/plantilla, se reinicia al cambiar),
+# el LSP es UN SOLO proceso para toda la sesión de `doctyp web` -- cambiar de documento/
+# plantilla activo llama `LspServer.cambiar_root()` (workspace/didChangeWorkspaceFolders,
+# confirmado soportado, ver lsp-capabilities-0.15.2.json), nunca relanza el proceso.
+_lsp_lock = threading.Lock()
+_lsp_actual: LspServer | None = None
+
+# workspace/executeCommand a evaluar en el paso 0 (tinymist-implementation-plan.md §2, Fase
+# 1D): allowlist explícita -- el puente NO debe volverse un ejecutor arbitrario (CLAUDE.md §6).
+# Solo los comandos que el plan ya nombra como necesarios para sub-fases futuras (1D/1E); nada
+# más pasa, aunque el binario anuncie más en executeCommandProvider.commands.
+_ALLOWLIST_COMANDOS_LSP = frozenset({
+    "tinymist.doStartPreview", "tinymist.doKillPreview", "tinymist.scrollPreview",
+    "tinymist.pinMain", "tinymist.getDocumentMetrics", "tinymist.doClearCache",
+    "tinymist.exportPdf", "tinymist.exportSvg", "tinymist.exportPng",
+    "tinymist.exportMarkdown", "tinymist.exportText",
+})
 
 _PLACEHOLDER_HTML = b"""<!doctype html>
 <html><head><meta charset="utf-8"><title>doctyp web</title></head>
@@ -278,8 +299,35 @@ def _asegurar_preview_generico(
         # (/api/events, ya existente) en vez de exponer un WebSocket nuevo. Se agrega
         # tipo/slug/nombre porque el frontend no conoce la ruta absoluta en disco -- comparar
         # por esos campos es más simple y robusto que comparar filepaths.
-        nuevo.on_editor_scroll_to = lambda datos: _emitir_evento_sse(
-            {"tipo": "editor-scroll-to", "recurso_tipo": tipo, "slug": slug, "nombre": nombre, **datos}
+        # H2 (tinymist-implementation-plan.md, Fase 3.1): el archivo "editable" para el usuario
+        # difiere de `main_typ` en el caso de plantillas -- `main_typ` ahí es el .typ de MUESTRA
+        # materializado en disco (ver _asegurar_preview_plantilla), NO lib.typ, que es lo que el
+        # usuario realmente edita. Sin esta distinción, un clic sobre contenido generado por
+        # lib.typ (portada, ficha, tablas) resolvía a una línea de lib.typ que el editor de
+        # documentos interpretaba como si fuera del .typ principal -- por D4 (cabecera del plan),
+        # lib.typ nunca se edita/visualiza desde el editor de documentos, así que ese salto debe
+        # descartarse, no aplicarse.
+        archivo_editable = (
+            core.plantilla_dir(slug, nombre) / "lib.typ" if tipo == "plantilla" else main_typ
+        ).resolve()
+
+        def _bridge_scroll_to(datos, _editable=archivo_editable):
+            try:
+                es_editable = Path(datos.get("filepath", "")).resolve() == _editable
+            except OSError:
+                es_editable = False
+            _emitir_evento_sse({
+                "tipo": "editor-scroll-to", "recurso_tipo": tipo, "slug": slug, "nombre": nombre,
+                "es_editable": es_editable, **datos,
+            })
+
+        nuevo.on_editor_scroll_to = _bridge_scroll_to
+        # H1 (tinymist-implementation-plan.md, Fase 2.1): el callback existía en PreviewServer
+        # desde Plan 15 F2 pero nunca se cableaba -- los errores de compilación en vivo no
+        # llegaban nunca a la UI propia (StatusBar), solo al frontend embebido de tinymist
+        # dentro del iframe.
+        nuevo.on_compile_status = lambda kind: _emitir_evento_sse(
+            {"tipo": "compile-status", "recurso_tipo": tipo, "slug": slug, "nombre": nombre, "kind": kind}
         )
         try:
             nuevo.start()
@@ -419,13 +467,74 @@ def _detener_preview_activa() -> None:
         _preview_recurso_actual = None
 
 
+# ── Fase 1A: ciclo de vida del proceso único `tinymist lsp` ────────────────────────────────
+
+def _asegurar_lsp(root: Path, font_dir: Path | None) -> LspServer | None:
+    """Arranca el proceso LSP si es la primera vez, o reusa el vigente reasociando su `root`
+    (workspace/didChangeWorkspaceFolders) si cambió -- nunca relanza el proceso mientras siga
+    vivo. None si tinymist no está disponible (mismo criterio de degradación que la preview)."""
+    global _lsp_actual
+    with _lsp_lock:
+        if resolver_tinymist_utilizable() is None:
+            return None
+        if _lsp_actual is not None and _lsp_actual.is_running:
+            try:
+                _lsp_actual.cambiar_root(root)
+            except LspServerError as e:
+                core._warn(f"no se pudo reasociar el root del LSP: {e}")
+            return _lsp_actual
+        nuevo = LspServer(root=root, font_dir=font_dir)
+        try:
+            nuevo.start()
+        except LspServerError as e:
+            core._warn(f"no se pudo iniciar tinymist lsp: {e}")
+            return None
+        _lsp_actual = nuevo
+        return nuevo
+
+
+def _detener_lsp_activo() -> None:
+    """Apagado limpio del proceso LSP al cerrar `doctyp web` (cmd_web, finally) -- mismo
+    criterio que _detener_preview_activa()."""
+    global _lsp_actual
+    with _lsp_lock:
+        if _lsp_actual is not None:
+            _lsp_actual.stop()
+        _lsp_actual = None
+
+
+def _lsp_resp_workspace_configuration(datos: dict) -> list:
+    items = (datos.get("params") or {}).get("items") or []
+    return [None] * len(items)
+
+
+def _lsp_resp_null(datos: dict):
+    return None
+
+
+# Las 3 excepciones donde el backend SÍ interpreta el protocolo (tinymist-implementation-plan.md
+# Fase 1A punto 4): peticiones server→client que el cliente web no maneja -- si no se respondieran
+# acá, tinymist se quedaría esperando indefinidamente una respuesta que nunca llega del navegador.
+_LSP_RESPUESTAS_LOCALES = {
+    "workspace/configuration": _lsp_resp_workspace_configuration,
+    "client/registerCapability": _lsp_resp_null,
+    "window/workDoneProgress/create": _lsp_resp_null,
+}
+
+
 def api_doc_typ_put(slug: str, codigo_base: str, contenido: str) -> dict:
     org = _cargar_org_api(slug)
     _doc_o_404(org, codigo_base)
     ruta = _ruta_typ_segura(slug, codigo_base)
     if not ruta.parent.exists():
         raise ApiError(404, f"la carpeta del documento no existe: {ruta.parent}")
-    ruta.write_text(contenido, encoding="utf-8")
+    # Fase 3.3 (H): escritura atómica -- la frecuencia de escritura sube con el autoguardado a
+    # 300ms, mismo criterio que org.json (write-temp + rename, nunca un write_text() directo).
+    core._escribir_texto_atomico(ruta, contenido)
+    # El polling de mtimes de /api/events (_eventos_loop) NO detecta esto: escanea mtime de
+    # DIRECTORIOS, que no cambia al modificar un archivo existente -- evento explícito para que
+    # StatusBar/otras pestañas se enteren sin esperar (o sin nunca enterarse) del próximo tick.
+    _emitir_evento_sse({"tipo": "doc-saved", "slug": slug, "codigo": codigo_base})
     return {"ok": True}
 
 
@@ -648,6 +757,19 @@ def api_template_libtyp_put(slug: str, nombre: str, contenido: str, mensaje: str
     return core.guardar_version_plantilla(slug, nombre, contenido, mensaje)
 
 
+def api_template_libtyp_contenido_put(slug: str, nombre: str, contenido: str) -> dict:
+    """PUT .../lib-typ-contenido -- Fase 3.3 (extensión a plantillas, decisión del usuario
+    2026-07-14): escritura cruda de lib.typ SIN crear versión/snapshot, para el autoguardado a
+    300ms. Endpoint nuevo, distinto de PUT .../lib-typ (que siempre versiona vía
+    guardar_version_plantilla) -- mismo par content-PUT/version-POST que ya existe para
+    documentos (api_doc_typ_put vs. api_doc_save)."""
+    _cargar_org_api(slug)
+    destino = _plantilla_o_404(slug, nombre)
+    core._escribir_texto_atomico(destino / "lib.typ", contenido)
+    _emitir_evento_sse({"tipo": "plantilla-guardada", "slug": slug, "nombre": nombre})
+    return {"ok": True}
+
+
 def api_template_delete(slug: str, nombre: str) -> dict:
     org = _cargar_org_api(slug)
     _plantilla_o_404(slug, nombre)
@@ -811,7 +933,16 @@ def _emitir_evento_sse(evento: dict) -> None:
     with _sse_lock:
         colas = list(_sse_colas)
     for cola in colas:
-        cola.put(payload)
+        # H3 (tinymist-implementation-plan.md, Fase 2.2): la cola tiene maxsize (ver _sse()) --
+        # un cliente que dejó de leer (pestaña congelada, red pausada) no debe acumular eventos
+        # sin límite. Descartar el evento para ESE cliente es correcto: todos los eventos
+        # actuales son re-sincronizables (org-changed/docs-changed disparan una recarga
+        # completa; editor-scroll-to/compile-status son puntuales y el próximo evento reemplaza
+        # al perdido).
+        try:
+            cola.put_nowait(payload)
+        except queue.Full:
+            pass
 
 
 def _eventos_loop(intervalo: float = 1.5) -> None:
@@ -891,6 +1022,9 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
         partes_url = urlsplit(self.path)
         if partes_url.path == "/api/events":
             self._sse()
+            return
+        if partes_url.path == "/api/lsp":
+            self._lsp_bridge(parse_qs(partes_url.query))
             return
         self._despachar("GET")
 
@@ -1089,6 +1223,11 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                 else:
                     self._error(405, "método no soportado")
                 return
+            if sub == "lib-typ-contenido" and len(segs) == 5 and metodo == "PUT":
+                # Fase 3.3: autoguardado -- distinto de PUT .../lib-typ (que siempre versiona).
+                cuerpo = self._leer_cuerpo_json()
+                self._json(200, api_template_libtyp_contenido_put(slug, nombre, cuerpo.get("contenido", "")))
+                return
             if sub == "miniatura" and len(segs) == 5 and metodo == "GET":
                 ruta_png = api_template_miniatura(slug, nombre)
                 self._binario(200, ruta_png.read_bytes(), "image/png")
@@ -1173,7 +1312,7 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.end_headers()
 
-        cola: queue.Queue = queue.Queue()
+        cola: queue.Queue = queue.Queue(maxsize=100)  # H3: acotada, ver _emitir_evento_sse
         with _sse_lock:
             _sse_colas.add(cola)
         try:
@@ -1189,6 +1328,99 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
         finally:
             with _sse_lock:
                 _sse_colas.discard(cola)
+
+    # ── Fase 1A: puente WS crudo navegador↔`tinymist lsp` (GET /api/lsp) ─────────────────
+    def _lsp_bridge(self, query: dict) -> None:
+        slug = (query.get("slug") or [None])[0]
+        tipo = (query.get("tipo") or ["doc"])[0]
+        codigo = (query.get("codigo") or [None])[0]
+        if not slug or not codigo or tipo not in ("doc", "plantilla"):
+            self._error(400, "faltan/son inválidos slug/codigo/tipo")
+            return
+
+        try:
+            if tipo == "plantilla":
+                root = _plantilla_o_404(slug, codigo)
+            else:
+                org = _cargar_org_api(slug)
+                _doc_o_404(org, codigo)
+                root = _ruta_typ_segura(slug, codigo).parent
+        except ApiError as e:
+            self._error(e.status, e.mensaje)
+            return
+
+        if not ws_server.es_peticion_upgrade(self.headers):
+            self._error(400, "se esperaba una petición de upgrade a WebSocket")
+            return
+        if not ws_server.realizar_handshake(self.headers, self.wfile):
+            self._error(400, "handshake WebSocket inválido")
+            return
+
+        font_dir = root / "fonts"
+        lsp = _asegurar_lsp(root, font_dir if font_dir.is_dir() else None)
+        if lsp is None:
+            # El handshake ya se aceptó (101) -- cerrar la conexión WS con un mensaje de error
+            # JSON-RPC propio en vez de dejar al navegador esperando indefinidamente.
+            conexion = ws_server.WebSocketServerConnection(self.rfile, self.wfile)
+            conexion.enviar_texto(json.dumps({
+                "jsonrpc": "2.0", "method": "$/doctyp/lspNoDisponible", "params": {},
+            }))
+            conexion.cerrar()
+            return
+
+        conexion = ws_server.WebSocketServerConnection(self.rfile, self.wfile)
+
+        def _hacia_navegador(datos: dict) -> None:
+            metodo = datos.get("method")
+            if metodo in _LSP_RESPUESTAS_LOCALES and "id" in datos:
+                # Excepción 2 de la Fase 1A: responder localmente, tinymist nunca ve al
+                # navegador para estos 3 métodos (ver _LSP_RESPUESTAS_LOCALES).
+                try:
+                    lsp.enviar_crudo(json.dumps({
+                        "jsonrpc": "2.0", "id": datos["id"],
+                        "result": _LSP_RESPUESTAS_LOCALES[metodo](datos),
+                    }, ensure_ascii=False).encode("utf-8"))
+                except LspServerError:
+                    pass
+                return
+            conexion.enviar_texto(json.dumps(datos, ensure_ascii=False))
+
+        # Reconexión (Fase 1A punto 4): reasociar esta conexión nueva como la activa para el
+        # proceso LSP vivo -- no hace falta un segundo `initialize`, el backend ya lo hizo una
+        # vez al arrancar el proceso.
+        with _lsp_lock:
+            lsp.on_message = _hacia_navegador
+
+        try:
+            while True:
+                mensaje = conexion.leer_mensaje()
+                if mensaje is None:
+                    break
+                _opcode, payload = mensaje
+                try:
+                    datos = json.loads(payload.decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+                metodo = datos.get("method")
+                if metodo == "workspace/executeCommand":
+                    # Excepción 1 de la Fase 1A: allowlist -- el puente no debe volverse un
+                    # ejecutor arbitrario (CLAUDE.md §6).
+                    comando = (datos.get("params") or {}).get("command")
+                    if comando not in _ALLOWLIST_COMANDOS_LSP:
+                        if "id" in datos:
+                            conexion.enviar_texto(json.dumps({
+                                "jsonrpc": "2.0", "id": datos["id"],
+                                "error": {"code": -32601, "message": f"comando no permitido: {comando}"},
+                            }))
+                        continue
+                try:
+                    lsp.enviar_crudo(payload)
+                except LspServerError:
+                    break
+        finally:
+            with _lsp_lock:
+                if lsp.on_message is _hacia_navegador:
+                    lsp.on_message = None
 
     # ── Estáticos (web/dist/, o placeholder si aún no existe la Etapa 5) ──────────────
     def _estaticos(self, segs: list[str]) -> None:
@@ -1282,4 +1514,5 @@ def cmd_web(args) -> None:
         core._ok("Servidor detenido.")
     finally:
         _detener_preview_activa()  # Plan 15 F2: cero procesos tinymist huérfanos al salir.
+        _detener_lsp_activo()  # Fase 1A: idem para el proceso `tinymist lsp`.
         servidor.server_close()

@@ -17,7 +17,7 @@ const props = defineProps({
   tipo: { type: String, default: "doc" }, // "doc" | "plantilla"
 });
 
-const emit = defineEmits(["no-disponible", "saltar-aqui"]);
+const emit = defineEmits(["no-disponible"]);
 
 const cargando = ref(true);
 const error = ref("");
@@ -54,15 +54,8 @@ onUnmounted(() => {
 
 <template>
   <div class="vista-previa">
-    <div class="vista-previa-toolbar">
-      <button v-if="cargando" disabled>Conectando con la vista previa…</button>
-      <button
-        v-else
-        title="Salto explícito: lleva la vista previa a la posición del cursor en el editor (Ctrl+Alt+J). No se hace automáticamente al mover el cursor ni al scrollear."
-        @click="emit('saltar-aqui')"
-      >
-        Ver posición del cursor (Ctrl+Alt+J)
-      </button>
+    <div v-if="cargando" class="vista-previa-toolbar">
+      <span class="estado">Conectando con la vista previa…</span>
     </div>
     <div v-if="error" class="vista-previa-error">
       <pre>{{ error }}</pre>
