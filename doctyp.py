@@ -955,10 +955,12 @@ def _muestra_typ_path(slug: str, nombre: str) -> Path:
     return plantilla_dir(slug, nombre) / f".{nombre}.muestra.typ"
 
 
-def generar_miniatura_plantilla(slug: str, nombre: str) -> Path | None:
-    """Miniatura de la plantilla: mantiene un .typ de muestra persistente (importa el lib.typ
-    real, no el temporal de preview), regenerado solo si lib.typ es más nuevo que la muestra
-    existente; delega el PNG cacheado a generar_miniatura() (Etapa 7, sin modificarla)."""
+def asegurar_muestra_typ(slug: str, nombre: str) -> Path | None:
+    """Materializa (o reutiliza si sigue vigente) el .typ de muestra persistente de una
+    plantilla -- importa el lib.typ real de la plantilla, no un texto temporal en memoria.
+    Usado por la miniatura (Etapa 7) y por la vista previa vía tinymist (Etapa 15, ver
+    doctyp_web.py): ambos necesitan un archivo real en disco, no solo el texto en memoria que
+    consumía el preview typst.ts (Etapa 11). None si la plantilla no tiene lib.typ."""
     dest_dir = plantilla_dir(slug, nombre)
     lib_path = dest_dir / "lib.typ"
     if not lib_path.exists():
@@ -966,6 +968,15 @@ def generar_miniatura_plantilla(slug: str, nombre: str) -> Path | None:
     muestra_path = _muestra_typ_path(slug, nombre)
     if not muestra_path.exists() or muestra_path.stat().st_mtime < lib_path.stat().st_mtime:
         muestra_path.write_text(build_typ(_muestra_meta(), "lib.typ"), encoding="utf-8")
+    return muestra_path
+
+
+def generar_miniatura_plantilla(slug: str, nombre: str) -> Path | None:
+    """Miniatura de la plantilla: delega el PNG cacheado a generar_miniatura() (Etapa 7, sin
+    modificarla) sobre el .typ de muestra persistente (ver asegurar_muestra_typ)."""
+    muestra_path = asegurar_muestra_typ(slug, nombre)
+    if muestra_path is None:
+        return None
     return generar_miniatura(muestra_path)
 
 
@@ -2607,6 +2618,9 @@ def build_parser() -> argparse.ArgumentParser:
     pw.add_argument("--no-build", action="store_true", dest="no_build",
                     help="No compilar la SPA (web/) antes de levantar el servidor; "
                          "usa el build existente en web/dist/ (o el placeholder).")
+    pw.add_argument("--legacy-preview", action="store_true", dest="legacy_preview",
+                    help="Fuerza la vista previa typst.ts (Etapa 12.1) en vez de tinymist, "
+                         "aunque el binario esté disponible. Sin clic↔cursor (Plan 15 F5/F6).")
     pw.set_defaults(func=_cmd_web)
 
     return p

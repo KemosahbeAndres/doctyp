@@ -22,9 +22,22 @@ from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote
 
 import doctyp as core
+from doctyp_preview_binary import resolver_tinymist_utilizable
+from doctyp_preview_server import PreviewServer, PreviewServerError
 
 WEB_DIR = core.SCRIPT_DIR / "web"
 WEB_DIST = WEB_DIR / "dist"
+
+# ── Plan 15: vista previa vía tinymist (F2/F3, extendido a plantillas) ────────────────────
+# Instancia única (un documento O una plantilla en preview a la vez -- ver PreviewServer).
+# Cambiar de recurso activo reinicia el subproceso (mismo criterio de "una preview a la vez"
+# que la Etapa 12 typst.ts). None si tinymist no está disponible o si nunca se pidió una
+# preview todavía (modo legacy hasta entonces). La clave es ("doc"|"plantilla", slug, nombre)
+# para no confundir un documento y una plantilla que compartan nombre.
+_preview_lock = threading.Lock()
+_preview_actual: PreviewServer | None = None
+_preview_recurso_actual: tuple[str, str, str] | None = None
+_preview_legacy_forzado = False  # `doctyp web --legacy-preview` (Plan 15 F8)
 
 _PLACEHOLDER_HTML = b"""<!doctype html>
 <html><head><meta charset="utf-8"><title>doctyp web</title></head>
@@ -223,6 +236,187 @@ def api_doc_typ_get(slug: str, codigo_base: str) -> str:
     if not ruta.exists():
         raise ApiError(404, f"el archivo del documento no existe: {ruta}")
     return ruta.read_text(encoding="utf-8")
+
+
+# ── Plan 15 F2/F3: gestión de la instancia de PreviewServer (una a la vez) ────────────────
+
+def _asegurar_preview_generico(
+    tipo: str, slug: str, nombre: str, main_typ: Path, root: Path,
+) -> PreviewServer | None:
+    """Devuelve el PreviewServer activo para (tipo, slug, nombre), arrancándolo o
+    reiniciándolo si hace falta. `tipo` es "doc" o "plantilla" (evita ambigüedad si un
+    documento y una plantilla comparten nombre). None si tinymist no está disponible O si
+    `--legacy-preview` lo forzó (F8) -- en ambos casos el frontend degrada a typst.ts."""
+    global _preview_actual, _preview_recurso_actual
+
+    if _preview_legacy_forzado:
+        return None
+
+    clave = (tipo, slug, nombre)
+    with _preview_lock:
+        if _preview_recurso_actual == clave and _preview_actual is not None \
+                and _preview_actual.is_running:
+            return _preview_actual
+
+        if resolver_tinymist_utilizable() is None:
+            return None
+
+        if not main_typ.exists():
+            raise ApiError(404, f"el archivo no existe: {main_typ}")
+
+        if _preview_actual is not None:
+            _preview_actual.stop()
+
+        font_dir = root / "fonts"
+        nuevo = PreviewServer(
+            main_typ=main_typ,
+            root=root,
+            font_dir=font_dir if font_dir.is_dir() else None,
+        )
+        # F5: clic→cursor -- el control plane vive en el backend (decisión confirmada con el
+        # usuario, ver F0 §5); acá se reexpone editorScrollTo hacia el frontend por SSE
+        # (/api/events, ya existente) en vez de exponer un WebSocket nuevo. Se agrega
+        # tipo/slug/nombre porque el frontend no conoce la ruta absoluta en disco -- comparar
+        # por esos campos es más simple y robusto que comparar filepaths.
+        nuevo.on_editor_scroll_to = lambda datos: _emitir_evento_sse(
+            {"tipo": "editor-scroll-to", "recurso_tipo": tipo, "slug": slug, "nombre": nombre, **datos}
+        )
+        try:
+            nuevo.start()
+        except PreviewServerError as e:
+            core._warn(f"no se pudo iniciar tinymist preview para '{nombre}': {e}")
+            _preview_actual = None
+            _preview_recurso_actual = None
+            return None
+
+        _preview_actual = nuevo
+        _preview_recurso_actual = clave
+        return nuevo
+
+
+def _asegurar_preview_doc(slug: str, codigo_base: str) -> PreviewServer | None:
+    ruta = _ruta_typ_segura(slug, codigo_base)
+    return _asegurar_preview_generico("doc", slug, codigo_base, ruta, ruta.parent)
+
+
+def _asegurar_preview_plantilla(slug: str, nombre: str) -> PreviewServer | None:
+    """A diferencia de un documento, `main_typ` es el .typ de MUESTRA materializado en disco
+    (ver core.asegurar_muestra_typ) -- el archivo que el usuario edita es lib.typ, importado
+    por la muestra, no el documento principal en sí (mismo patrón que el preview typst.ts,
+    Etapa 11, que ya distinguía "main.typ virtual" de "lib.typ en edición")."""
+    _cargar_org_api(slug)
+    _plantilla_o_404(slug, nombre)
+    muestra = core.asegurar_muestra_typ(slug, nombre)
+    if muestra is None:
+        raise ApiError(404, f"la plantilla '{nombre}' no tiene lib.typ")
+    return _asegurar_preview_generico("plantilla", slug, nombre, muestra, core.plantilla_dir(slug, nombre))
+
+
+def api_preview_info(slug: str | None, codigo_base: str | None) -> dict:
+    """GET /api/preview/info?slug=...&codigo=... -- arranca/reutiliza la preview de ese
+    documento y devuelve las URLs que el frontend necesita (F2 punto 2 del plan)."""
+    if not slug or not codigo_base:
+        return {"enabled": False}
+    servidor = _asegurar_preview_doc(slug, codigo_base)
+    if servidor is None:
+        return {"enabled": False}
+    return servidor.info()
+
+
+def api_preview_info_plantilla(slug: str | None, nombre: str | None) -> dict:
+    """GET /api/preview/plantilla/info?slug=...&nombre=... -- equivalente a api_preview_info
+    pero para plantillas (ver _asegurar_preview_plantilla: usa el .typ de muestra materializado
+    en disco, no el lib.typ que el usuario edita directamente)."""
+    if not slug or not nombre:
+        return {"enabled": False}
+    servidor = _asegurar_preview_plantilla(slug, nombre)
+    if servidor is None:
+        return {"enabled": False}
+    return servidor.info()
+
+
+def _preview_activa_para(tipo: str, slug: str, nombre: str) -> PreviewServer | None:
+    if _preview_recurso_actual != (tipo, slug, nombre) or _preview_actual is None \
+            or not _preview_actual.is_running:
+        return None
+    return _preview_actual
+
+
+def api_preview_update_memory(slug: str, codigo_base: str, contenido: str) -> dict:
+    """POST /api/preview/memory -- F6: recompila el .typ en memoria en el subproceso tinymist
+    SIN tocar el archivo en disco (verificado en F0/F2). Si la preview de este documento no
+    está activa (p. ej. el usuario nunca la abrió, o cayó tinymist), no hace nada -- no es un
+    error: la próxima vez que se pida /api/preview/info arrancará ya con el contenido guardado
+    en disco, que sigue siendo la fuente de verdad."""
+    with _preview_lock:
+        servidor = _preview_activa_para("doc", slug, codigo_base)
+        if servidor is None:
+            return {"ok": False, "motivo": "preview no activa para este documento"}
+        ruta = _ruta_typ_segura(slug, codigo_base)
+        try:
+            servidor.send_update_memory_files({str(ruta): contenido})
+        except PreviewServerError as e:
+            return {"ok": False, "motivo": str(e)}
+        return {"ok": True}
+
+
+def api_preview_update_memory_plantilla(slug: str, nombre: str, contenido: str) -> dict:
+    """POST /api/preview/plantilla/memory -- F6 para plantillas: el usuario edita lib.typ (no
+    el main.typ de la preview, que es la muestra) -- se envía el lib.typ editado en memoria;
+    tinymist lo recompila porque la muestra lo importa (#import "lib.typ": *, ver
+    core.build_typ). El archivo de muestra en disco NO se toca -- solo lib.typ vía memoria."""
+    with _preview_lock:
+        servidor = _preview_activa_para("plantilla", slug, nombre)
+        if servidor is None:
+            return {"ok": False, "motivo": "preview no activa para esta plantilla"}
+        lib_path = core.plantilla_dir(slug, nombre) / "lib.typ"
+        try:
+            servidor.send_update_memory_files({str(lib_path): contenido})
+        except PreviewServerError as e:
+            return {"ok": False, "motivo": str(e)}
+        return {"ok": True}
+
+
+def api_preview_jump(slug: str, codigo_base: str, line: int, character: int) -> dict:
+    """POST /api/preview/jump -- F6: salto explícito editor->preview (acción deliberada, NO se
+    dispara en cada movimiento de cursor -- ver plan 15.md §8 punto 2, regla del usuario de no
+    reintroducir sincronización automática). No garantiza un salto visible: el servidor ignora
+    en silencio posiciones que no resuelven a un span (comportamiento confirmado en F0/F5)."""
+    with _preview_lock:
+        servidor = _preview_activa_para("doc", slug, codigo_base)
+        if servidor is None:
+            return {"ok": False, "motivo": "preview no activa para este documento"}
+        ruta = _ruta_typ_segura(slug, codigo_base)
+        try:
+            servidor.send_panel_scroll_to(str(ruta), line, character)
+        except PreviewServerError as e:
+            return {"ok": False, "motivo": str(e)}
+        return {"ok": True}
+
+
+def api_preview_jump_plantilla(slug: str, nombre: str, line: int, character: int) -> dict:
+    """POST /api/preview/plantilla/jump -- salto explícito para plantillas. line/character son
+    posiciones dentro de lib.typ (el archivo que el usuario edita)."""
+    with _preview_lock:
+        servidor = _preview_activa_para("plantilla", slug, nombre)
+        if servidor is None:
+            return {"ok": False, "motivo": "preview no activa para esta plantilla"}
+        lib_path = core.plantilla_dir(slug, nombre) / "lib.typ"
+        try:
+            servidor.send_panel_scroll_to(str(lib_path), line, character)
+        except PreviewServerError as e:
+            return {"ok": False, "motivo": str(e)}
+        return {"ok": True}
+
+
+def _detener_preview_activa() -> None:
+    """Apagado limpio del subproceso al cerrar `doctyp web` (cmd_web, finally)."""
+    global _preview_actual, _preview_recurso_actual
+    with _preview_lock:
+        if _preview_actual is not None:
+            _preview_actual.stop()
+        _preview_actual = None
+        _preview_recurso_actual = None
 
 
 def api_doc_typ_put(slug: str, codigo_base: str, contenido: str) -> dict:
@@ -608,6 +802,18 @@ def _snapshot_mtimes() -> dict[str, float]:
     return snap
 
 
+def _emitir_evento_sse(evento: dict) -> None:
+    """Empuja `evento` a todas las conexiones SSE activas de inmediato (a diferencia de
+    _eventos_loop, que solo revisa periódicamente cambios de mtimes). Usado por el bridge de
+    Plan 15 F4/F5 para propagar editorScrollTo (clic→cursor) sin esperar al próximo tick del
+    polling -- la latencia ahí importa para que el salto del cursor se sienta inmediato."""
+    payload = f"data: {json.dumps(evento, ensure_ascii=False)}\n\n".encode("utf-8")
+    with _sse_lock:
+        colas = list(_sse_colas)
+    for cola in colas:
+        cola.put(payload)
+
+
 def _eventos_loop(intervalo: float = 1.5) -> None:
     anterior = _snapshot_mtimes()
     while True:
@@ -617,11 +823,7 @@ def _eventos_loop(intervalo: float = 1.5) -> None:
         if cambios:
             evento = {"tipo": "org-changed" if any(k.startswith("org:") for k in cambios)
                        else "docs-changed", "claves": sorted(cambios)}
-            payload = f"data: {json.dumps(evento, ensure_ascii=False)}\n\n".encode("utf-8")
-            with _sse_lock:
-                colas = list(_sse_colas)
-            for cola in colas:
-                cola.put(payload)
+            _emitir_evento_sse(evento)
         anterior = actual
 
 
@@ -705,6 +907,64 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
     def _api(self, metodo: str, segs: list[str], query: dict) -> None:
         if segs and segs[0] == "tipos-documento" and len(segs) == 1 and metodo == "GET":
             self._json(200, api_tipos_documento())
+            return
+
+        if segs and segs[0] == "preview" and len(segs) == 2 and segs[1] == "info" and metodo == "GET":
+            slug = (query.get("slug") or [None])[0]
+            codigo = (query.get("codigo") or [None])[0]
+            self._json(200, api_preview_info(slug, codigo))
+            return
+
+        if segs and segs[0] == "preview" and len(segs) == 2 and segs[1] == "memory" and metodo == "POST":
+            cuerpo = self._leer_cuerpo_json()
+            slug = cuerpo.get("slug")
+            codigo = cuerpo.get("codigo")
+            contenido = cuerpo.get("contenido")
+            if not slug or not codigo or contenido is None:
+                raise ApiError(400, "faltan slug/codigo/contenido")
+            self._json(200, api_preview_update_memory(slug, codigo, contenido))
+            return
+
+        if segs and segs[0] == "preview" and len(segs) == 2 and segs[1] == "jump" and metodo == "POST":
+            cuerpo = self._leer_cuerpo_json()
+            slug = cuerpo.get("slug")
+            codigo = cuerpo.get("codigo")
+            line = cuerpo.get("line")
+            character = cuerpo.get("character")
+            if not slug or not codigo or line is None or character is None:
+                raise ApiError(400, "faltan slug/codigo/line/character")
+            self._json(200, api_preview_jump(slug, codigo, line, character))
+            return
+
+        # Vista previa de PLANTILLAS (mismo API que documentos, ver _asegurar_preview_plantilla)
+        if segs and segs[0] == "preview" and len(segs) == 3 and segs[1] == "plantilla" \
+                and segs[2] == "info" and metodo == "GET":
+            slug = (query.get("slug") or [None])[0]
+            nombre = (query.get("nombre") or [None])[0]
+            self._json(200, api_preview_info_plantilla(slug, nombre))
+            return
+
+        if segs and segs[0] == "preview" and len(segs) == 3 and segs[1] == "plantilla" \
+                and segs[2] == "memory" and metodo == "POST":
+            cuerpo = self._leer_cuerpo_json()
+            slug = cuerpo.get("slug")
+            nombre = cuerpo.get("nombre")
+            contenido = cuerpo.get("contenido")
+            if not slug or not nombre or contenido is None:
+                raise ApiError(400, "faltan slug/nombre/contenido")
+            self._json(200, api_preview_update_memory_plantilla(slug, nombre, contenido))
+            return
+
+        if segs and segs[0] == "preview" and len(segs) == 3 and segs[1] == "plantilla" \
+                and segs[2] == "jump" and metodo == "POST":
+            cuerpo = self._leer_cuerpo_json()
+            slug = cuerpo.get("slug")
+            nombre = cuerpo.get("nombre")
+            line = cuerpo.get("line")
+            character = cuerpo.get("character")
+            if not slug or not nombre or line is None or character is None:
+                raise ApiError(400, "faltan slug/nombre/line/character")
+            self._json(200, api_preview_jump_plantilla(slug, nombre, line, character))
             return
 
         if not segs or segs[0] != "orgs":
@@ -990,8 +1250,12 @@ def _build_frontend() -> None:
 
 
 def cmd_web(args) -> None:
+    global _preview_legacy_forzado
     host = args.host or "127.0.0.1"
     port = args.port or 8787
+    _preview_legacy_forzado = getattr(args, "legacy_preview", False)
+    if _preview_legacy_forzado:
+        core._warn("--legacy-preview: se usará la vista previa typst.ts (sin clic↔cursor).")
 
     if not getattr(args, "no_build", False):
         try:
@@ -1017,4 +1281,5 @@ def cmd_web(args) -> None:
         print()
         core._ok("Servidor detenido.")
     finally:
+        _detener_preview_activa()  # Plan 15 F2: cero procesos tinymist huérfanos al salir.
         servidor.server_close()

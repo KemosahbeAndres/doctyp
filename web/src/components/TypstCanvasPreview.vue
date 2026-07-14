@@ -62,12 +62,6 @@ watch(
 onUnmounted(() => {
   if (temporizador) clearTimeout(temporizador);
 });
-
-// Etapa 12.4: expone el elemento con scroll real (.vista-previa-canvas) para que el padre
-// (DocEditor/TemplateEditor) pueda sincronizarlo con el scroll del editor de código.
-defineExpose({
-  getScroller: () => contenedor.value,
-});
 </script>
 
 <template>

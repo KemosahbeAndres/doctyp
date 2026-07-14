@@ -4,10 +4,17 @@ import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { typstLanguage, typstHighlighting } from "../codemirror/typst-lang.js";
+import { ultimoEditorScrollTo } from "../composables/editorScrollToBus.js";
 
 const props = defineProps({
   modelValue: { type: String, default: "" },
   disabled: { type: Boolean, default: false },
+  // Plan 15 F5: slug/codigo/tipo del recurso que este editor tiene abierto -- para filtrar el
+  // evento clic→cursor (editor-scroll-to) y reaccionar solo si es de ESTE recurso, no del de
+  // otra pestaña/vista. Opcionales por si algún editor no participa de clic→cursor.
+  slug: { type: String, default: null },
+  codigo: { type: String, default: null },
+  tipo: { type: String, default: "doc" }, // "doc" | "plantilla" -- debe calzar con recurso_tipo del evento
 });
 
 const emit = defineEmits(["update:modelValue"]);
@@ -68,14 +75,38 @@ watch(
   },
 );
 
+// Plan 15 F5: clic→cursor. El evento llega con recurso_tipo/slug/nombre + start:[fila,col]
+// (0-based, confirmado en plan15_notas.md §4.1 contra el código fuente de tinymist). Se
+// ignora si no es de este recurso (p. ej. un documento resolvió a lib.typ de una plantilla, o
+// el usuario tiene otro documento/plantilla abierto) o si este editor no participa (slug/codigo
+// no provistos, ver arriba).
+watch(ultimoEditorScrollTo, (evento) => {
+  if (!evento || !view || !props.slug || !props.codigo) return;
+  if (evento.recurso_tipo !== props.tipo || evento.slug !== props.slug || evento.nombre !== props.codigo) return;
+  if (!evento.start) return;
+  const [fila, columna] = evento.start;
+  const linea = view.state.doc.line(Math.min(fila + 1, view.state.doc.lines));
+  const pos = Math.min(linea.from + columna, linea.to);
+  view.dispatch({
+    selection: { anchor: pos },
+    scrollIntoView: true,
+  });
+  view.focus();
+});
+
 onUnmounted(() => {
   view?.destroy();
 });
 
-// Etapa 12.4: expone el elemento con scroll real de CodeMirror (.cm-scroller) para que el
-// padre (DocEditor/TemplateEditor) pueda sincronizarlo con el scroll de la vista previa.
+// Plan 15 F6: expone la posición actual del cursor (línea/columna 0-based, mismo criterio que
+// editorScrollTo) para el salto explícito editor→preview.
 defineExpose({
-  getScroller: () => view?.scrollDOM ?? null,
+  getPosicionCursor: () => {
+    if (!view) return null;
+    const pos = view.state.selection.main.head;
+    const linea = view.state.doc.lineAt(pos);
+    return { line: linea.number - 1, character: pos - linea.from };
+  },
 });
 </script>
 

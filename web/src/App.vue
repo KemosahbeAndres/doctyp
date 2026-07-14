@@ -12,6 +12,7 @@ import OrgManager from "./components/OrgManager.vue";
 import PlantillaGrid from "./components/PlantillaGrid.vue";
 import TemplateEditor from "./components/TemplateEditor.vue";
 import NewTemplateModal from "./components/NewTemplateModal.vue";
+import { emitirEditorScrollTo } from "./composables/editorScrollToBus.js";
 
 const orgs = ref([]);
 const orgSlug = ref(null);
@@ -237,6 +238,9 @@ onMounted(() => {
     } else if (evento.tipo === "org-changed") {
       cargarOrgs();
       cargarAutores();
+    } else if (evento.tipo === "editor-scroll-to") {
+      console.log("[DEBUG] editor-scroll-to recibido por SSE:", evento); // TEMP
+      emitirEditorScrollTo(evento);
     }
   });
 });

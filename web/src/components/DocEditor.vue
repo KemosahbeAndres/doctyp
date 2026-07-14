@@ -1,11 +1,14 @@
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from "vue";
-import { getTyp, putTyp, guardarVersion, compilar, getArchivosDoc, getArchivoDoc } from "../api.js";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import {
+  getTyp, putTyp, guardarVersion, compilar, getArchivosDoc, getArchivoDoc,
+  actualizarMemoriaPreview, saltarAPosicionPreview,
+} from "../api.js";
 import MetaEditorModal from "./MetaEditorModal.vue";
 import StatusBar from "./StatusBar.vue";
 import TypstCanvasPreview from "./TypstCanvasPreview.vue";
+import TinymistPreview from "./TinymistPreview.vue";
 import CodeEditor from "./CodeEditor.vue";
-import { useScrollSync } from "../composables/useScrollSync.js";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -13,6 +16,12 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["sucio-cambio", "cambio-en-servidor"]);
+
+// Plan 15 F3/F8: tinymist es el motor de preview por defecto; si no está disponible en el
+// backend (sin binario instalado, ver doctyp_preview_binary.py), se degrada a la vista previa
+// typst.ts existente (Etapa 12.1) sin que el usuario pierda funcionalidad, solo sin
+// clic↔cursor (F5/F6, no implementados en ese modo -- ver informe ETAPA-12-CLICK-TO-JUMP.md).
+const usarPreviewLegacy = ref(false);
 
 async function cargarArchivosDoc(slug, codigo, texto) {
   const rutas = (await getArchivosDoc(slug, codigo)).filter((r) => !r.startsWith("fonts/"));
@@ -130,22 +139,43 @@ async function compilarDoc() {
   }
 }
 
-// Etapa 12.4: scroll sincronizado "a la par" entre el editor de código y la vista previa. El
-// contenedor del preview conserva su identidad entre compilaciones (solo cambia su innerHTML),
-// así que basta con conectar una vez que los hijos existen en el DOM -- no hace falta
-// reconectar en cada recompilación. `codigo` empieza en null (nada montado detrás de
-// v-if="!codigo") así que se reconecta también cuando pasa a tener valor, no solo en onMounted.
 const refEditor = ref(null);
-const refPreview = ref(null);
-const { reconectar } = useScrollSync(
-  () => refEditor.value?.getScroller() ?? null,
-  () => refPreview.value?.getScroller() ?? null,
-);
-onMounted(reconectar);
-watch(
-  () => props.codigo,
-  () => nextTick(reconectar),
-);
+
+// Plan 15 F6: mientras el usuario tipea (sin guardar), se envía el contenido al subproceso de
+// preview vía updateMemoryFiles (recompila en memoria, sin tocar el .typ en disco). Debounce
+// para no saturar con cada tecla. Regla explícita del usuario (§0/§8 del plan): esto reemplaza
+// el "compilar al tipear" de la Etapa 12.1/typst.ts -- NO es lo mismo que el scroll sync
+// eliminado (F7): acá solo se envía contenido, nunca se mueve el cursor/scroll automáticamente.
+let temporizadorMemoria = null;
+watch(texto, (nuevo) => {
+  if (usarPreviewLegacy.value || !props.codigo) return; // legacy usa su propio debounce interno
+  if (temporizadorMemoria) clearTimeout(temporizadorMemoria);
+  temporizadorMemoria = setTimeout(() => {
+    actualizarMemoriaPreview(props.slug, props.codigo, nuevo).catch(() => {
+      // silencioso: si la preview no está activa (p. ej. tinymist cayó), no hay nada que
+      // reportar -- la próxima vez que se abra la preview arrancará con el contenido guardado.
+    });
+  }, 300);
+});
+
+// Plan 15 F6: salto explícito cursor→preview (acción deliberada, NUNCA automática en scroll --
+// regla del usuario). Atajo Ctrl+Alt+J, ajustable si choca con alguna convención del navegador.
+function saltarEnPreview() {
+  if (usarPreviewLegacy.value || !props.codigo) return;
+  const pos = refEditor.value?.getPosicionCursor();
+  if (!pos) return;
+  saltarAPosicionPreview(props.slug, props.codigo, pos.line, pos.character).catch(() => {});
+}
+
+function onKeydownGlobal(ev) {
+  if (ev.ctrlKey && ev.altKey && ev.key.toLowerCase() === "j") {
+    ev.preventDefault();
+    saltarEnPreview();
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onKeydownGlobal));
+onUnmounted(() => window.removeEventListener("keydown", onKeydownGlobal));
 
 function onMetaGuardado(res) {
   // El backend ya escribió el .typ en disco (incluye el patch de metadatos) -- resincronizamos
@@ -168,8 +198,28 @@ function onMetaGuardado(res) {
         {{ mensaje }}
       </div>
       <div class="editor-preview-split">
-        <CodeEditor ref="refEditor" class="editor-textarea" v-model="texto" :disabled="cargando" />
-        <TypstCanvasPreview ref="refPreview" :slug="slug" :codigo="codigo" :texto="texto" :cargar-archivos="cargarArchivosDoc" />
+        <CodeEditor
+          ref="refEditor"
+          class="editor-textarea"
+          v-model="texto"
+          :disabled="cargando"
+          :slug="slug"
+          :codigo="codigo"
+        />
+        <TinymistPreview
+          v-if="!usarPreviewLegacy"
+          :slug="slug"
+          :codigo="codigo"
+          @no-disponible="usarPreviewLegacy = true"
+          @saltar-aqui="saltarEnPreview"
+        />
+        <TypstCanvasPreview
+          v-else
+          :slug="slug"
+          :codigo="codigo"
+          :texto="texto"
+          :cargar-archivos="cargarArchivosDoc"
+        />
       </div>
       <StatusBar
         :slug="slug"

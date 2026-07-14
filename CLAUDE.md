@@ -224,7 +224,7 @@ doctyp reset [<correlativo>]                  # inicio del correlativo del año 
 ### Web
 
 ```bash
-doctyp web [--port 8787] [--host 127.0.0.1] [--no-browser]  # (alias: serve)
+doctyp web [--port 8787] [--host 127.0.0.1] [--no-browser] [--no-build] [--legacy-preview]  # (alias: serve)
 ```
 
 ### Sintaxis doc-ref
@@ -263,6 +263,12 @@ doctyp web [--port 8787] [--host 127.0.0.1] [--no-browser]  # (alias: serve)
   plantillas) y `DOCS_ROOT` (`<Documentos>/doctyp/`) — sin path traversal fuera de ellas;
   escrituras del registro atómicas; sin ejecución de comandos arbitrarios desde la API; la
   compilación vía web reutiliza exactamente la lógica de `doctyp compile`.
+- **Vista previa (Etapa 15):** el editor de documentos usa `tinymist preview` como servidor
+  standalone (subproceso supervisado por `doctyp_preview_server.py`), con clic↔cursor
+  bidireccional real y memoria en vivo — ver la nota de la Etapa 15 en §14 para el detalle
+  completo del protocolo y la arquitectura. Degrada automáticamente a la vista previa typst.ts
+  (Etapa 12) si `tinymist` no está instalado, o si se pasa `--legacy-preview`. El editor de
+  **plantillas** sigue siempre en modo typst.ts (fuera del alcance de la Etapa 15).
 - Claude Code **no levanta el servidor por su cuenta** salvo petición explícita.
 
 ---
@@ -431,9 +437,10 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 9 | Editor de plantillas con CRUD completo y seleccion de plantilla en el modal al crear documento nuevo. Usar vista dividida: editor y vista previa similar a typst. Al editar una plantilla se debera mostrar un documento. Explorar otras soluciones de compilado/precompilado/vistaprevia/cache. | **Completada** |
 | 10 | Editor de plantillas en el cliente web debe poder accederse desde pantalla principal con boton junto al boton 'organizacion' y la vista debe ser a pantalla completa como el editor de documentos. El editor de texto/codigo debe mostrar en colores los codigos/funciones/variables de typst como un editor de codigo moderno. La division por colores permite una mejor edicion para el usuario. Usar la convencion de colores de Typst y/o la que usa VSCode con la extension de Typst. | **Completada** |
 | 11 | Cambiar renderizado de vista previa en el cliente web (editor documentos y editor plantillas) por un renderizado de typst WASM (typst.ts) dentro del cliente web, a HTML `<canvas>`, con el mismo botón de actualizar vista previa en la barra de estado. Sin click-to-jump (ver Etapa 12). | **Completada** |
-| 12 | Sincronización bidireccional clic↔cursor entre el editor y la vista previa (click-to-jump). Dividida en sub-etapas (ver nota debajo de la tabla): 12.1 migración canvas→SVG (**Completada**), 12.2 clic→cursor (**Bloqueada** — causa raíz confirmada: `SHOULD_ATTACH_DEBUG_INFO` hardcodeado a `false` en el código fuente de typst.ts, no activable desde npm), 12.3 cursor→preview (metadata por párrafo + `query()`, pendiente), 12.4 scroll sincronizado "a la par" (**Completada**), 12.5 pulido/verificación final (pendiente). Aplica a editor de documentos y editor de plantillas. | En curso |
-| 13 | FIX. En el canvas de renderizado no puede hacerse scroll horizontal, el documento debe ocupar todo el espacio en ese eje. | Pendiente |
-| 14 | FIX. El debounce no debe re-renderizar el documento sino guardar el documento en caso que tenga cambios. Si el documento tiene cambios se guarda y despues de guardar se re-renderiza el documento. | Pendiente |
+| 12 | Sincronización bidireccional clic↔cursor entre el editor y la vista previa (click-to-jump) vía typst.ts/canvas en el navegador. **Reemplazada por la Etapa 15** (ver nota debajo de la tabla): 12.1-12.4 quedan como historial (canvas→SVG, bloqueo de `data-span`, scroll sync ya retirado en 15/F7); 12.2/12.3 (clic↔cursor) se resolvieron por una vía distinta (servidor `tinymist preview` standalone, no typst.ts en el navegador). Solo aplica hoy al editor de **plantillas** (modo legacy); el editor de **documentos** usa el motor de la Etapa 15. | Reemplazada por Etapa 15 |
+| 13 | FIX. En el canvas de renderizado no puede hacerse scroll horizontal, el documento debe ocupar todo el espacio en ese eje. | Pendiente (aplica solo al modo legacy typst.ts, ver Etapa 15) |
+| 14 | FIX. El debounce no debe re-renderizar el documento sino guardar el documento en caso que tenga cambios. Si el documento tiene cambios se guarda y despues de guardar se re-renderiza el documento. | Pendiente (aplica solo al modo legacy typst.ts, ver Etapa 15) |
+| 15 | Preview vía servidor standalone (`tinymist preview`) lanzado por `doctyp`: clic↔cursor bidireccional real, memoria en vivo (sin guardar), salto explícito editor→preview, eliminación del scroll sync automático (Etapa 12.4). Ver nota debajo de la tabla y `plan15_progreso.md` (registro completo de la ejecución, incluye hallazgos de protocolo y bugs corregidos). | **Completada** |
 
 
 **Nota sobre el alcance real de la Etapa 12** (investigación hecha leyendo el paquete instalado
@@ -520,6 +527,72 @@ hipótesis con Playwright real contra `doctyp web`, no solo por lectura de códi
 - **12.5**: pulido y verificación final, incluida una revisión de si el cambio a `renderSvg`
   afecta el tiempo de "primer vistazo" optimizado en la Etapa 11 (el cache de artefactos WASM
   sigue aplicando sin cambios; solo cambió la etapa de *render* final).
+- **⚠ Retirado en la Etapa 15 (F7)**: el scroll sync de 12.4 (`useScrollSync.js`,
+  `getScroller()` en `CodeEditor.vue`/`TypstCanvasPreview.vue`) se **eliminó por completo** del
+  editor de documentos al migrar a tinymist, y también del editor de plantillas (aunque siga en
+  typst.ts) porque el motivo original — "se desfasa respecto al contenido renderizado" — aplica
+  igual ahí. No queda código de esto en el repo; ver Etapa 15 más abajo.
+
+**Nota sobre el alcance real de la Etapa 15** (`tinymist preview` como servidor standalone de
+vista previa; investigación y ejecución completas en `plan15_notas.md`/`plan15_progreso.md` —
+ambos archivos de trabajo, no forman parte del código, conservar o borrar a criterio del
+usuario):
+- **Arquitectura real**: `doctyp_web.py` lanza y supervisa `tinymist preview` (nuevos módulos
+  `doctyp_preview_binary.py` — localización/versión del binario — y `doctyp_preview_server.py` —
+  ciclo de vida del subproceso, reintentos, puertos). El **control plane** (WebSocket JSON de
+  navegación) lo mantiene vivo el **backend**, no el navegador — decisión explícita del usuario
+  tras confirmar que `tinymist preview` se autoapaga por completo si esa conexión se cierra. El
+  bridge hacia el frontend reusa el mecanismo SSE ya existente (`/api/events`), no expone un
+  WebSocket nuevo.
+- **Cliente WebSocket propio** (`doctyp_ws_client.py`): el proyecto es stdlib puro (sin
+  dependencias externas) y Python no trae cliente WS, así que se implementó uno mínimo (RFC
+  6455: handshake + framing de frames de texto/binario/ping-pong/close) en vez de agregar una
+  dependencia — decisión confirmada con el usuario.
+- **Protocolo real** (confirmado contra `tinymist 0.15.2`, no asumido): dos WebSockets —
+  *data plane* (mismo puerto sirve también el HTML estático del preview; framing binario
+  `"<prefijo>,<payload>"`) y *control plane* (JSON `{"event": "...", ...}`). Clic→cursor:
+  el frontend embebido de tinymist manda `src-point {page_no,x,y}` por el data plane → el
+  servidor resuelve y responde `editorScrollTo {filepath,start:[fila,col],end:[...]}` (0-based)
+  por el control plane. Editor→preview: `panelScrollTo {filepath,line,character}` por el control
+  plane → `jump "<pagina> <x> <y>"` (texto plano, no JSON) por el data plane.
+  `changeCursorPosition` está deshabilitado server-side ("temporarily disabled to improve
+  overall performance") — no se implementó, no tiene efecto en esta versión.
+- **Puertos**: `tinymist preview` sin flags de host explícitos NO garantiza puertos libres
+  entre instancias (se probó: dos instancias simultáneas intentaron los mismos puertos "por
+  defecto" y colisionaron) — `doctyp_preview_server.py` sondea puertos libres reales
+  (`socket.bind(("127.0.0.1", 0))`) y los pasa explícitos. Además, `tinymist` hace `.unwrap()`
+  sobre el bind del socket y aborta con SIGABRT (no error recuperable) ante cualquier colisión
+  — de ahí la importancia de evitarla, no solo manejarla después.
+- **Endpoints nuevos en `doctyp_web.py`**: `GET /api/preview/info?slug=&codigo=` (arranca/
+  reutiliza la preview de ese documento, devuelve `{enabled, static_url}`); `POST
+  /api/preview/memory` (contenido no guardado → recompila en memoria, verificado que no toca
+  el `.typ` en disco); `POST /api/preview/jump` (salto explícito). Una sola instancia de
+  `PreviewServer` a la vez (mismo criterio que la preview de la Etapa 12 typst.ts) — cambiar de
+  documento activo detiene la anterior y lanza una nueva.
+- **Frontend**: `TinymistPreview.vue` reemplaza a `TypstCanvasPreview.vue` en `DocEditor.vue`
+  (documentos) — monta un `<iframe>` con el `static_url`. Si tinymist no está disponible (sin
+  binario, o `doctyp web --legacy-preview`), degrada a `TypstCanvasPreview`/typst.ts sin
+  clic↔cursor. `editorScrollToBus.js` es un bus mínimo (un solo `ref` reactivo) para que el
+  evento SSE, recibido en `App.vue` (raíz del árbol), llegue hasta `CodeEditor.vue` sin
+  tunelizar por cada componente intermedio — el proyecto no usa un store (Vuex/Pinia).
+- **`TemplateEditor.vue` (plantillas) queda fuera del alcance**, en modo legacy typst.ts sin
+  clic↔cursor: su vista previa es un documento de muestra generado en memoria
+  (`core.build_typ(_muestra_meta(), "lib.typ")`), sin una ruta de archivo persistente que darle
+  a `tinymist preview --root` — extenderlo requiere decidir dónde materializar ese documento de
+  muestra en disco, una decisión de diseño no cubierta por el plan original.
+- **Flag `doctyp web --legacy-preview`**: fuerza typst.ts aunque tinymist esté disponible.
+  Config `local.preview_tinymist_path` en `settings.json` (mismo patrón que
+  `local.org_activa`/`local.autor_activo`) para fijar la ruta del binario si no está en el PATH.
+- **Verificación**: toda la investigación y cada fase se probaron contra una instalación real
+  de `tinymist 0.15.2` (descargada temporalmente para desarrollo, fuera del repo) y Playwright
+  real contra `doctyp web` levantado de verdad — no solo lectura de código. Se encontraron y
+  corrigieron 3 bugs reales durante la implementación (deadlock de lock no reentrante en
+  `PreviewServer.start()`, doble reinicio por condición de carrera entre el lector de stdout y
+  el cliente WS, colisión de puertos por defecto) — detalle completo en `plan15_progreso.md`.
+  **Importante para depuración futura de este subsistema**: cerrar siempre `doctyp web` con
+  SIGINT (Ctrl+C), nunca `pkill -9` directo al proceso Python — eso saltea el `finally` que
+  detiene el subproceso `tinymist` y puede dejar procesos huérfanos relanzándose solos vía el
+  mecanismo de reintento automático.
 
 **Nota sobre el alcance real de las Etapas 2 y 3** (decisión explícita, amplía lo descrito arriba):
 - Todos los comandos (`new`, `save`, `compile`, `edit`, `add`, `delete`, `import`, `history`,

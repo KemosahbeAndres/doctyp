@@ -244,6 +244,53 @@ export function compilar(slug, codigo, mensaje) {
   });
 }
 
+/** Plan 15 F3: arranca/reutiliza la vista previa vía tinymist para (slug, codigo) y devuelve
+ * {enabled, static_url} -- enabled:false si tinymist no está disponible (modo legacy). */
+export function getPreviewInfo(slug, codigo) {
+  return request(`/api/preview/info?slug=${enc(slug)}&codigo=${enc(codigo)}`);
+}
+
+/** Plan 15 F6: recompila el contenido no guardado en el subproceso de preview (sin tocar
+ * disco). {ok:false} si la preview de este documento no está activa -- no es un error. */
+export function actualizarMemoriaPreview(slug, codigo, contenido) {
+  return request("/api/preview/memory", {
+    method: "POST",
+    body: JSON.stringify({ slug, codigo, contenido }),
+  });
+}
+
+/** Plan 15 F6: salto explícito cursor->preview. line/character son 0-based (mismo criterio
+ * que editorScrollTo). {ok:false} si la preview no está activa o la posición no resuelve a
+ * ningún span visible (comportamiento normal del servidor, no error). */
+export function saltarAPosicionPreview(slug, codigo, line, character) {
+  return request("/api/preview/jump", {
+    method: "POST",
+    body: JSON.stringify({ slug, codigo, line, character }),
+  });
+}
+
+/** Equivalentes a getPreviewInfo/actualizarMemoriaPreview/saltarAPosicionPreview, pero para
+ * plantillas -- ver _asegurar_preview_plantilla en doctyp_web.py (usa el .typ de muestra
+ * materializado en disco; line/character son posiciones dentro de lib.typ, el archivo que el
+ * usuario edita, no el main.typ de la preview). */
+export function getPreviewInfoPlantilla(slug, nombre) {
+  return request(`/api/preview/plantilla/info?slug=${enc(slug)}&nombre=${enc(nombre)}`);
+}
+
+export function actualizarMemoriaPreviewPlantilla(slug, nombre, contenido) {
+  return request("/api/preview/plantilla/memory", {
+    method: "POST",
+    body: JSON.stringify({ slug, nombre, contenido }),
+  });
+}
+
+export function saltarAPosicionPreviewPlantilla(slug, nombre, line, character) {
+  return request("/api/preview/plantilla/jump", {
+    method: "POST",
+    body: JSON.stringify({ slug, nombre, line, character }),
+  });
+}
+
 /** Se suscribe a /api/events (SSE). Devuelve una función para cancelar la suscripción. */
 export function suscribirEventos(onEvento) {
   const fuente = new EventSource("/api/events");

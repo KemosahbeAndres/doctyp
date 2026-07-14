@@ -1,13 +1,14 @@
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import {
   getPlantillaLibTyp, guardarPlantillaLibTyp,
   getHistoriaPlantilla, getVersionContenidoPlantilla,
   getArchivosPlantilla, getArchivoPlantilla, getMuestraPlantilla,
+  actualizarMemoriaPreviewPlantilla, saltarAPosicionPreviewPlantilla,
 } from "../api.js";
 import TypstCanvasPreview from "./TypstCanvasPreview.vue";
+import TinymistPreview from "./TinymistPreview.vue";
 import CodeEditor from "./CodeEditor.vue";
-import { useScrollSync } from "../composables/useScrollSync.js";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -15,6 +16,11 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["sucio-cambio", "guardado"]);
+
+// Plan 15 (extensión): tinymist es el motor de preview por defecto también para plantillas;
+// si no está disponible, degrada a typst.ts (Etapa 12.1), igual que DocEditor.vue.
+const usarPreviewLegacy = ref(false);
+const refEditor = ref(null);
 
 const texto = ref("");
 const original = ref("");
@@ -56,20 +62,6 @@ async function cargarHistoria() {
     mensajeEsError.value = true;
   }
 }
-
-// Etapa 12.4: scroll sincronizado "a la par" entre el editor de código y la vista previa (mismo
-// mecanismo que DocEditor.vue -- ver useScrollSync.js). Los hijos están detrás de
-// v-if="cargando" (oculto hasta que `cargar()` termina), así que reconectar debe esperar a que
-// `cargando` pase a false, no alcanza con onMounted.
-const refEditor = ref(null);
-const refPreview = ref(null);
-const { reconectar } = useScrollSync(
-  () => refEditor.value?.getScroller() ?? null,
-  () => refPreview.value?.getScroller() ?? null,
-);
-watch(cargando, (v) => {
-  if (!v) nextTick(reconectar);
-});
 
 onMounted(() => {
   cargar();
@@ -136,9 +128,8 @@ async function cargarArchivosPlantilla(slug, nombre, texto) {
         {{ mensaje }}
       </div>
       <div class="editor-preview-split">
-        <CodeEditor ref="refEditor" class="editor-textarea" v-model="texto" />
+        <CodeEditor class="editor-textarea" v-model="texto" />
         <TypstCanvasPreview
-          ref="refPreview"
           :slug="slug"
           :codigo="nombre"
           :texto="texto"
