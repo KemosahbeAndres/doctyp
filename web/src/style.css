@@ -307,10 +307,21 @@ button.primary {
   background: var(--bg-panel);
 }
 
-.vista-previa-canvas canvas {
+/* Etapa 12.1: el render pasó de <canvas> por página (Etapa 11) a un único <svg class="typst-doc">
+   con un <g> por página (renderToSvg, necesario para el data-span del click-to-jump). Cada <g>
+   de página se le agrega manualmente la clase .pagina-typst en JS para poder separarlas
+   visualmente igual que antes (una tarjeta con sombra por página). */
+.vista-previa-canvas svg.typst-doc {
   display: block;
-  margin: 0.5em auto;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  margin: 0 auto;
+}
+
+.vista-previa-canvas .pagina-typst {
+  cursor: text;
+}
+
+.vista-previa-canvas .pagina-typst > rect:first-child {
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.25));
 }
 
 .vista-previa-error {

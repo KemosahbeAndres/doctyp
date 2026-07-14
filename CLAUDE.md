@@ -431,10 +431,62 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 9 | Editor de plantillas con CRUD completo y seleccion de plantilla en el modal al crear documento nuevo. Usar vista dividida: editor y vista previa similar a typst. Al editar una plantilla se debera mostrar un documento. Explorar otras soluciones de compilado/precompilado/vistaprevia/cache. | **Completada** |
 | 10 | Editor de plantillas en el cliente web debe poder accederse desde pantalla principal con boton junto al boton 'organizacion' y la vista debe ser a pantalla completa como el editor de documentos. El editor de texto/codigo debe mostrar en colores los codigos/funciones/variables de typst como un editor de codigo moderno. La division por colores permite una mejor edicion para el usuario. Usar la convencion de colores de Typst y/o la que usa VSCode con la extension de Typst. | **Completada** |
 | 11 | Cambiar renderizado de vista previa en el cliente web (editor documentos y editor plantillas) por un renderizado de typst WASM (typst.ts) dentro del cliente web, a HTML `<canvas>`, con el mismo botón de actualizar vista previa en la barra de estado. Sin click-to-jump (ver Etapa 12). | **Completada** |
-| 12 | Sincronización bidireccional clic↔cursor entre el editor y la vista previa (click-to-jump): clic en el `<canvas>` renderizado mueve el cursor del editor a la posición fuente correspondiente, y mover el cursor en el editor resalta/hace scroll a la posición correspondiente en la vista previa en tiempo real. Al hacer girar la rueda del mouse se aplica lo mismo, ambas secciones deben hacer scroll sincronizado. Aplica a editor de documentos y editor de plantillas. | Pendiente |
+| 12 | Sincronización bidireccional clic↔cursor entre el editor y la vista previa (click-to-jump). Dividida en sub-etapas (ver nota debajo de la tabla): 12.1 migración canvas→SVG (**Completada** — no fue a modo DOM como se planeó originalmente, ver nota), 12.2 clic→cursor (**Bloqueada** — `data-span` no aparece en esta versión del paquete, pendiente investigar), 12.3 cursor→preview (metadata por párrafo + `query()`), 12.4 scroll con rueda sincronizado, 12.5 pulido/verificación final. Aplica a editor de documentos y editor de plantillas. | En curso |
 | 13 | FIX. En el canvas de renderizado no puede hacerse scroll horizontal, el documento debe ocupar todo el espacio en ese eje. | Pendiente |
 | 14 | FIX. El debounce no debe re-renderizar el documento sino guardar el documento en caso que tenga cambios. Si el documento tiene cambios se guarda y despues de guardar se re-renderiza el documento. | Pendiente |
 
+
+**Nota sobre el alcance real de la Etapa 12** (investigación hecha leyendo el paquete instalado
+— `node_modules/@myriaddreamin/**/*.mjs`, `strings` sobre los `.wasm` — Y verificando cada
+hipótesis con Playwright real contra `doctyp web`, no solo por lectura de código):
+
+- **12.1 completada.** `renderToCanvas` (Etapa 11) es canvas puro: no adjunta ninguna
+  posición-fuente a los píxeles, así que no hay forma de mapear clic→cursor con ese modo. Se
+  reemplazó por `renderer.renderSvg({artifactContent})` (`client.js`, `_compilarYRenderizar` →
+  `renderEnContenedor`), que retorna un string SVG completo (`<svg class="typst-doc">` con un
+  `<g class="pagina-typst">` por página, clase agregada a mano tras insertar el SVG) e
+  `innerHTML` sobre el contenedor. Verificado con Playwright que el resultado visual es
+  equivalente al canvas anterior en documento real y en plantilla (capturas descartadas tras
+  validar, no quedaron en el repo).
+  - **Se descartó `renderToSvg`** (la variante que manipula el `container` real directamente
+    desde Rust, en vez de retornar un string): panickea de forma reproducible en
+    `@myriaddreamin/typst-ts-renderer@0.7.x` (`Option::unwrap() on a None value` en
+    `render/svg.rs:132`), deja la sesión WASM corrupta (`attempted to take ownership of Rust
+    value while it was borrowed` en la siguiente llamada) y el contenedor queda oculto por
+    `error.value` con ese mensaje. `renderSvg` (string + `innerHTML` manual) evita ese código y
+    no ha mostrado el problema.
+  - **Se descartó el modo `renderDom`/`mount_dom`** (viewport incremental): confirmado con
+    Playwright que sin implementar el protocolo completo de actualización incremental
+    (`doc.addChangement(['new'|'diff-v1', artefacto])` seguido de `doc.addViewportChange()`,
+    ver `contrib/dom/typst-doc.mjs`) el documento nunca se pinta — se queda en
+    `moduleInitialized=false` para siempre (log `"viewport-change before initialization"`),
+    incluso pasando `artifactContent` directo en `renderDom(...)`. Ese modo está diseñado para
+    servir diffs incrementales desde un servidor en vivo, no para "aquí está todo el artefacto,
+    píntalo de una vez" (nuestro caso).
+- **12.2 (clic→cursor) sigue bloqueada** por un hallazgo nuevo, distinto del plan original:
+  **ninguna combinación probada produce el atributo `data-span`** en esta versión del paquete.
+  Se probó (todas verificadas con Playwright, inspeccionando `element.attributes` en vivo):
+  `renderSvg`/`renderToSvg` con compilación simple (`compiler.compile({format:'vector'})`);
+  la misma compilación envuelta en `compiler.withIncrementalServer(srv => { srv.setAttachDebugInfo(true); ... })`
+  (el único método relacionado a "debug info" que expone el wrapper, en `IncrementalServer`);
+  y `renderDom` (una vez resuelto el protocolo de inicialización de arriba). En los tres casos
+  solo aparecen `data-tid` (hash de identidad para diffing de parches, no posición) y
+  `data-hint`. El script de referencia `typstProcessSvg`, que sí sabe leer `data-span` (visto
+  como `<script>` embebido en el propio SVG que retorna `render_svg`/`svg_data`), pertenece a
+  la demo oficial de Typst.ts, que probablemente alimenta el compilador con un pipeline
+  distinto (p. ej. `typst-cli`/servidor con flag de source-map no expuesto en este wrapper npm
+  vía `@myriaddreamin/typst.ts@0.7`) — **pendiente de investigar antes de retomar 12.2**: cómo
+  se activa `data-span` realmente en esta versión, o si hay que subir de versión del paquete,
+  o si hay que generar el mapeo por otra vía (p. ej. la de metadata/`query()` de 12.3, aplicada
+  también a la dirección clic→cursor en vez de solo cursor→preview).
+- **12.3 (cursor→preview)**: sigue siendo válida la vía de metadata por párrafo +
+  `compiler.query({selector})` (confirmado que `query()` existe en el wrapper, aunque no se ha
+  probado en la práctica todavía) — no depende de `data-span`, así que no está bloqueada por el
+  hallazgo de arriba.
+- **12.4** (scroll con rueda sincronizado): sin dependencias de Typst, no bloqueada.
+- **12.5**: pulido y verificación final, incluida una revisión de si el cambio a `renderSvg`
+  afecta el tiempo de "primer vistazo" optimizado en la Etapa 11 (el cache de artefactos WASM
+  sigue aplicando sin cambios; solo cambió la etapa de *render* final).
 
 **Nota sobre el alcance real de las Etapas 2 y 3** (decisión explícita, amplía lo descrito arriba):
 - Todos los comandos (`new`, `save`, `compile`, `edit`, `add`, `delete`, `import`, `history`,
