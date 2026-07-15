@@ -19,7 +19,7 @@ const props = defineProps({
   guardadoHora: { type: String, default: "" },
 });
 
-const emit = defineEmits(["cargar-en-editor"]);
+const emit = defineEmits(["cargar-en-editor", "abrir-imagenes"]);
 
 const versiones = ref([]);
 const error = ref("");
@@ -147,6 +147,7 @@ async function onCambioExportar(ev) {
         <option value="text">Texto plano</option>
         <option value="markdown">Markdown</option>
       </select>
+      <button type="button" @click="emit('abrir-imagenes')">Imágenes…</button>
       <span class="estado">{{ palabras }} palabras · {{ tamanoKB }} KB</span>
       <span
         v-if="compileStatusTexto"

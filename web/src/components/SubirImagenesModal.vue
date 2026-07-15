@@ -1,32 +1,44 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { getArchivosPlantilla, subirImagenPlantilla, eliminarArchivoPlantilla } from "../api.js";
+import {
+  getArchivosPlantilla, subirImagenPlantilla, eliminarArchivoPlantilla,
+  getArchivosDoc, subirImagenDoc, eliminarArchivoDoc,
+} from "../api.js";
 
 const props = defineProps({
+  // "plantilla" -> Images/ (assets de la plantilla); "doc" -> img/ (imágenes propias del
+  // documento, §4 CLAUDE.md). `nombre` es el nombre de la plantilla o el código del documento.
+  tipo: { type: String, default: "plantilla" }, // "plantilla" | "doc"
   slug: { type: String, required: true },
   nombre: { type: String, required: true },
 });
 
 const emit = defineEmits(["cerrar", "cambiado"]);
 
-const archivos = ref([]); // rutas relativas dentro de la plantilla, p. ej. "Images/logo.png"
+const CARPETA = props.tipo === "doc" ? "img/" : "Images/";
+const _getArchivos = props.tipo === "doc" ? getArchivosDoc : getArchivosPlantilla;
+const _subirImagen = props.tipo === "doc" ? subirImagenDoc : subirImagenPlantilla;
+const _eliminarArchivo = props.tipo === "doc" ? eliminarArchivoDoc : eliminarArchivoPlantilla;
+const _titulo = props.tipo === "doc" ? "Imágenes del documento" : "Imágenes de la plantilla";
+
+const archivos = ref([]); // rutas relativas dentro de la plantilla/documento, p. ej. "Images/logo.png" o "img/foto.png"
 const cargando = ref(true);
 const subiendo = ref(false);
 const error = ref("");
 const arrastrando = ref(false);
 
-// Solo Images/*, y solo lo que #image() de Typst puede abrir -- mismo criterio que la
-// validación del backend (api_template_archivo_subir), acá para no ofrecer subir algo que el
+// Solo la carpeta de imágenes propia (Images/ o img/), y solo lo que #image() de Typst puede
+// abrir -- mismo criterio que la validación del backend, acá para no ofrecer subir algo que el
 // servidor va a rechazar de todas formas.
 const EXTENSIONES_IMAGEN = new Set([".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"]);
 
-const imagenes = computed(() => archivos.value.filter((r) => r.startsWith("Images/")));
+const imagenes = computed(() => archivos.value.filter((r) => r.startsWith(CARPETA)));
 
 async function cargar() {
   cargando.value = true;
   error.value = "";
   try {
-    archivos.value = await getArchivosPlantilla(props.slug, props.nombre);
+    archivos.value = await _getArchivos(props.slug, props.nombre);
   } catch (e) {
     error.value = e.message;
   } finally {
@@ -37,7 +49,8 @@ async function cargar() {
 onMounted(cargar);
 
 function urlImagen(ruta) {
-  return `/api/orgs/${encodeURIComponent(props.slug)}/plantillas/${encodeURIComponent(props.nombre)}/archivo/${ruta.split("/").map(encodeURIComponent).join("/")}`;
+  const recurso = props.tipo === "doc" ? "documentos" : "plantillas";
+  return `/api/orgs/${encodeURIComponent(props.slug)}/${recurso}/${encodeURIComponent(props.nombre)}/archivo/${ruta.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 function extensionValida(nombreArchivo) {
@@ -57,7 +70,7 @@ async function subirArchivos(files) {
   error.value = "";
   try {
     for (const file of lista) {
-      await subirImagenPlantilla(props.slug, props.nombre, file);
+      await _subirImagen(props.slug, props.nombre, file);
     }
     await cargar();
     emit("cambiado");
@@ -82,7 +95,7 @@ async function eliminar(ruta) {
   if (!window.confirm(`¿Eliminar '${ruta}'? Esto no se puede deshacer.`)) return;
   error.value = "";
   try {
-    await eliminarArchivoPlantilla(props.slug, props.nombre, ruta);
+    await _eliminarArchivo(props.slug, props.nombre, ruta);
     archivos.value = archivos.value.filter((r) => r !== ruta);
     emit("cambiado");
   } catch (e) {
@@ -103,7 +116,7 @@ async function copiarReferencia(ruta) {
 <template>
   <div class="modal-backdrop" @click.self="emit('cerrar')">
     <div class="modal-box">
-      <h2>Imágenes de la plantilla</h2>
+      <h2>{{ _titulo }}</h2>
       <div v-if="error" class="error-banner">{{ error }}</div>
 
       <div
@@ -118,7 +131,7 @@ async function copiarReferencia(ruta) {
           {{ subiendo ? "Subiendo…" : "Elegir archivos…" }}
           <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif" multiple :disabled="subiendo" @change="onInputFile" hidden />
         </label>
-        <p class="ayuda">png, jpg, jpeg, svg, webp, gif — se guardan en Images/ de la plantilla.</p>
+        <p class="ayuda">png, jpg, jpeg, svg, webp, gif — se guardan en {{ CARPETA }} {{ tipo === "doc" ? "del documento" : "de la plantilla" }}.</p>
       </div>
 
       <div v-if="cargando" class="empty-state">Cargando…</div>

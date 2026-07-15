@@ -268,6 +268,24 @@ export async function getArchivoDoc(slug, codigo, ruta) {
   return new Uint8Array(await res.arrayBuffer());
 }
 
+/** Sube una imagen a img/ del documento (imágenes propias, distintas de Images/ que trae la
+ * plantilla copiada -- ver §4 CLAUDE.md). Mismo criterio que subirImagenPlantilla. */
+export async function subirImagenDoc(slug, codigo, file) {
+  const contenido_base64 = await _archivoABase64(file);
+  return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/archivo`, {
+    method: "POST",
+    body: JSON.stringify({ nombre_archivo: file.name, contenido_base64 }),
+  });
+}
+
+/** Elimina un archivo de soporte ya subido al documento (p. ej. "img/foto.png"). */
+export function eliminarArchivoDoc(slug, codigo, ruta) {
+  const partes = ruta.split("/").map(enc).join("/");
+  return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/archivo/${partes}`, {
+    method: "DELETE",
+  });
+}
+
 export function guardarVersion(slug, codigo, mensaje) {
   return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/save`, {
     method: "POST",

@@ -813,6 +813,50 @@ def api_doc_archivo(slug: str, codigo_base: str, ruta: list[str]) -> Path:
     return destino
 
 
+def api_doc_archivo_subir(slug: str, codigo_base: str, payload: dict) -> dict:
+    """POST .../documentos/<codigo_base>/archivo -- sube una imagen a img/ del documento (§4
+    CLAUDE.md: imágenes propias del documento, distintas de Images/ que trae la plantilla
+    copiada). Mismo criterio que api_template_archivo_subir (JSON+base64, sin multipart)."""
+    org = _cargar_org_api(slug)
+    _doc_o_404(org, codigo_base)
+    nombre_archivo = (payload.get("nombre_archivo") or "").strip()
+    if not nombre_archivo:
+        raise ApiError(400, "el nombre del archivo es obligatorio")
+    nombre_archivo = Path(nombre_archivo).name
+    extension = Path(nombre_archivo).suffix.lower()
+    if extension not in _EXTENSIONES_IMAGEN:
+        raise ApiError(400, f"extensión no permitida: '{extension}' (usa png/jpg/jpeg/svg/webp/gif)")
+    contenido_b64 = payload.get("contenido_base64") or ""
+    try:
+        datos = base64.b64decode(contenido_b64, validate=True)
+    except (binascii.Error, ValueError):
+        raise ApiError(400, "contenido_base64 inválido")
+    if not datos:
+        raise ApiError(400, "el archivo está vacío")
+    if len(datos) > _MAX_BYTES_IMAGEN:
+        raise ApiError(400, f"el archivo supera el máximo de {_MAX_BYTES_IMAGEN // (1024*1024)} MB")
+    _resolver_ruta_segura(core.docs_root(), slug, codigo_base, "img", nombre_archivo)
+    destino = core.doc_dir(slug, codigo_base) / "img" / nombre_archivo
+    core._escribir_bytes_atomico(destino, datos)
+    _emitir_evento_sse({"tipo": "doc-saved", "slug": slug, "codigo": codigo_base})
+    return {"ok": True, "ruta": f"img/{nombre_archivo}"}
+
+
+def api_doc_archivo_eliminar(slug: str, codigo_base: str, ruta: list[str]) -> dict:
+    """DELETE .../documentos/<codigo_base>/archivo/<ruta...> -- por ahora solo se expone desde
+    el modal de imágenes (borra un archivo ya subido a img/), mismo criterio que
+    api_template_archivo_eliminar."""
+    org = _cargar_org_api(slug)
+    _doc_o_404(org, codigo_base)
+    _resolver_ruta_segura(core.docs_root(), slug, codigo_base, *ruta)
+    destino = core.doc_dir(slug, codigo_base).joinpath(*ruta)
+    if not destino.is_file():
+        raise ApiError(404, f"no existe el archivo '{'/'.join(ruta)}'")
+    destino.unlink()
+    _emitir_evento_sse({"tipo": "doc-saved", "slug": slug, "codigo": codigo_base})
+    return {"ok": True}
+
+
 def api_doc_save(slug: str, codigo_base: str, mensaje: str) -> dict:
     if not mensaje:
         raise ApiError(400, "el mensaje es obligatorio")
@@ -1411,6 +1455,13 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                 ruta_archivo = api_doc_archivo(slug, codigo_base, segs[5:])
                 tipo, _ = mimetypes.guess_type(ruta_archivo.name)
                 self._binario(200, ruta_archivo.read_bytes(), tipo or "application/octet-stream")
+                return
+            if sub == "archivo" and len(segs) == 5 and metodo == "POST":
+                cuerpo = self._leer_cuerpo_json()
+                self._json(201, api_doc_archivo_subir(slug, codigo_base, cuerpo))
+                return
+            if sub == "archivo" and len(segs) >= 6 and metodo == "DELETE":
+                self._json(200, api_doc_archivo_eliminar(slug, codigo_base, segs[5:]))
                 return
             self._error(404, "ruta de API desconocida")
             return

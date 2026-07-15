@@ -332,6 +332,7 @@ defineExpose({ ocupado, guardar });
       </div>
       <SubirImagenesModal
         v-if="mostrarImagenes"
+        tipo="plantilla"
         :slug="slug"
         :nombre="nombre"
         @cerrar="mostrarImagenes = false"
