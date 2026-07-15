@@ -459,6 +459,7 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 14 | FIX. El debounce no debe re-renderizar el documento sino guardar el documento en caso que tenga cambios. Si el documento tiene cambios se guarda y despues de guardar se re-renderiza el documento. | Pendiente (aplica solo al modo legacy typst.ts, ver Etapa 15) |
 | 15 | Preview vía servidor standalone (`tinymist preview`) lanzado por `doctyp`: clic↔cursor bidireccional real, memoria en vivo (sin guardar), salto explícito editor→preview, eliminación del scroll sync automático (Etapa 12.4). Ver nota debajo de la tabla y `plan15_progreso.md` (registro completo de la ejecución, incluye hallazgos de protocolo y bugs corregidos). | **Completada** |
 | 16 | Auditoría y plan de continuación sobre la Etapa 15 (`tinymist-implementation-plan.md`, en la raíz del repo): Fase 2 (robustez de la preview, sin decisiones) → Fase 3 (fix clic→archivo equivocado, jump automático al clic sin botón, autoguardado a 300 ms) → Fase 1 (adopción completa de `tinymist lsp`: diagnósticos, completion, hover, navegación, semantic tokens, rename, formateo, exportadores rápidos). Decisiones ya tomadas por el usuario: LSP al 100 %, sin pestaña de `lib.typ` en el editor de documentos, sí exportadores rápidos, autoguardado 300 ms (documentos **y plantillas**, decidido 2026-07-14), jump automático e implícito al clic, y (2026-07-14) mantener la preview en su propio proceso en vez de unificarla bajo el LSP (Fase 1E). Ver nota debajo de la tabla para el detalle de lo ejecutado. | **Completada** (Fase 1E: decisión explícita de no migrar, ver nota) |
+| 17 | Serie de mejoras de UX pedidas directamente por el usuario (2026-07-15, sin documento de plan previo): atajos en el editor de código (Ctrl/Cmd+S guarda, Tab indenta); imágenes propias de **documentos** (antes solo plantillas tenían gestión de imágenes); split editor/vista previa 60/40 (antes 50/50); **router de la SPA** (`vue-router`: `/documentos`, `/plantillas`, `/organizacion`) con página completa de gestión de organización (reemplaza el modal `OrgManager.vue`); **sidebar de archivos de solo lectura** con gestión de imágenes integrada (subir/renombrar/eliminar, reemplaza por completo el modal de imágenes agregado en esta misma etapa). Ver nota debajo de la tabla. | **Completada** |
 
 
 **Nota sobre el alcance real de la Etapa 12** (investigación hecha leyendo el paquete instalado
@@ -945,6 +946,88 @@ creación, sin contenido real que recuperar) — confirmado con `typst compile` 
 es válido. Desde entonces, cualquier prueba que involucre clics/escritura/atajos de teclado
 reales se hace contra la organización de prueba aislada, nunca contra datos reales del usuario.
 
+**Nota sobre el alcance real de la Etapa 17** (serie de pedidos directos del usuario en una
+sola sesión, 2026-07-15 — sin documento de plan para las dos primeras piezas, con plan +
+aprobación explícita del usuario para el router y para el sidebar de archivos, siguiendo la
+regla de §0 "Plan antes de código" para cambios estructurales):
+
+- **Atajos en `CodeEditor.vue`**: `Mod-s` (Ctrl+S en Windows/Linux, Cmd+S en macOS) fuerza un
+  flush inmediato del autoguardado a 300 ms que ya existía desde la Etapa 16 (Fase 3.3) — no es
+  un mecanismo de guardado nuevo, solo un atajo que llama al mismo `flushGuardado()` de
+  `DocEditor.vue`/`TemplateEditor.vue` sin esperar el debounce; `preventDefault` evita que el
+  navegador abra su diálogo "Guardar página como". `indentWithTab` (`@codemirror/commands`)
+  agregado al keymap para que Tab indente/desindente la línea o selección — antes no hacía nada.
+- **Imágenes propias de documentos** (antes solo existía para plantillas, vía el modal de
+  imágenes original de la Etapa 9): nuevos `api_doc_archivo_subir`/`api_doc_archivo_eliminar`
+  (`doctyp_web.py`), mismo patrón que sus equivalentes de plantilla pero apuntando a `img/` en
+  vez de `Images/` (§4). En un primer momento el modal `SubirImagenesModal.vue` se generalizó
+  con una prop `tipo` (`"doc"|"plantilla"`) para servir a ambos — **ese modal se retiró por
+  completo más tarde en la misma etapa**, ver el sidebar de archivos más abajo.
+- **Split editor/vista previa 60/40** (antes 50/50, sin cambios desde que existe el panel
+  dividido de la Etapa 8): `flex: 60 1 0` / `flex: 40 1 0` en `.editor-textarea`/`.vista-previa`
+  (`style.css`) — aplica a documentos y plantillas por igual, ambos comparten esas clases.
+- **Router de la SPA** (`vue-router@4`, modo `history`): antes la navegación era un `ref` local
+  `vista` en `App.vue` (decisión explícita de la Etapa 7 de no usar router, "no hacía falta
+  deep-linking" — **superada**, ver anotación en la nota de la Etapa 7). Rutas:
+  `/documentos`, `/documentos/:codigo`, `/plantillas`, `/plantillas/:nombre`, `/organizacion`
+  (`/` redirige a `/documentos`).
+  - **Decisión de diseño**: la organización activa NO va en la URL — sigue siendo estado
+    global (mismo concepto que `settings.json → local.org_activa`), no un parámetro de ruta.
+  - **Hallazgo que obligó a un cambio en `vite.config.js`**: `base: "./"` (rutas relativas)
+    rompe cualquier ruta anidada al refrescar directo (`/documentos/XXX`) — el HTML serviría
+    `./assets/...`, que el navegador resuelve mal contra la ruta anidada. El backend
+    (`doctyp_web.py: _estaticos`) **ya** hacía fallback a `index.html` para cualquier GET no
+    reconocido (comentario `# fallback SPA` preexistente, sin usar hasta ahora) — el único fix
+    necesario fue `base: "/"` (rutas absolutas), consistente con que `index.html` ya usa
+    `/src/main.js` absoluto en dev.
+  - **Estado compartido**: nuevo `web/src/composables/useOrgContext.js`, mismo patrón "bus" de
+    módulo-singleton que `editorScrollToBus.js`/`compileStatusBus.js` (el proyecto no usa store,
+    ver nota Etapa 5) — el topbar (fuera del `<router-view>`) y las vistas (dentro) necesitan el
+    mismo estado (org/autor/docs/plantillas activos) sin prop-drilling a través del router.
+  - **Vistas nuevas** (`web/src/views/`): `DocumentosGridView`, `DocumentoEditorView`,
+    `PlantillasGridView`, `PlantillaEditorView`, `OrganizacionView` — envuelven los componentes
+    existentes (`DocEditor.vue`, `TemplateEditor.vue`, etc.) sin tocar su lógica interna. Las
+    guardas de "cambios sin guardar" que antes vivían en `App.vue` (confirm antes de cambiar de
+    vista) pasaron a `onBeforeRouteLeave`/`onBeforeRouteUpdate` de vue-router en cada vista de
+    editor.
+  - **`OrganizacionView.vue` reemplaza al modal `OrgManager.vue`** (retirado): página completa
+    con 3 tabs — **Organización** (nueva: lista de orgs, cambiar activa, crear nueva — antes
+    solo estaba en el selector del topbar), **Autores**, **Equipos** (CRUD sin cambios respecto
+    al modal original).
+  - **Bug encontrado y corregido tras el primer build**: al refrescar directo en
+    `/documentos/:codigo` (o `/plantillas/:nombre`, o `/organizacion`), `orgSlug` todavía es
+    `null` (se llena de forma asíncrona en `App.vue: onMounted`) pero `DocEditor.vue`/
+    `TemplateEditor.vue` disparan su fetch inicial de inmediato al montar, produciendo
+    `"no existe la organización 'null'"`. Fix: guarda `v-if="!orgSlug"` (con
+    "Cargando organización…") en `DocumentoEditorView.vue`/`PlantillaEditorView.vue` antes de
+    montar el editor real, y un `watch(orgSlug, cargarEquipos)` en `OrganizacionView.vue` para
+    el mismo caso.
+- **Sidebar de archivos de solo lectura** (`FileTreeSidebar.vue` + `FileTreeNode.vue`, nuevos):
+  árbol completo de la carpeta del documento/plantilla (visualización únicamente — nada de
+  código ni `lib.typ` es editable desde ahí), montado dentro de `DocEditor.vue`/
+  `TemplateEditor.vue` (no en las vistas del router, para conservar acceso a
+  `tinymistPreviewRef` y poder refrescar la vista previa al cambiar una imagen). **Reemplaza
+  por completo al modal de imágenes** (`SubirImagenesModal.vue`, eliminado) — decisión
+  confirmada explícitamente con el usuario en vez de mantener ambas UIs para la misma acción.
+  - Solo los archivos dentro de la carpeta de imágenes propia son mutables — `img/` en
+    documentos, `Images/` en plantillas (mismo criterio que ya regía el modal retirado); todo
+    lo demás del árbol (el `.typ`, `lib.typ`, `Images/` copiada *dentro* de un documento,
+    `fonts/`) se ve pero sin acciones.
+  - **Nuevo: renombrar imágenes** (no existía en el modal original) —
+    `api_doc_archivo_renombrar`/`api_template_archivo_renombrar` (`doctyp_web.py`, ruteo
+    `PUT .../archivo/<ruta...>`, body `{nombre_nuevo}`): rechaza si la ruta no empieza en la
+    carpeta mutable, valida extensión de imagen, 404 si el origen no existe, 400 si el destino
+    ya existe, `Path.rename()` simple (no hace falta escritura atómica, no reescribe
+    contenido). Confirmación vía `window.prompt`/`window.confirm`, mismo criterio que el resto
+    de la app (sin modales de confirmación dedicados).
+  - Nuevo layout `.editor-body` (`style.css`): sidebar (ancho fijo 260px, mismo lenguaje visual
+    que `.panel-docs` ya existente) + `.editor-preview-split` (60/40 sin cambios) como hijos.
+    `StatusBar`/la barra de plantilla quedan debajo, ancho completo, sin cambios.
+- **Verificación de esta etapa**: `npm run build` y `python3 -m py_compile doctyp_web.py` sin
+  errores tras cada pieza. **No se verificó en vivo con Playwright/navegador real** (a
+  diferencia de la metodología de la Etapa 16) — quedó ofrecido al usuario en cada pieza, sin
+  que lo pidiera explícitamente durante la sesión.
+
 **Nota sobre el alcance real de las Etapas 2 y 3** (decisión explícita, amplía lo descrito arriba):
 - Todos los comandos (`new`, `save`, `compile`, `edit`, `add`, `delete`, `import`, `history`,
   `restore`, `change`) operan sobre `org.json` y el modelo de carpeta-documento con snapshots
@@ -1048,7 +1131,9 @@ reales se hace contra la organización de prueba aislada, nunca contra datos rea
   (stdlib) entre el snapshot elegido y el `.typ` vigente, reusando
   `api_doc_version_contenido`/`api_doc_typ_get` ya existentes (no relee archivos aparte).
 - Navegación: `App.vue` gana un estado simple `vista` (`grid`/`documento`), sin vue-router
-  (no hacía falta deep-linking). La cuadrícula (`DocumentGrid.vue`) reemplaza a `DocList.vue`
+  (no hacía falta deep-linking). **⚠ Superado en la Etapa 17**: se agregó `vue-router` (rutas
+  reales `/documentos`, `/plantillas`, `/organizacion`) — ver esa nota más abajo; el estado
+  `vista` ya no existe en `App.vue`. La cuadrícula (`DocumentGrid.vue`) reemplaza a `DocList.vue`
   como pantalla principal; la nueva `StatusBar.vue` (barra fija al fondo del editor, con
   desplegable de versión + diff + contador de palabras/tamaño + Guardar/Subir versión/
   Compilar/Metadatos) reemplaza al toolbar de `DocEditor.vue` y a `HistoryPanel.vue`.
