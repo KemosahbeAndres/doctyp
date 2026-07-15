@@ -9,8 +9,10 @@ import {
 import TypstCanvasPreview from "./TypstCanvasPreview.vue";
 import TinymistPreview from "./TinymistPreview.vue";
 import CodeEditor from "./CodeEditor.vue";
+import DiagnosticosDropdown from "./DiagnosticosDropdown.vue";
+import SubirImagenesModal from "./SubirImagenesModal.vue";
 import { ultimoCompileStatus } from "../composables/compileStatusBus.js";
-import { ultimoDiagnostico } from "../composables/lspDiagnosticsBus.js";
+import { useDiagnosticos } from "../composables/useDiagnosticos.js";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -32,6 +34,8 @@ const mensajeEsError = ref(false);
 const versiones = ref([]);
 const guardando = ref(false);
 const guardadoHora = ref("");
+const tinymistPreviewRef = ref(null);
+const mostrarImagenes = ref(false);
 
 function _horaActual() {
   return new Date().toLocaleTimeString("es-CL", { hour12: false });
@@ -68,22 +72,11 @@ const compileStatusTexto = computed(() => ({
 }[compileStatus.value] || ""));
 
 // Fase 1B de tinymist-implementation-plan.md, mismo indicador que StatusBar.vue.
-const errores = ref(0);
-const avisos = ref(0);
-watch(ultimoDiagnostico, (evento) => {
-  if (!evento) return;
-  if (evento.tipo !== "plantilla" || evento.slug !== props.slug || evento.codigo !== props.nombre) return;
-  const diags = evento.diagnosticos || [];
-  errores.value = diags.filter((d) => (d.severity ?? 1) === 1).length;
-  avisos.value = diags.filter((d) => (d.severity ?? 1) === 2).length;
-});
-const diagnosticosTexto = computed(() => {
-  if (!errores.value && !avisos.value) return "";
-  const partes = [];
-  if (errores.value) partes.push(`${errores.value} error${errores.value === 1 ? "" : "es"}`);
-  if (avisos.value) partes.push(`${avisos.value} aviso${avisos.value === 1 ? "" : "s"}`);
-  return partes.join(", ");
-});
+const tipoRef = computed(() => "plantilla");
+const slugRef = computed(() => props.slug);
+const nombreRef = computed(() => props.nombre);
+const { lista: diagnosticos, errores, resumenTexto: diagnosticosTexto } =
+  useDiagnosticos(tipoRef, slugRef, nombreRef);
 
 async function cargar() {
   cargando.value = true;
@@ -147,6 +140,9 @@ async function autoguardar() {
       guardadoHora.value = _horaActual();
       mensaje.value = "";
     }
+    // Señal explícita del cliente (mismo criterio que DocEditor.vue): reasegurar tinymist
+    // fire-and-forget tras cada autoguardado, por si el subproceso cayó y agotó sus reintentos.
+    tinymistPreviewRef.value?.reconectar();
   } catch (e) {
     mensaje.value = `Autoguardado falló: ${e.message}`;
     mensajeEsError.value = true;
@@ -243,6 +239,13 @@ async function onCambioExportar(ev) {
   }
 }
 
+// Las imágenes subidas/eliminadas desde el modal quedan en disco (Images/) pero el iframe de
+// tinymist ya cargó su propio snapshot del proyecto al abrirse -- sin esto, #image("Images/…")
+// recién agregado en lib.typ no aparecería hasta la próxima vez que algo más recargue el iframe.
+function onImagenesCambiadas() {
+  tinymistPreviewRef.value?.refrescarForzado();
+}
+
 async function cargarArchivosPlantilla(slug, nombre, texto) {
   const [rutas, muestra] = await Promise.all([
     getArchivosPlantilla(slug, nombre),
@@ -281,6 +284,7 @@ defineExpose({ ocupado, guardar });
         />
         <TinymistPreview
           v-if="!usarPreviewLegacy"
+          ref="tinymistPreviewRef"
           :slug="slug"
           :codigo="nombre"
           tipo="plantilla"
@@ -308,19 +312,30 @@ defineExpose({ ocupado, guardar });
             <option value="text">Texto plano</option>
             <option value="markdown">Markdown</option>
           </select>
+          <button type="button" @click="mostrarImagenes = true">Imágenes…</button>
           <span class="estado">{{ palabras }} palabras · {{ tamanoKB }} KB</span>
           <span
             v-if="compileStatusTexto"
             class="estado"
             :style="{ color: compileStatus === 'error' ? 'var(--danger)' : undefined }"
           >{{ compileStatusTexto }}</span>
-          <span v-if="diagnosticosTexto" class="estado" :style="{ color: errores ? 'var(--danger)' : undefined }">
-            {{ diagnosticosTexto }}
-          </span>
+          <DiagnosticosDropdown
+            v-if="diagnosticosTexto"
+            :lista="diagnosticos"
+            :resumen-texto="diagnosticosTexto"
+            :tiene-errores="!!errores"
+          />
           <span class="status-bar-spacer"></span>
           <span class="estado">{{ estadoGuardado }}</span>
         </div>
       </div>
+      <SubirImagenesModal
+        v-if="mostrarImagenes"
+        :slug="slug"
+        :nombre="nombre"
+        @cerrar="mostrarImagenes = false"
+        @cambiado="onImagenesCambiadas"
+      />
     </template>
   </div>
 </template>

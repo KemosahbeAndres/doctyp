@@ -1,0 +1,12 @@
+{
+  "nombre": "propuesta",
+  "versiones": [
+    {
+      "version": 1,
+      "fecha": "20260714",
+      "creado": "2026-07-14T23:55:26",
+      "mensaje": "Planilla base",
+      "snapshot": ".snapshots/lib_v1.typ"
+    }
+  ]
+}

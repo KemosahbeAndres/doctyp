@@ -16,7 +16,7 @@ reutiliza exactamente compilar_typ().
 No requiere paquetes externos (solo stdlib).
 """
 from __future__ import annotations
-import datetime, difflib, json, mimetypes, os, queue, shutil, subprocess, threading, time, webbrowser
+import base64, binascii, datetime, difflib, json, mimetypes, os, queue, shutil, subprocess, threading, time, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote
@@ -48,6 +48,9 @@ _preview_legacy_forzado = False  # `doctyp web --legacy-preview` (Plan 15 F8)
 # confirmado soportado, ver lsp-capabilities-0.15.2.json), nunca relanza el proceso.
 _lsp_lock = threading.Lock()
 _lsp_actual: LspServer | None = None
+# Conexión WS del navegador actualmente asociada al proceso LSP (ver _lsp_bridge/_on_lsp_reiniciado
+# más abajo) -- una sola a la vez, mismo criterio de "un recurso activo" del resto del módulo.
+_lsp_conexion_activa: ws_server.WebSocketServerConnection | None = None
 
 # workspace/executeCommand a evaluar en el paso 0 (tinymist-implementation-plan.md §2, Fase
 # 1D): allowlist explícita -- el puente NO debe volverse un ejecutor arbitrario (CLAUDE.md §6).
@@ -586,7 +589,13 @@ def _detener_preview_activa() -> None:
 def _asegurar_lsp(root: Path, font_dir: Path | None) -> LspServer | None:
     """Arranca el proceso LSP si es la primera vez, o reusa el vigente reasociando su `root`
     (workspace/didChangeWorkspaceFolders) si cambió -- nunca relanza el proceso mientras siga
-    vivo. None si tinymist no está disponible (mismo criterio de degradación que la preview)."""
+    vivo. None si tinymist no está disponible (mismo criterio de degradación que la preview).
+
+    Si el proceso YA existía pero cayó (`is_running` False), en vez de crear una instancia
+    LspServer nueva se reusa la misma y se llama a start() -- necesario porque
+    LspServer._on_proceso_caido() (auto-reinicio, ver doctyp_lsp_server.py) también reusa la
+    instancia; si acá se creara una nueva quedarían dos objetos con el mismo `root`, uno de ellos
+    huérfano."""
     global _lsp_actual
     with _lsp_lock:
         if resolver_tinymist_utilizable() is None:
@@ -597,7 +606,16 @@ def _asegurar_lsp(root: Path, font_dir: Path | None) -> LspServer | None:
             except LspServerError as e:
                 core._warn(f"no se pudo reasociar el root del LSP: {e}")
             return _lsp_actual
+        if _lsp_actual is not None:
+            try:
+                _lsp_actual.start()
+                _lsp_actual.resetear_reintentos()
+            except LspServerError as e:
+                core._warn(f"no se pudo reiniciar tinymist lsp: {e}")
+                return None
+            return _lsp_actual
         nuevo = LspServer(root=root, font_dir=font_dir)
+        nuevo.on_reiniciado = _on_lsp_reiniciado
         try:
             nuevo.start()
         except LspServerError as e:
@@ -605,6 +623,21 @@ def _asegurar_lsp(root: Path, font_dir: Path | None) -> LspServer | None:
             return None
         _lsp_actual = nuevo
         return nuevo
+
+
+def _on_lsp_reiniciado() -> None:
+    """Callback de LspServer.on_reiniciado (auto-reinicio tras una caída, ver
+    doctyp_lsp_server.py: _on_proceso_caido). El proceso nuevo no tiene memoria del anterior
+    (perdió el `didOpen` de cualquier documento abierto), y la conexión WS del navegador que
+    siga bloqueada en `conexion.leer_mensaje()` (_lsp_bridge) esperando algo del navegador nunca
+    se enteraría del reinicio por sí sola si el usuario no está tipeando -- se fuerza su cierre
+    acá (frame CLOSE, ver WebSocketServerConnection.cerrar()) para que el cliente JS
+    (conectarLsp, con el callback `onDesconectado` de CodeEditor.vue) reconecte y vuelva a hacer
+    didOpen contra el proceso nuevo."""
+    with _lsp_lock:
+        conexion = _lsp_conexion_activa
+    if conexion is not None:
+        conexion.cerrar()
 
 
 def _detener_lsp_activo() -> None:
@@ -914,6 +947,61 @@ def api_template_archivo(slug: str, nombre: str, ruta: list[str]) -> Path:
     if not destino.is_file():
         raise ApiError(404, f"no existe el archivo '{'/'.join(ruta)}'")
     return destino
+
+
+# Extensiones de imagen aceptadas al subir a Images/ de una plantilla -- mismo criterio que el
+# resto del proyecto (logos/isologos, ver §3 CLAUDE.md); SVG incluido porque el manual permite
+# isologos vectoriales, pero PDF/otros formatos de #image() quedan fuera a propósito (esto es
+# "subir imágenes", no un gestor de archivos genérico).
+_EXTENSIONES_IMAGEN = frozenset({".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"})
+_MAX_BYTES_IMAGEN = 15 * 1024 * 1024  # cota de cordura (15 MB) contra un base64 gigante por error
+
+
+def api_template_archivo_subir(slug: str, nombre: str, payload: dict) -> dict:
+    """POST .../plantillas/<nombre>/archivo -- sube una imagen a Images/ de la plantilla.
+    El cuerpo viaja en JSON (nombre_archivo + contenido en base64) en vez de multipart/form-data
+    -- el proyecto es stdlib puro (CLAUDE.md §6) y no hay parser multipart ya escrito; el
+    frontend arma el base64 con FileReader antes de mandarlo (ver SubirImagenesModal.vue)."""
+    _cargar_org_api(slug)
+    _plantilla_o_404(slug, nombre)
+    nombre_archivo = (payload.get("nombre_archivo") or "").strip()
+    if not nombre_archivo:
+        raise ApiError(400, "el nombre del archivo es obligatorio")
+    # Solo el nombre base -- una imagen sube a Images/ directo, nunca a una subcarpeta (evita
+    # que un nombre con "../" o "/" intente escapar de Images/ antes incluso de resolver rutas).
+    nombre_archivo = Path(nombre_archivo).name
+    extension = Path(nombre_archivo).suffix.lower()
+    if extension not in _EXTENSIONES_IMAGEN:
+        raise ApiError(400, f"extensión no permitida: '{extension}' (usa png/jpg/jpeg/svg/webp/gif)")
+    contenido_b64 = payload.get("contenido_base64") or ""
+    try:
+        datos = base64.b64decode(contenido_b64, validate=True)
+    except (binascii.Error, ValueError):
+        raise ApiError(400, "contenido_base64 inválido")
+    if not datos:
+        raise ApiError(400, "el archivo está vacío")
+    if len(datos) > _MAX_BYTES_IMAGEN:
+        raise ApiError(400, f"el archivo supera el máximo de {_MAX_BYTES_IMAGEN // (1024*1024)} MB")
+    _resolver_ruta_segura(core.organizations_dir(), slug, "templates", nombre, "Images", nombre_archivo)
+    destino = core.plantilla_dir(slug, nombre) / "Images" / nombre_archivo
+    core._escribir_bytes_atomico(destino, datos)
+    _emitir_evento_sse({"tipo": "plantilla-guardada", "slug": slug, "nombre": nombre})
+    return {"ok": True, "ruta": f"Images/{nombre_archivo}"}
+
+
+def api_template_archivo_eliminar(slug: str, nombre: str, ruta: list[str]) -> dict:
+    """DELETE .../plantillas/<nombre>/archivo/<ruta...> -- por ahora solo se expone desde el
+    modal de imágenes (borra un archivo ya subido a Images/), mismo criterio de ruta segura que
+    api_template_archivo (lectura)."""
+    _cargar_org_api(slug)
+    _plantilla_o_404(slug, nombre)
+    _resolver_ruta_segura(core.organizations_dir(), slug, "templates", nombre, *ruta)
+    destino = core.plantilla_dir(slug, nombre).joinpath(*ruta)
+    if not destino.is_file():
+        raise ApiError(404, f"no existe el archivo '{'/'.join(ruta)}'")
+    destino.unlink()
+    _emitir_evento_sse({"tipo": "plantilla-guardada", "slug": slug, "nombre": nombre})
+    return {"ok": True}
 
 
 def api_template_muestra(slug: str, nombre: str) -> str:
@@ -1375,6 +1463,13 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                 tipo, _ = mimetypes.guess_type(ruta_archivo.name)
                 self._binario(200, ruta_archivo.read_bytes(), tipo or "application/octet-stream")
                 return
+            if sub == "archivo" and len(segs) == 5 and metodo == "POST":
+                cuerpo = self._leer_cuerpo_json()
+                self._json(201, api_template_archivo_subir(slug, nombre, cuerpo))
+                return
+            if sub == "archivo" and len(segs) >= 6 and metodo == "DELETE":
+                self._json(200, api_template_archivo_eliminar(slug, nombre, segs[5:]))
+                return
             if sub == "muestra" and len(segs) == 5 and metodo == "GET":
                 self._json(200, {"contenido": api_template_muestra(slug, nombre)})
                 return
@@ -1517,9 +1612,13 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
 
         # Reconexión (Fase 1A punto 4): reasociar esta conexión nueva como la activa para el
         # proceso LSP vivo -- no hace falta un segundo `initialize`, el backend ya lo hizo una
-        # vez al arrancar el proceso.
+        # vez al arrancar el proceso. `_lsp_conexion_activa` se guarda además de `on_message`
+        # para que _on_lsp_reiniciado() pueda cerrarla directamente si el proceso se reinicia
+        # solo mientras el navegador está inactivo (ver ese callback más arriba).
+        global _lsp_conexion_activa
         with _lsp_lock:
             lsp.on_message = _hacia_navegador
+            _lsp_conexion_activa = conexion
 
         try:
             while True:
@@ -1576,6 +1675,8 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             with _lsp_lock:
                 if lsp.on_message is _hacia_navegador:
                     lsp.on_message = None
+                if _lsp_conexion_activa is conexion:
+                    _lsp_conexion_activa = None
 
     # ── Estáticos (web/dist/, o placeholder si aún no existe la Etapa 5) ──────────────
     def _estaticos(self, segs: list[str]) -> None:
@@ -1627,7 +1728,8 @@ def _build_frontend() -> None:
                     "(se sirve el placeholder).")
         return
 
-    if not (WEB_DIR / "node_modules").exists():
+    node_modules = WEB_DIR / "node_modules"
+    if not node_modules.exists() or pkg_json.stat().st_mtime > node_modules.stat().st_mtime:
         print(f"  {core._c(core._C.DIM, 'Instalando dependencias de la SPA (npm install)...')}")
         subprocess.run([npm, "install"], cwd=str(WEB_DIR), check=True)
 

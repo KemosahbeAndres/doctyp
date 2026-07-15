@@ -205,44 +205,71 @@ onMounted(() => {
   // archivos sin una vista activa, así que un salto a lib.typ desde el editor de documentos
   // simplemente no hace nada en vez de abrirlo). Degradación obligatoria: si falla o tinymist
   // no está disponible, el editor sigue funcionando exactamente igual que hoy.
-  if (props.slug && props.codigo) {
-    conectarLsp(props.slug, props.codigo, props.tipo).then((conexion) => {
-      if (!conexion || !view) {
-        conexion?.cerrar();
-        return;
-      }
-      lspConexion.value = conexion;
-      folding = crearFoldingLsp(conexion.client, conexion.uri);
-      semanticTokens = crearSemanticTokens(conexion.client, conexion.uri);
-      inlayHints = crearInlayHints(conexion.client, conexion.uri);
-      documentColors = crearDocumentColors(conexion.client, conexion.uri);
-      view.dispatch({
-        effects: lspCompartment.reconfigure([
-          conexion.client.plugin(conexion.uri, "typst"),
-          keymap.of([...jumpToDefinitionKeymap, ...findReferencesKeymap, ...renameKeymap]),
-          crearSelectionRangeLsp(conexion.client, conexion.uri),
-          folding.extension,
-          semanticTokens.extension,
-          inlayHints.extension,
-          documentColors.extension,
-          crearCodeActions(conexion.client, conexion.uri),
-          // Fase 1C: quick-open de símbolos (workspace/symbol). Ctrl+T -- no es un atajo de
-          // navegador reservado en la mayoría de sistemas, a diferencia de Ctrl+O/Ctrl+N.
-          // Fase 1D: formatear (Ctrl-Shift-f, pedido explícito del plan -- no el Shift-Alt-f
-          // por defecto del paquete). Sin format-on-save (decisión ya tomada, invasivo).
-          keymap.of([
-            { key: "Ctrl-t", run: abrirQuickOpen, preventDefault: true },
-            { key: "Ctrl-Shift-f", run: formatDocument, preventDefault: true },
-          ]),
-        ]),
-      });
-      folding.refrescar(view);
-      semanticTokens.refrescar(view);
-      inlayHints.refrescar(view);
-      documentColors.refrescar(view);
-    });
-  }
+  if (props.slug && props.codigo) intentarConectarLsp();
 });
+
+// Reconexión con backoff: si `tinymist lsp` cae, el backend lo reinicia solo
+// (doctyp_lsp_server.py, mismo patrón que la vista previa) pero el WebSocket puente hacia ESTE
+// editor de todos modos se cierra (doctyp_web.py: `_lsp_bridge` rompe su bucle si falla el
+// envío al proceso caído) -- sin esto, el editor se quedaba para siempre sin diagnósticos/
+// completion/hover tras la primera caída, aunque el proceso ya hubiera vuelto a levantarse.
+let intentosReconexionLsp = 0;
+let temporizadorReconexionLsp = null;
+let desmontado = false;
+
+function limpiarExtensionesLsp() {
+  folding = semanticTokens = inlayHints = documentColors = null;
+  lspConexion.value = null;
+  view?.dispatch({ effects: lspCompartment.reconfigure([]) });
+}
+
+function onLspDesconectado() {
+  limpiarExtensionesLsp();
+  if (desmontado || !props.slug || !props.codigo) return;
+  intentosReconexionLsp += 1;
+  const espera = Math.min(30000, 1000 * 2 ** (intentosReconexionLsp - 1)); // tope 30s
+  temporizadorReconexionLsp = setTimeout(intentarConectarLsp, espera);
+}
+
+function intentarConectarLsp() {
+  conectarLsp(props.slug, props.codigo, props.tipo, onLspDesconectado).then((conexion) => {
+    if (!conexion || !view || desmontado) {
+      conexion?.cerrar();
+      if (!desmontado) onLspDesconectado(); // sigue sin tinymist -- reintentar más tarde
+      return;
+    }
+    intentosReconexionLsp = 0;
+    lspConexion.value = conexion;
+    folding = crearFoldingLsp(conexion.client, conexion.uri);
+    semanticTokens = crearSemanticTokens(conexion.client, conexion.uri);
+    inlayHints = crearInlayHints(conexion.client, conexion.uri);
+    documentColors = crearDocumentColors(conexion.client, conexion.uri);
+    view.dispatch({
+      effects: lspCompartment.reconfigure([
+        conexion.client.plugin(conexion.uri, "typst"),
+        keymap.of([...jumpToDefinitionKeymap, ...findReferencesKeymap, ...renameKeymap]),
+        crearSelectionRangeLsp(conexion.client, conexion.uri),
+        folding.extension,
+        semanticTokens.extension,
+        inlayHints.extension,
+        documentColors.extension,
+        crearCodeActions(conexion.client, conexion.uri),
+        // Fase 1C: quick-open de símbolos (workspace/symbol). Ctrl+T -- no es un atajo de
+        // navegador reservado en la mayoría de sistemas, a diferencia de Ctrl+O/Ctrl+N.
+        // Fase 1D: formatear (Ctrl-Shift-f, pedido explícito del plan -- no el Shift-Alt-f
+        // por defecto del paquete). Sin format-on-save (decisión ya tomada, invasivo).
+        keymap.of([
+          { key: "Ctrl-t", run: abrirQuickOpen, preventDefault: true },
+          { key: "Ctrl-Shift-f", run: formatDocument, preventDefault: true },
+        ]),
+      ]),
+    });
+    folding.refrescar(view);
+    semanticTokens.refrescar(view);
+    inlayHints.refrescar(view);
+    documentColors.refrescar(view);
+  });
+}
 
 watch(
   () => props.modelValue,
@@ -289,8 +316,10 @@ watch(ultimoEditorScrollTo, (evento) => {
 });
 
 onUnmounted(() => {
+  desmontado = true;
   if (temporizadorFolding) clearTimeout(temporizadorFolding);
   if (temporizadorQuickOpen) clearTimeout(temporizadorQuickOpen);
+  if (temporizadorReconexionLsp) clearTimeout(temporizadorReconexionLsp);
   view?.destroy();
   lspConexion.value?.cerrar();
 });

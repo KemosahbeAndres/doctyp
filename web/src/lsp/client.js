@@ -12,8 +12,15 @@ import { emitirDiagnostico } from "../composables/lspDiagnosticsBus.js";
  * Intenta conectar el LSP para (slug, codigo, tipo). Devuelve null si tinymist no está
  * disponible o la conexión falla -- degradación obligatoria (Fase 1B): el editor sigue
  * funcionando con el resaltado StreamLanguage de la Etapa 10, sin diagnósticos/completion/hover.
+ *
+ * `onDesconectado` (opcional): se llama UNA vez si la conexión se cae por una causa distinta a
+ * un `cerrar()` explícito del llamador -- p. ej. `tinymist lsp` murió en el backend y este
+ * cerró el WebSocket puente (ver doctyp_web.py: `_lsp_bridge`). El backend ya reinicia el
+ * proceso solo (ver doctyp_lsp_server.py: `_on_proceso_caido`); acá solo hace falta abrir una
+ * conexión NUEVA para volver a conectarse a él -- CodeEditor.vue es quien decide reintentar
+ * llamando a `conectarLsp` de nuevo desde este callback.
  */
-export async function conectarLsp(slug, codigo, tipo) {
+export async function conectarLsp(slug, codigo, tipo, onDesconectado) {
   let info;
   try {
     info = await getLspInfo(slug, codigo, tipo);
@@ -29,7 +36,7 @@ export async function conectarLsp(slug, codigo, tipo) {
     return null;
   }
 
-  const transport = crearTransporteWS(ws);
+  const transport = crearTransporteWS(ws, onDesconectado);
   const client = new LSPClient({
     extensions: [serverDiagnostics(), hoverTooltips(), serverCompletion(), signatureHelp()],
     // Los diagnósticos también se pintan en el editor vía serverDiagnostics() (arriba); este
@@ -57,6 +64,7 @@ export async function conectarLsp(slug, codigo, tipo) {
     client,
     uri: info.uri,
     cerrar() {
+      transport._marcarCierreExplicito();
       try { client.disconnect(); } catch { /* ya desconectado */ }
       try { ws.close(); } catch { /* ya cerrado */ }
     },

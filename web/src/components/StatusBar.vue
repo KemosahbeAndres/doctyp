@@ -2,7 +2,8 @@
 import { ref, computed, watch } from "vue";
 import { getHistoria, getVersionDiff, getVersionContenido, exportarLsp } from "../api.js";
 import { ultimoCompileStatus } from "../composables/compileStatusBus.js";
-import { ultimoDiagnostico } from "../composables/lspDiagnosticsBus.js";
+import { useDiagnosticos } from "../composables/useDiagnosticos.js";
+import DiagnosticosDropdown from "./DiagnosticosDropdown.vue";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -46,24 +47,16 @@ const compileStatusTexto = computed(() => ({
   error: "Error de compilación",
 }[compileStatus.value] || ""));
 
-// Fase 1B de tinymist-implementation-plan.md: contador de diagnósticos LSP (errores/avisos).
-// Severidad LSP 1=Error, 2=Warning, 3=Information, 4=Hint.
-const errores = ref(0);
-const avisos = ref(0);
-watch(ultimoDiagnostico, (evento) => {
-  if (!evento) return;
-  if (evento.tipo !== props.tipo || evento.slug !== props.slug || evento.codigo !== props.codigo) return;
-  const diags = evento.diagnosticos || [];
-  errores.value = diags.filter((d) => (d.severity ?? 1) === 1).length;
-  avisos.value = diags.filter((d) => (d.severity ?? 1) === 2).length;
-});
-const diagnosticosTexto = computed(() => {
-  if (!errores.value && !avisos.value) return "";
-  const partes = [];
-  if (errores.value) partes.push(`${errores.value} error${errores.value === 1 ? "" : "es"}`);
-  if (avisos.value) partes.push(`${avisos.value} aviso${avisos.value === 1 ? "" : "s"}`);
-  return partes.join(", ");
-});
+// Fase 1B de tinymist-implementation-plan.md: diagnósticos LSP (errores/avisos) del archivo
+// abierto en este editor. `useDiagnosticos` deriva del bus la lista vigente (no un historial:
+// cuando el LSP deja de reportar un diagnóstico, desaparece) ordenada por línea para el
+// desplegable (pedido del usuario -- CodeMirror los pinta en el editor, pero no había forma de
+// verlos todos listados a la vez).
+const tipoRef = computed(() => props.tipo);
+const slugRef = computed(() => props.slug);
+const codigoRef = computed(() => props.codigo);
+const { lista: diagnosticos, errores, resumenTexto: diagnosticosTexto } =
+  useDiagnosticos(tipoRef, slugRef, codigoRef);
 
 const versionActual = computed(() => versiones.value[0]?.version || "—");
 const estadoGuardado = computed(() => {
@@ -160,9 +153,12 @@ async function onCambioExportar(ev) {
         class="estado"
         :style="{ color: compileStatus === 'error' ? 'var(--danger)' : undefined }"
       >{{ compileStatusTexto }}</span>
-      <span v-if="diagnosticosTexto" class="estado" :style="{ color: errores ? 'var(--danger)' : undefined }">
-        {{ diagnosticosTexto }}
-      </span>
+      <DiagnosticosDropdown
+        v-if="diagnosticosTexto"
+        :lista="diagnosticos"
+        :resumen-texto="diagnosticosTexto"
+        :tiene-errores="!!errores"
+      />
       <span class="status-bar-spacer"></span>
       <span class="estado">{{ estadoGuardado }}</span>
     </div>

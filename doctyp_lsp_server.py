@@ -33,6 +33,14 @@ _TIMEOUT_INITIALIZE_S = 10.0
 _TIMEOUT_PETICION_BACKEND_S = 5.0
 _MAX_REINTENTOS = 3
 
+# Callback opcional, fijado por doctyp_web.py, para avisar que el proceso se reinició solo tras
+# una caída -- ver LspServer._on_proceso_caido(). El proceso nuevo no tiene memoria del anterior
+# (perdió el `didOpen` de cualquier documento abierto); a diferencia de PreviewServer (un
+# documento = un iframe, se remonta solo al recargar), acá el navegador mantiene el WebSocket
+# puente abierto toda la sesión de edición y puede quedarse bloqueado esperando algo DEL
+# navegador sin enterarse nunca del reinicio -- doctyp_web.py usa este callback para cerrar esa
+# conexión explícitamente (frame CLOSE) y forzar que el cliente JS (conectarLsp) reconecte.
+
 
 class LspServerError(Exception):
     pass
@@ -95,6 +103,16 @@ class LspServer:
     server_info: dict | None = field(default=None, init=False, repr=False)
     _detenido_manualmente: bool = field(default=False, init=False, repr=False)
     _generacion: int = field(default=0, init=False, repr=False)
+    # Mismo patrón que PreviewServer._on_proceso_caido(): la caída solo la nota el hilo lector
+    # de stdout (acá no hay un segundo canal como el control plane de preview), pero se guarda
+    # igual la guarda de "ya hay un reinicio en curso" por si el reinicio mismo dispara otra
+    # caída inmediata (loop de crashes) mientras el primer intento sigue en `time.sleep`.
+    _reintentos_hechos: int = field(default=0, init=False, repr=False)
+    _reiniciando: bool = field(default=False, init=False, repr=False)
+    # Notificado tras un reinicio exitoso (nueva generación de proceso, mismo objeto LspServer)
+    # para que doctyp_web.py pueda avisarle al navegador que debe re-sincronizar sus documentos
+    # abiertos (didOpen) -- el proceso nuevo no tiene memoria del anterior.
+    on_reiniciado: Callable[[], None] | None = field(default=None, init=False, repr=False)
 
     def _tinymist_path(self) -> Path:
         resuelto = resolver_tinymist_utilizable()
@@ -135,6 +153,41 @@ class LspServer:
             pass
         if not self._detenido_manualmente and generacion == self._generacion:
             core._warn("tinymist lsp terminó inesperadamente (stdout cerrado).")
+            self._on_proceso_caido()
+
+    def _on_proceso_caido(self) -> None:
+        """Reinicio automático con reintentos + backoff -- mismo criterio que
+        PreviewServer._on_proceso_caido() (Plan 15 F2), nunca implementado acá pese a que
+        `_MAX_REINTENTOS` ya estaba declarado (vestigio de la Fase 1A original)."""
+        with self._lock:
+            if self._detenido_manualmente or self._reiniciando:
+                return
+            if self._reintentos_hechos >= _MAX_REINTENTOS:
+                core._warn(
+                    f"tinymist lsp cayó {_MAX_REINTENTOS} veces seguidas; se deja de "
+                    "reintentar. Revisa el log con doctyp web --verbose."
+                )
+                return
+            self._reiniciando = True
+            self._reintentos_hechos += 1
+            intento_actual = self._reintentos_hechos
+
+        core._warn(f"reiniciando tinymist lsp (reintento {intento_actual}/{_MAX_REINTENTOS})...")
+        backoff = 0.5 * (2 ** (intento_actual - 1))
+        time.sleep(backoff)
+        try:
+            # `root`/`font_dir`/`on_message` ya están en la instancia -- start() los reusa tal
+            # cual (mismo objeto LspServer, solo cambia el subproceso subyacente).
+            self.start()
+            with self._lock:
+                self._reintentos_hechos = 0  # arrancó bien, resetea el contador
+            if self.on_reiniciado:
+                self.on_reiniciado()
+        except LspServerError as e:
+            core._warn(f"reintento de tinymist lsp falló: {e}")
+        finally:
+            with self._lock:
+                self._reiniciando = False
 
     def _despachar(self, datos: dict) -> None:
         id_ = datos.get("id")
@@ -281,3 +334,11 @@ class LspServer:
     @property
     def is_running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
+
+    def resetear_reintentos(self) -> None:
+        """Llamado por doctyp_web.py tras un start() manual exitoso (ver _asegurar_lsp) -- una
+        reconexión del navegador que revive el proceso después de agotar los reintentos
+        automáticos de _on_proceso_caido() es una señal de salud igual de válida que un
+        reintento automático exitoso; sin este reset, una caída posterior no reintentaría más."""
+        with self._lock:
+            self._reintentos_hechos = 0

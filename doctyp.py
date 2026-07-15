@@ -306,6 +306,15 @@ def _escribir_texto_atomico(path: Path, texto: str) -> None:
     os.replace(tmp, path)
 
 
+def _escribir_bytes_atomico(path: Path, datos: bytes) -> None:
+    """Mismo criterio que _escribir_texto_atomico pero para binarios -- usado al subir
+    imágenes a una plantilla desde `doctyp web` (Images/<archivo>)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_bytes(datos)
+    os.replace(tmp, path)
+
+
 def _org_vacia(slug: str, nombre: str) -> dict:
     return {
         "schema": 1,

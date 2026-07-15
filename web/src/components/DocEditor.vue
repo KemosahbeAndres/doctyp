@@ -41,6 +41,7 @@ const mostrarMeta = ref(false);
 const refreshSignalLocal = ref(0);
 const guardando = ref(false);
 const guardadoHora = ref("");
+const tinymistPreviewRef = ref(null);
 
 const sucio = computed(() => texto.value !== original.value);
 watch(sucio, (v) => emit("sucio-cambio", v));
@@ -115,6 +116,11 @@ async function autoguardar() {
       guardadoHora.value = _horaActual();
       mensaje.value = "";
     }
+    // El .typ ya está en disco -- tinymist detectará el cambio y recompilará solo, pero si el
+    // subproceso cayó (se agotaron sus reintentos automáticos, ver doctyp_preview_server.py) eso
+    // nunca pasaría hasta que algo vuelva a pedir /api/preview/info. Señal explícita del cliente
+    // (pedido del usuario): reasegurar tinymist fire-and-forget tras cada autoguardado exitoso.
+    tinymistPreviewRef.value?.reconectar();
   } catch (e) {
     mensaje.value = `Autoguardado falló: ${e.message}`;
     mensajeEsError.value = true;
@@ -248,6 +254,7 @@ defineExpose({ ocupado, subirVersion, compilarDoc, abrirMetadatos: () => { mostr
         />
         <TinymistPreview
           v-if="!usarPreviewLegacy"
+          ref="tinymistPreviewRef"
           :slug="slug"
           :codigo="codigo"
           tipo="doc"

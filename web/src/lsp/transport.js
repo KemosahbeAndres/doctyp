@@ -28,11 +28,19 @@ export function abrirWebSocketLsp(url, timeoutMs = 5000) {
   });
 }
 
-/** Envuelve un WebSocket ya abierto en la forma `Transport` de @codemirror/lsp-client. */
-export function crearTransporteWS(ws) {
+/** Envuelve un WebSocket ya abierto en la forma `Transport` de @codemirror/lsp-client.
+ * `onCerrado`: se llama una vez si el WS se cierra por cualquier motivo que NO sea un
+ * `cerrar()` explícito del propio cliente (ver client.js) -- p. ej. el backend cerró la
+ * conexión porque `tinymist lsp` cayó (doctyp_web.py: `except LspServerError: break` en
+ * `_lsp_bridge`). El transporte no sabe reconectar por sí mismo; solo avisa. */
+export function crearTransporteWS(ws, onCerrado) {
   const handlers = new Set();
+  let cerradoPorNosotros = false;
   ws.addEventListener("message", (ev) => {
     for (const h of handlers) h(ev.data);
+  });
+  ws.addEventListener("close", () => {
+    if (!cerradoPorNosotros && onCerrado) onCerrado();
   });
   return {
     send(mensaje) {
@@ -43,5 +51,6 @@ export function crearTransporteWS(ws) {
     },
     subscribe(handler) { handlers.add(handler); },
     unsubscribe(handler) { handlers.delete(handler); },
+    _marcarCierreExplicito() { cerradoPorNosotros = true; },
   };
 }

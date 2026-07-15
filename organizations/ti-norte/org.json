@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "slug": "ti-norte",
+  "nombre": "TI Norte",
+  "config": {
+    "correlativo_inicio": {},
+    "plantilla_default": "propuesta"
+  },
+  "equipos": [],
+  "autores": [
+    {
+      "id": "a1",
+      "nombre": "Andres Cubillos Salazar",
+      "cargo": "Ingeniero Informático",
+      "correo": "contacto@tinorte.cl",
+      "equipos": []
+    }
+  ],
+  "documentos": []
+}
