@@ -1,8 +1,11 @@
 # PLAN-V4.md — Dockerización, PostgreSQL, Auth, Proyectos y Diagramas
 
-> **Estado: APROBADO** (2026-07-14). Plan de arquitectura v4 para `doctyp`.
-> Extiende la arquitectura v3 (CLAUDE.md). Las etapas nuevas (17–22) continúan
-> la numeración de CLAUDE.md §14 y deben registrarse ahí al cerrarse.
+> **Estado: APROBADO** (2026-07-14; actualizado 2026-07-15 — dos clientes web
+> separados e integración por deep link, ver §0). Plan de arquitectura v4 para
+> `doctyp`. Extiende la arquitectura v3 (CLAUDE.md). Las etapas nuevas (18–23)
+> continúan la numeración de CLAUDE.md §14 y deben registrarse ahí al cerrarse.
+> (Renumeradas desde 17–22: la Etapa 17 quedó ocupada por las mejoras de UX del
+> 2026-07-15, ya cerradas en CLAUDE.md §14.)
 >
 > **Regla vigente:** plan antes de código. Cada etapa presenta su desglose y
 > espera aprobación explícita antes de implementar.
@@ -27,7 +30,24 @@
     a proyectos sin duplicar el registro.
 - **Sin proxy propio:** el VPS ya tiene un reverse proxy. El backend Node es el único
   puerto expuesto del compose; el proxy del VPS apunta a él.
-- **Base de datos: PostgreSQL 16.** Frontend: la SPA Vue 3 existente, extendida.
+- **Base de datos: PostgreSQL 16.**
+- **Dos clientes web SEPARADOS (decidido 2026-07-15, reemplaza "SPA existente extendida"):**
+  - **Cliente de proyectos** — SPA Vue 3 **nueva e independiente** (dashboard, proyectos,
+    hitos/tareas, y a futuro diagramas/IPAM/costos). Servida por Node.
+  - **Cliente doctyp** — la SPA existente (`web/`), **intacta como app aparte**, con su
+    backend Python + tinymist + WebSockets. No se fusionan.
+  - **Integración por deep link (opción B1, descartadas iframe y componentes compartidos):**
+    el cliente de proyectos abre el editor de un informe en **otra pestaña** vía la URL
+    `/documentos/<codigo_base>` de doctyp (rutas reales desde la Etapa 17 de CLAUDE.md).
+    El contrato entre módulos es `documents.codigo_base` + esa URL — sin código compartido,
+    sin acoplar builds. Para mostrar informes *en contexto* dentro de proyectos se embeben
+    solo **artefactos de solo lectura** vía proxy de Node (miniatura, PDF compilado,
+    historial/meta), nunca el editor. Opcional y barato: query param `?proyecto=<id>` para
+    que doctyp muestre un link "← Volver al proyecto".
+    Motivo del descarte: el editor es una rebanada vertical (LSP por WS, buses singleton,
+    SSE en la raíz, iframe de tinymist, proceso único de preview/LSP por sesión) — extraerlo
+    a un paquete compartido acopla los dos clientes; el iframe embebe una SPA completa con
+    iframe anidado y doble topbar.
 - Los autores pasan a ser **usuarios/miembros**: usuario = autor = miembro de equipo.
 
 ---
@@ -41,7 +61,8 @@
 | Auth | Sesiones de servidor: cookie `httpOnly` + tabla `sessions`; hash **Argon2id** | SPA same-origin → sesiones revocables, más simples que JWT |
 | BD | **PostgreSQL 16** (JSONB para modelos de diagrama y specs de catálogo; tipos nativos `CIDR`/`INET`/`MACADDR` para IPAM) | |
 | Doc-service | `doctyp_web.py` intacto (Python 3.12 + typst + tinymist) | Opción B: no perder el código Python |
-| Frontend | Vue 3 + Vite (existente) + **Pinia** + **Vue Router** | Necesarios con login/dashboard/proyectos |
+| Frontend proyectos | Vue 3 + Vite (**SPA nueva**, p. ej. `web-proyectos/`) + **Pinia** + **Vue Router** | Cliente independiente: login/dashboard/proyectos (§0) |
+| Frontend doctyp | SPA Vue 3 existente (`web/`), **sin cambios estructurales** | Ya tiene vue-router (CLAUDE.md Etapa 17); solo recibe el deep link |
 | Editor de diagramas | **Konva (vue-konva)** como base única | Planimetría a escala es el caso dominante; capas nativas mapean 1:1 con capas red/cctv |
 | Cálculo RF | Web Worker en frontend, modelo **Multi-Wall (COST 231)** | Heatmap sin bloquear la UI |
 
@@ -53,17 +74,27 @@
 docker-compose.yml
 ├── db            → postgres:16-alpine (solo red interna, volumen pgdata, healthcheck)
 ├── backend       → Node 22 + Fastify (ÚNICO puerto expuesto; el proxy del VPS apunta aquí)
-│                    · sirve web/dist como estáticos
-│                    · /api/v1/*   → lógica nueva (auth, proyectos, diagramas, IPAM, costos)
-│                    · /api/docs/* → proxy HTTP interno al doc-service
+│                    · /            → estáticos de la SPA de PROYECTOS (nueva, §0)
+│                    · /api/v1/*    → lógica nueva (auth, proyectos, diagramas, IPAM, costos)
+│                    · /docs/*      → proxy COMPLETO al doc-service: la SPA doctyp existente
+│                                     (que doctyp_web.py ya sirve), su API (/api/…), el
+│                                     WebSocket del LSP (/api/lsp) y el SSE (/api/events)
 └── doc-service   → doctyp_web.py intacto (solo red interna, sin exposición)
                      imagen python:3.12-slim + binarios typst y tinymist
-                     + pdftoppm/mutool (render PDF) — DWG llega en Etapa 22
+                     + pdftoppm/mutool (render PDF) — DWG llega en Etapa 23
                      volúmenes: docs_data, orgs_data, fuentes
 ```
 
 - **Autorización siempre en Node antes de proxear**; el doc-service confía en la red
   interna del compose (equivalente al bind 127.0.0.1 actual).
+- **Ambos clientes bajo el mismo dominio/sesión** (cookie httpOnly de Node): el deep link
+  proyectos→doctyp (§0) hereda la sesión sin SSO adicional.
+- **⚠ Punto técnico a resolver en la Etapa 18 (Docker):** la vista previa de tinymist usa
+  un **puerto dinámico propio** (static server + data plane WS, ver CLAUDE.md Etapa 15)
+  que hoy funciona porque navegador y proceso comparten host. Dentro del compose ese
+  puerto queda en la red interna: hay que proxearlo (Node o el propio doc-service como
+  túnel) o publicarlo de forma controlada. Es prerrequisito del editor en Docker,
+  independiente de la decisión de clientes separados.
 - **Museo Sans se monta como volumen desde el host/VPS — NUNCA dentro de una imagen**
   (hallazgo de auditoría: licencia de fuente no redistribuible).
 - Imágenes multi-stage: frontend (Vite build → estáticos servidos por Node),
@@ -124,9 +155,11 @@ tasks(id, project_id, titulo, descripcion,
 project_members(project_id, user_id, rol)
 ```
 
-**Dashboard (vista principal de la SPA):** dos focos — proyectos activos (hitos próximos,
-mis tareas) y documentos recientes/en borrador. El grid de documentos actual pasa a
-segunda vista.
+**Dashboard (vista principal de la SPA de PROYECTOS, §0):** dos focos — proyectos activos
+(hitos próximos, mis tareas) y documentos recientes/en borrador (datos vía referencia
+`codigo_base` + artefactos read-only proxeados; editar abre doctyp en otra pestaña).
+El grid de documentos de doctyp **no se toca**: sigue siendo la vista principal de su
+propia app.
 
 ### 3.4 Diagramas (Funcionalidad 3 — esqueleto)
 
@@ -242,20 +275,20 @@ Calibración manual siempre: 2 puntos + distancia real → `escala_px_por_metro`
 - **Etiqueta obligatoria** en UI y exportación: *"proyección teórica — no reemplaza
   site survey"*.
 - Riesgo conocido: grilla fina en pisos grandes → downsampling progresivo (se resuelve
-  en Etapa 22, no antes).
+  en Etapa 23, no antes).
 
 ---
 
-## 5. Roadmap (etapas 17–22, continúa CLAUDE.md §14)
+## 5. Roadmap (etapas 18–23, continúa CLAUDE.md §14; renumeradas 2026-07-15, ver cabecera)
 
 | Etapa | Alcance | Estado |
 |---|---|---|
-| 17 | **Docker + esqueleto Node:** compose (db / backend / doc-service), Fastify + TypeScript + Drizzle, migraciones iniciales, proxy interno al doc-service, servir la SPA. Sin auth (todo detrás de flag dev) | Pendiente |
-| 18 | **Auth:** users/sessions (cookie httpOnly, Argon2id), login/logout, RBAC org/team, migración autores `org.json` → users, guard de sesión delante del proxy al doc-service. Login/logout en SPA + Pinia + Vue Router | Pendiente |
-| 19 | **Proyectos + dashboard:** projects/milestones/tasks/project_members, enlace opcional documento↔proyecto (referencia por `codigo_base`), dashboard principal (proyectos activos, mis tareas, documentos recientes) | Pendiente |
-| 20 | **Esqueleto diagramas:** modelo BD (diagrams/floors/layers/versions/catalog), fondos PNG+PDF con calibración, editor Konva mínimo (capas, colocar equipos, muros de atenuación), versionado JSONB+SVG, bloqueo por piso, enlace a proyectos | Pendiente |
-| 21 | **Planimetría + IPAM + costos:** rutas con cálculo de metros (holgura + delta vertical), subredes/asignación IP (tipos INET/CIDR), BOM con neto+IVA, importación de versión de diagrama a informes (vía doc-service) | Pendiente |
-| 22 | **RF + CCTV + DWG:** motor Multi-Wall en worker, heatmap AP y PTP/Fresnel, conos CCTV, pipeline DWG→DXF, tabla de materiales de atenuación editable | Pendiente |
+| 18 | **Docker + esqueleto Node:** compose (db / backend / doc-service), Fastify + TypeScript + Drizzle, migraciones iniciales, proxy completo al doc-service (SPA doctyp + API + WS/SSE + puerto de preview de tinymist, ver ⚠ en §2), esqueleto de la SPA de proyectos servida por Node. Sin auth (todo detrás de flag dev) | Pendiente |
+| 19 | **Auth:** users/sessions (cookie httpOnly, Argon2id), login/logout, RBAC org/team, migración autores `org.json` → users, guard de sesión delante del proxy al doc-service. Login/logout en la SPA de proyectos + Pinia + Vue Router | Pendiente |
+| 20 | **Proyectos + dashboard:** projects/milestones/tasks/project_members, enlace opcional documento↔proyecto (referencia por `codigo_base`), dashboard principal en la SPA de proyectos (proyectos activos, mis tareas, documentos recientes con artefactos read-only), deep link "editar informe" → doctyp en otra pestaña (§0) | Pendiente |
+| 21 | **Esqueleto diagramas:** modelo BD (diagrams/floors/layers/versions/catalog), fondos PNG+PDF con calibración, editor Konva mínimo (capas, colocar equipos, muros de atenuación), versionado JSONB+SVG, bloqueo por piso, enlace a proyectos | Pendiente |
+| 22 | **Planimetría + IPAM + costos:** rutas con cálculo de metros (holgura + delta vertical), subredes/asignación IP (tipos INET/CIDR), BOM con neto+IVA, importación de versión de diagrama a informes (vía doc-service) | Pendiente |
+| 23 | **RF + CCTV + DWG:** motor Multi-Wall en worker, heatmap AP y PTP/Fresnel, conos CCTV, pipeline DWG→DXF, tabla de materiales de atenuación editable | Pendiente |
 
 **Reglas de cierre por etapa:**
 1. Actualizar esta tabla y CLAUDE.md §14.
@@ -270,6 +303,6 @@ Calibración manual siempre: 2 puntos + distancia real → `escala_px_por_metro`
 - RLS de Postgres como endurecimiento de autorización.
 - Rate-limit en login.
 - Especificación detallada de plantillas de atributos por categoría de catálogo
-  (se define con el usuario antes de la Etapa 20/21).
-- Port gradual del doc-service Python a Node (post-Etapa 22, sin fecha).
+  (se define con el usuario antes de la Etapa 21/22).
+- Port gradual del doc-service Python a Node (post-Etapa 23, sin fecha).
 - Conexión del CLI al backend (trabajo colaborativo post-VPS, sin fecha).
