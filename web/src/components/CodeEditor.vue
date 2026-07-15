@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, watch } from "vue";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { codeFolding, foldGutter, foldKeymap } from "@codemirror/language";
 import {
   jumpToDefinitionKeymap, findReferencesKeymap, renameKeymap, formatDocument,
@@ -24,7 +24,7 @@ const props = defineProps({
   tipo: { type: String, default: "doc" }, // "doc" | "plantilla" -- debe calzar con recurso_tipo del evento
 });
 
-const emit = defineEmits(["update:modelValue", "salto-no-editable", "clic-en-editor"]);
+const emit = defineEmits(["update:modelValue", "salto-no-editable", "clic-en-editor", "guardar"]);
 
 const host = ref(null);
 let view = null;
@@ -156,7 +156,16 @@ onMounted(() => {
         history(),
         codeFolding(),
         foldGutter(),
-        keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
+        keymap.of([
+          // Guardado inmediato: sin esto el navegador abre su diálogo "Guardar página como".
+          // El autoguardado (300 ms, DocEditor.vue/TemplateEditor.vue) ya persiste solo, este
+          // atajo solo fuerza un flush inmediato -- ver handler "guardar" en esos componentes.
+          { key: "Mod-s", run: () => { emit("guardar"); return true; }, preventDefault: true },
+          indentWithTab,
+          ...defaultKeymap,
+          ...historyKeymap,
+          ...foldKeymap,
+        ]),
         typstLanguage,
         typstHighlighting(prefersDark),
         EditorView.lineWrapping,

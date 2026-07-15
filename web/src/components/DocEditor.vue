@@ -251,6 +251,7 @@ defineExpose({ ocupado, subirVersion, compilarDoc, abrirMetadatos: () => { mostr
           tipo="doc"
           @clic-en-editor="onClicEnEditor"
           @salto-no-editable="onSaltoNoEditable"
+          @guardar="flushGuardado"
         />
         <TinymistPreview
           v-if="!usarPreviewLegacy"

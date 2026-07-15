@@ -281,6 +281,7 @@ defineExpose({ ocupado, guardar });
           tipo="plantilla"
           @clic-en-editor="onClicEnEditor"
           @salto-no-editable="onSaltoNoEditable"
+          @guardar="flushGuardado"
         />
         <TinymistPreview
           v-if="!usarPreviewLegacy"
