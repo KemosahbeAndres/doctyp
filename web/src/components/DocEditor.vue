@@ -9,7 +9,7 @@ import StatusBar from "./StatusBar.vue";
 import TypstCanvasPreview from "./TypstCanvasPreview.vue";
 import TinymistPreview from "./TinymistPreview.vue";
 import CodeEditor from "./CodeEditor.vue";
-import SubirImagenesModal from "./SubirImagenesModal.vue";
+import FileTreeSidebar from "./FileTreeSidebar.vue";
 
 const props = defineProps({
   slug: { type: String, required: true },
@@ -39,7 +39,6 @@ const ocupado = ref(false);
 const mensaje = ref("");
 const mensajeEsError = ref(false);
 const mostrarMeta = ref(false);
-const mostrarImagenes = ref(false);
 const refreshSignalLocal = ref(0);
 const guardando = ref(false);
 const guardadoHora = ref("");
@@ -219,8 +218,8 @@ function onSaltoNoEditable() {
 }
 
 // Mismo motivo que TemplateEditor.vue: el iframe de tinymist ya cargó su propio snapshot del
-// proyecto al abrirse -- sin esto, una imagen recién subida/eliminada en img/ no aparecería en
-// la vista previa hasta que algo más recargue el iframe.
+// proyecto al abrirse -- sin esto, una imagen recién subida/renombrada/eliminada en img/ (vía
+// FileTreeSidebar.vue) no aparecería en la vista previa hasta que algo más recargue el iframe.
 function onImagenesCambiadas() {
   tinymistPreviewRef.value?.refrescarForzado();
 }
@@ -250,33 +249,41 @@ defineExpose({ ocupado, subirVersion, compilarDoc, abrirMetadatos: () => { mostr
       <div v-if="mensaje" class="estado editor-mensaje" :style="{ color: mensajeEsError ? 'var(--danger)' : undefined }">
         {{ mensaje }}
       </div>
-      <div class="editor-preview-split">
-        <CodeEditor
-          class="editor-textarea"
-          v-model="texto"
-          :disabled="cargando"
-          :slug="slug"
-          :codigo="codigo"
+      <div class="editor-body">
+        <FileTreeSidebar
           tipo="doc"
-          @clic-en-editor="onClicEnEditor"
-          @salto-no-editable="onSaltoNoEditable"
-          @guardar="flushGuardado"
-        />
-        <TinymistPreview
-          v-if="!usarPreviewLegacy"
-          ref="tinymistPreviewRef"
           :slug="slug"
-          :codigo="codigo"
-          tipo="doc"
-          @no-disponible="usarPreviewLegacy = true"
+          :nombre="codigo"
+          @cambiado="onImagenesCambiadas"
         />
-        <TypstCanvasPreview
-          v-else
-          :slug="slug"
-          :codigo="codigo"
-          :texto="texto"
-          :cargar-archivos="cargarArchivosDoc"
-        />
+        <div class="editor-preview-split">
+          <CodeEditor
+            class="editor-textarea"
+            v-model="texto"
+            :disabled="cargando"
+            :slug="slug"
+            :codigo="codigo"
+            tipo="doc"
+            @clic-en-editor="onClicEnEditor"
+            @salto-no-editable="onSaltoNoEditable"
+            @guardar="flushGuardado"
+          />
+          <TinymistPreview
+            v-if="!usarPreviewLegacy"
+            ref="tinymistPreviewRef"
+            :slug="slug"
+            :codigo="codigo"
+            tipo="doc"
+            @no-disponible="usarPreviewLegacy = true"
+          />
+          <TypstCanvasPreview
+            v-else
+            :slug="slug"
+            :codigo="codigo"
+            :texto="texto"
+            :cargar-archivos="cargarArchivosDoc"
+          />
+        </div>
       </div>
       <StatusBar
         :slug="slug"
@@ -287,7 +294,6 @@ defineExpose({ ocupado, subirVersion, compilarDoc, abrirMetadatos: () => { mostr
         :guardado-hora="guardadoHora"
         :refresh-signal="refreshSignalLocal"
         @cargar-en-editor="onCargarEnEditor"
-        @abrir-imagenes="mostrarImagenes = true"
       />
       <MetaEditorModal
         v-if="mostrarMeta"
@@ -295,14 +301,6 @@ defineExpose({ ocupado, subirVersion, compilarDoc, abrirMetadatos: () => { mostr
         :codigo="codigo"
         @guardado="onMetaGuardado"
         @cancelar="mostrarMeta = false"
-      />
-      <SubirImagenesModal
-        v-if="mostrarImagenes"
-        tipo="doc"
-        :slug="slug"
-        :nombre="codigo"
-        @cerrar="mostrarImagenes = false"
-        @cambiado="onImagenesCambiadas"
       />
     </template>
   </div>

@@ -857,6 +857,34 @@ def api_doc_archivo_eliminar(slug: str, codigo_base: str, ruta: list[str]) -> di
     return {"ok": True}
 
 
+def api_doc_archivo_renombrar(slug: str, codigo_base: str, ruta: list[str], nombre_nuevo: str) -> dict:
+    """PUT .../documentos/<codigo_base>/archivo/<ruta...> -- renombra una imagen ya subida a
+    img/ (§4 CLAUDE.md). Solo dentro de img/ -- el sidebar de archivos (solo lectura para todo
+    lo demás) es el único llamador; se valida acá también por si la API se llama a mano."""
+    org = _cargar_org_api(slug)
+    _doc_o_404(org, codigo_base)
+    if not ruta or ruta[0] != "img":
+        raise ApiError(400, "solo se pueden renombrar archivos dentro de img/")
+    nombre_nuevo = (nombre_nuevo or "").strip()
+    if not nombre_nuevo:
+        raise ApiError(400, "el nombre nuevo es obligatorio")
+    nombre_nuevo = Path(nombre_nuevo).name
+    extension = Path(nombre_nuevo).suffix.lower()
+    if extension not in _EXTENSIONES_IMAGEN:
+        raise ApiError(400, f"extensión no permitida: '{extension}' (usa png/jpg/jpeg/svg/webp/gif)")
+    _resolver_ruta_segura(core.docs_root(), slug, codigo_base, *ruta)
+    origen = core.doc_dir(slug, codigo_base).joinpath(*ruta)
+    if not origen.is_file():
+        raise ApiError(404, f"no existe el archivo '{'/'.join(ruta)}'")
+    _resolver_ruta_segura(core.docs_root(), slug, codigo_base, "img", nombre_nuevo)
+    destino = core.doc_dir(slug, codigo_base) / "img" / nombre_nuevo
+    if destino.exists():
+        raise ApiError(400, f"ya existe un archivo llamado '{nombre_nuevo}'")
+    origen.rename(destino)
+    _emitir_evento_sse({"tipo": "doc-saved", "slug": slug, "codigo": codigo_base})
+    return {"ok": True, "ruta": f"img/{nombre_nuevo}"}
+
+
 def api_doc_save(slug: str, codigo_base: str, mensaje: str) -> dict:
     if not mensaje:
         raise ApiError(400, "el mensaje es obligatorio")
@@ -1046,6 +1074,33 @@ def api_template_archivo_eliminar(slug: str, nombre: str, ruta: list[str]) -> di
     destino.unlink()
     _emitir_evento_sse({"tipo": "plantilla-guardada", "slug": slug, "nombre": nombre})
     return {"ok": True}
+
+
+def api_template_archivo_renombrar(slug: str, nombre: str, ruta: list[str], nombre_nuevo: str) -> dict:
+    """PUT .../plantillas/<nombre>/archivo/<ruta...> -- renombra una imagen ya subida a Images/.
+    Mismo criterio que api_doc_archivo_renombrar."""
+    _cargar_org_api(slug)
+    _plantilla_o_404(slug, nombre)
+    if not ruta or ruta[0] != "Images":
+        raise ApiError(400, "solo se pueden renombrar archivos dentro de Images/")
+    nombre_nuevo = (nombre_nuevo or "").strip()
+    if not nombre_nuevo:
+        raise ApiError(400, "el nombre nuevo es obligatorio")
+    nombre_nuevo = Path(nombre_nuevo).name
+    extension = Path(nombre_nuevo).suffix.lower()
+    if extension not in _EXTENSIONES_IMAGEN:
+        raise ApiError(400, f"extensión no permitida: '{extension}' (usa png/jpg/jpeg/svg/webp/gif)")
+    _resolver_ruta_segura(core.organizations_dir(), slug, "templates", nombre, *ruta)
+    origen = core.plantilla_dir(slug, nombre).joinpath(*ruta)
+    if not origen.is_file():
+        raise ApiError(404, f"no existe el archivo '{'/'.join(ruta)}'")
+    _resolver_ruta_segura(core.organizations_dir(), slug, "templates", nombre, "Images", nombre_nuevo)
+    destino = core.plantilla_dir(slug, nombre) / "Images" / nombre_nuevo
+    if destino.exists():
+        raise ApiError(400, f"ya existe un archivo llamado '{nombre_nuevo}'")
+    origen.rename(destino)
+    _emitir_evento_sse({"tipo": "plantilla-guardada", "slug": slug, "nombre": nombre})
+    return {"ok": True, "ruta": f"Images/{nombre_nuevo}"}
 
 
 def api_template_muestra(slug: str, nombre: str) -> str:
@@ -1463,6 +1518,10 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             if sub == "archivo" and len(segs) >= 6 and metodo == "DELETE":
                 self._json(200, api_doc_archivo_eliminar(slug, codigo_base, segs[5:]))
                 return
+            if sub == "archivo" and len(segs) >= 6 and metodo == "PUT":
+                cuerpo = self._leer_cuerpo_json()
+                self._json(200, api_doc_archivo_renombrar(slug, codigo_base, segs[5:], cuerpo.get("nombre_nuevo", "")))
+                return
             self._error(404, "ruta de API desconocida")
             return
 
@@ -1520,6 +1579,10 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                 return
             if sub == "archivo" and len(segs) >= 6 and metodo == "DELETE":
                 self._json(200, api_template_archivo_eliminar(slug, nombre, segs[5:]))
+                return
+            if sub == "archivo" and len(segs) >= 6 and metodo == "PUT":
+                cuerpo = self._leer_cuerpo_json()
+                self._json(200, api_template_archivo_renombrar(slug, nombre, segs[5:], cuerpo.get("nombre_nuevo", "")))
                 return
             if sub == "muestra" and len(segs) == 5 and metodo == "GET":
                 self._json(200, {"contenido": api_template_muestra(slug, nombre)})

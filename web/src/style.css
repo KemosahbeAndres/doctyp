@@ -100,6 +100,27 @@ button.primary {
   gap: 0.3em;
 }
 
+.topbar a {
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  background: var(--bg-panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4em 0.8em;
+}
+
+.topbar a:hover {
+  border-color: var(--accent);
+}
+
+.topbar a.router-link-active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
 .vista-grid {
   flex: 1;
   overflow-y: auto;
@@ -269,21 +290,28 @@ button.primary {
   color: var(--text-dim);
 }
 
-.editor-preview-split {
+.editor-body {
   flex: 1;
   display: flex;
   min-height: 0;
 }
 
-.editor-textarea {
+.editor-preview-split {
   flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+.editor-textarea {
+  flex: 60 1 0;
   min-width: 0;
   background: var(--bg);
   color: var(--text);
 }
 
 .vista-previa {
-  flex: 1;
+  flex: 40 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;

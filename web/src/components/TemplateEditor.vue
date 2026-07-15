@@ -10,7 +10,7 @@ import TypstCanvasPreview from "./TypstCanvasPreview.vue";
 import TinymistPreview from "./TinymistPreview.vue";
 import CodeEditor from "./CodeEditor.vue";
 import DiagnosticosDropdown from "./DiagnosticosDropdown.vue";
-import SubirImagenesModal from "./SubirImagenesModal.vue";
+import FileTreeSidebar from "./FileTreeSidebar.vue";
 import { ultimoCompileStatus } from "../composables/compileStatusBus.js";
 import { useDiagnosticos } from "../composables/useDiagnosticos.js";
 
@@ -35,7 +35,6 @@ const versiones = ref([]);
 const guardando = ref(false);
 const guardadoHora = ref("");
 const tinymistPreviewRef = ref(null);
-const mostrarImagenes = ref(false);
 
 function _horaActual() {
   return new Date().toLocaleTimeString("es-CL", { hour12: false });
@@ -239,9 +238,10 @@ async function onCambioExportar(ev) {
   }
 }
 
-// Las imágenes subidas/eliminadas desde el modal quedan en disco (Images/) pero el iframe de
-// tinymist ya cargó su propio snapshot del proyecto al abrirse -- sin esto, #image("Images/…")
-// recién agregado en lib.typ no aparecería hasta la próxima vez que algo más recargue el iframe.
+// Las imágenes subidas/renombradas/eliminadas desde el sidebar (FileTreeSidebar.vue) quedan en
+// disco (Images/) pero el iframe de tinymist ya cargó su propio snapshot del proyecto al
+// abrirse -- sin esto, #image("Images/…") recién agregado en lib.typ no aparecería hasta la
+// próxima vez que algo más recargue el iframe.
 function onImagenesCambiadas() {
   tinymistPreviewRef.value?.refrescarForzado();
 }
@@ -272,32 +272,40 @@ defineExpose({ ocupado, guardar });
       <div v-if="mensaje" class="estado editor-mensaje" :style="{ color: mensajeEsError ? 'var(--danger)' : undefined }">
         {{ mensaje }}
       </div>
-      <div class="editor-preview-split">
-        <CodeEditor
-          class="editor-textarea"
-          v-model="texto"
-          :slug="slug"
-          :codigo="nombre"
+      <div class="editor-body">
+        <FileTreeSidebar
           tipo="plantilla"
-          @clic-en-editor="onClicEnEditor"
-          @salto-no-editable="onSaltoNoEditable"
-          @guardar="flushGuardado"
-        />
-        <TinymistPreview
-          v-if="!usarPreviewLegacy"
-          ref="tinymistPreviewRef"
           :slug="slug"
-          :codigo="nombre"
-          tipo="plantilla"
-          @no-disponible="usarPreviewLegacy = true"
+          :nombre="nombre"
+          @cambiado="onImagenesCambiadas"
         />
-        <TypstCanvasPreview
-          v-else
-          :slug="slug"
-          :codigo="nombre"
-          :texto="texto"
-          :cargar-archivos="cargarArchivosPlantilla"
-        />
+        <div class="editor-preview-split">
+          <CodeEditor
+            class="editor-textarea"
+            v-model="texto"
+            :slug="slug"
+            :codigo="nombre"
+            tipo="plantilla"
+            @clic-en-editor="onClicEnEditor"
+            @salto-no-editable="onSaltoNoEditable"
+            @guardar="flushGuardado"
+          />
+          <TinymistPreview
+            v-if="!usarPreviewLegacy"
+            ref="tinymistPreviewRef"
+            :slug="slug"
+            :codigo="nombre"
+            tipo="plantilla"
+            @no-disponible="usarPreviewLegacy = true"
+          />
+          <TypstCanvasPreview
+            v-else
+            :slug="slug"
+            :codigo="nombre"
+            :texto="texto"
+            :cargar-archivos="cargarArchivosPlantilla"
+          />
+        </div>
       </div>
       <div class="status-bar">
         <div class="status-bar-fila">
@@ -313,7 +321,6 @@ defineExpose({ ocupado, guardar });
             <option value="text">Texto plano</option>
             <option value="markdown">Markdown</option>
           </select>
-          <button type="button" @click="mostrarImagenes = true">Imágenes…</button>
           <span class="estado">{{ palabras }} palabras · {{ tamanoKB }} KB</span>
           <span
             v-if="compileStatusTexto"
@@ -330,14 +337,6 @@ defineExpose({ ocupado, guardar });
           <span class="estado">{{ estadoGuardado }}</span>
         </div>
       </div>
-      <SubirImagenesModal
-        v-if="mostrarImagenes"
-        tipo="plantilla"
-        :slug="slug"
-        :nombre="nombre"
-        @cerrar="mostrarImagenes = false"
-        @cambiado="onImagenesCambiadas"
-      />
     </template>
   </div>
 </template>

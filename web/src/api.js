@@ -121,7 +121,7 @@ function _archivoABase64(file) {
   });
 }
 
-/** Sube una imagen a Images/ de la plantilla (SubirImagenesModal.vue). El cuerpo viaja en JSON
+/** Sube una imagen a Images/ de la plantilla (FileTreeSidebar.vue). El cuerpo viaja en JSON
  * con el contenido en base64 -- el proyecto es stdlib puro en el backend, sin parser
  * multipart/form-data ya escrito (ver api_template_archivo_subir en doctyp_web.py). */
 export async function subirImagenPlantilla(slug, nombre, file) {
@@ -137,6 +137,15 @@ export function eliminarArchivoPlantilla(slug, nombre, ruta) {
   const partes = ruta.split("/").map(enc).join("/");
   return request(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/archivo/${partes}`, {
     method: "DELETE",
+  });
+}
+
+/** Renombra una imagen ya subida a Images/ de la plantilla (FileTreeSidebar.vue). */
+export function renombrarArchivoPlantilla(slug, nombre, ruta, nombreNuevo) {
+  const partes = ruta.split("/").map(enc).join("/");
+  return request(`/api/orgs/${enc(slug)}/plantillas/${enc(nombre)}/archivo/${partes}`, {
+    method: "PUT",
+    body: JSON.stringify({ nombre_nuevo: nombreNuevo }),
   });
 }
 
@@ -275,6 +284,15 @@ export async function subirImagenDoc(slug, codigo, file) {
   return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/archivo`, {
     method: "POST",
     body: JSON.stringify({ nombre_archivo: file.name, contenido_base64 }),
+  });
+}
+
+/** Renombra una imagen ya subida a img/ del documento (FileTreeSidebar.vue). */
+export function renombrarArchivoDoc(slug, codigo, ruta, nombreNuevo) {
+  const partes = ruta.split("/").map(enc).join("/");
+  return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/archivo/${partes}`, {
+    method: "PUT",
+    body: JSON.stringify({ nombre_nuevo: nombreNuevo }),
   });
 }
 
