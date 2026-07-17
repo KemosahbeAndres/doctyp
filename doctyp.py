@@ -2181,41 +2181,23 @@ def cmd_compile(args):
         anio = args.anio or datetime.date.today().year
         doc = buscar_doc_org(org, args.correlativo, anio)
 
-    # Commit de versión implícito: cada compilación sube el patch antes de generar el PDF,
-    # así el documento (portada, ficha, tabla de versiones) siempre refleja la versión compilada.
-    mensaje = getattr(args, "mensaje", None) or ""
-    if not mensaje:
-        mensaje = pedir_mensaje_version()
-        if mensaje is None:
-            return
-
     dest_dir = doc_dir(slug, doc["codigo_base"])
     typ_path = dest_dir / f"{doc['codigo_base']}.typ"
     if not typ_path.exists():
         sys.exit(f"ERROR: el archivo del documento no existe: {typ_path}")
-    version_actual, version = realizar_save_org(dest_dir, doc, mensaje)
-    guardar_org(slug, org)
-    _ok(f"Versión actualizada: {_c(_C.DIM, 'v' + version_actual)} → "
-        f"{_c(_C.BOLD + _C.CYAN, 'v' + version)}")
-
-    pdf_versioned_name = f"{typ_path.stem} (v{version}).pdf"
 
     print(f"\n  Compilando {_c(_C.BOLD, doc['codigo_base'])} → "
-          f"{_c(_C.DIM, pdf_versioned_name)}")
+          f"{_c(_C.DIM, typ_path.with_suffix('.pdf').name)}")
     if not compilar_typ(typ_path):
         sys.exit(1)
 
     pdf = typ_path.with_suffix(".pdf")
-    pdf_versioned = pdf.parent / pdf_versioned_name
     if pdf.exists():
-        if pdf_versioned.exists():
-            pdf_versioned.unlink()
-        pdf.rename(pdf_versioned)
-        _ok(f"PDF: {_c(_C.DIM, str(pdf_versioned))}")
+        _ok(f"PDF: {_c(_C.DIM, str(pdf))}")
 
-    destino_cwd = Path.cwd() / pdf_versioned_name
-    if pdf_versioned.exists() and destino_cwd.resolve() != pdf_versioned.resolve():
-        shutil.copy2(pdf_versioned, destino_cwd)
+    destino_cwd = Path.cwd() / pdf.name
+    if pdf.exists() and destino_cwd.resolve() != pdf.resolve():
+        shutil.copy2(pdf, destino_cwd)
         _ok(f"Copiado a: {_c(_C.DIM, str(destino_cwd))}\n")
 
 
@@ -2778,13 +2760,10 @@ def build_parser() -> argparse.ArgumentParser:
     pi.set_defaults(func=cmd_import)
 
     pc = sub.add_parser("compile", aliases=["c"],
-                        help="Sube versión (commit implícito) y compila el documento a PDF.")
+                        help="Compila el documento a PDF (sin subir versión).")
     pc.add_argument("correlativo", type=int, nargs="?", metavar="CORRELATIVO",
                     help="Número correlativo del documento a compilar. "
                          "Si se omite, se lee de doctyp.json en el directorio actual.")
-    pc.add_argument("--mensaje", "--m", dest="mensaje",
-                    help="Mensaje de la nueva versión que se sube antes de compilar. "
-                         "Si se omite, se pide interactivo.")
     pc.add_argument("--anio", type=int, help="Año del documento (por defecto, el actual).")
     pc.set_defaults(func=cmd_compile)
 
@@ -2872,7 +2851,7 @@ def menu_interactivo() -> None:
         ("add",           "a",               "Importar un .typ existente al registro"),
         ("import",        "i",               "Anclar un documento del registro en doctyp.json"),
         ("delete",        "del",             "Eliminar un documento del sistema"),
-        ("compile",       "c",               "Subir versión y compilar un documento a PDF"),
+        ("compile",       "c",               "Compilar un documento a PDF (sin subir versión)"),
         ("edit",          "code / e / open", "Abrir un documento en el editor"),
         ("reset",         "",                "Fijar el inicio del correlativo del año"),
         ("org list",      "",                "Listar organizaciones"),
