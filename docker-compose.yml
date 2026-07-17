@@ -22,17 +22,13 @@ services:
       - DOCTYP_DOCS_ROOT=/data/docs
       - DOCTYP_BIND=0.0.0.0
     networks:
-      - traefik
+      - proxy
     labels:
       - traefik.enable=true
-      - traefik.http.routers.doctyp.rule=Host(`doctyp.example.cl`)
+      - traefik.http.routers.doctyp.rule=Host(`doctyp.tinorte.cl`)
       - traefik.http.routers.doctyp.entrypoints=websecure
       - traefik.http.routers.doctyp.tls.certresolver=letsencrypt
       - traefik.http.services.doctyp.loadbalancer.server.port=8787
-
-networks:
-  traefik:
-    external: true
 
 volumes:
   data:
