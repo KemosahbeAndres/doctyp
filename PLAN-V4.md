@@ -80,8 +80,9 @@ docker-compose.yml
 └── doctyp   → único servicio (python:3.12-slim)
                + binarios typst y tinymist
                + fuentes Liberation (Museo Sans montada por volumen, NUNCA en la imagen*)
-               puerto expuesto: 8787 (el reverse proxy del VPS apunta aquí; no se
-               implementa proxy propio)
+               puerto interno: 8787 — SIN mapeo fijo al host: el VPS corre Traefik,
+               que descubre el contenedor (provider Docker + labels) y le rutea el
+               tráfico por la red compartida; no se implementa proxy propio
                volúmenes:
                  · data       → doctyp.db (WAL) + organizations/ (plantillas)
                  · docs_data  → DOCS_ROOT (documentos, img/, .snapshots/)
@@ -95,13 +96,23 @@ de una imagen.
   fallback a la resolución por SO actual) apuntando al volumen `docs_data`. Análogo
   `DOCTYP_DB_PATH` para ubicar `doctyp.db` en el volumen `data`.
 - **Bind:** `DOCTYP_BIND` (default actual `127.0.0.1`; en contenedor `0.0.0.0` — la
-  exposición real la controla el mapeo de puertos y el proxy del VPS).
+  exposición real la controla Traefik, no un mapeo de puertos del host).
+- **Traefik (reverse proxy del VPS, ya instalado):** el servicio NO publica puerto en
+  el host — se une a la red externa de Traefik y declara labels
+  (`traefik.enable=true`, router con la regla de dominio, `…services.…loadbalancer.
+  server.port=8787`). Traefik detecta el contenedor al levantarse y le asigna la
+  ruta/TLS; da igual qué puerto efímero tenga hacia afuera. Ventaja directa: **una
+  sola instancia central del servidor** atendida por dominio, que es justamente lo que
+  garantiza el **correlativo global por organización** (§3: todos los usuarios crean
+  documentos contra la misma BD, `BEGIN IMMEDIATE` en `correlative_counters`).
 - **⚠ Punto técnico a resolver en la Etapa 18:** la vista previa de tinymist usa un
   **puerto dinámico propio** (static server + data plane WS, CLAUDE.md Etapa 15) que
-  hoy funciona porque navegador y proceso comparten host. En Docker ese puerto queda
-  dentro del contenedor: hay que **tunelizarlo a través de doctyp_web.py** (proxy
-  HTTP/WS interno bajo `/preview/…`) o publicar un rango de puertos controlado.
-  Prerrequisito del editor en Docker.
+  hoy funciona porque navegador y proceso comparten host. En Docker + Traefik ese
+  puerto queda inalcanzable desde el navegador: la única vía es **tunelizarlo a
+  través de doctyp_web.py** (proxy HTTP/WS interno bajo `/preview/…`, mismo puerto
+  8787 que ya rutea Traefik) — publicar un rango de puertos queda descartado, Traefik
+  rutea por dominio hacia un único puerto de servicio. Prerrequisito del editor en
+  Docker.
 - `compose.override.yml` para desarrollo: montaje del código, `--no-build`, Vite dev
   server, puertos extra.
 - **Backups:** `sqlite3 doctyp.db ".backup ..."` programado (backup en caliente,
@@ -161,6 +172,19 @@ correlative_counters(org_id, anio, ultimo, PK(org_id, anio))
   `admin` (gestiona miembros/equipos/plantillas) y `member` (documenta).
 - **Alta de usuarios:** los creados por la migración reciben invitación con token de
   un solo uso para fijar su password (pasan de `password_hash NULL` a credencial real).
+- **Arranque y primer login (bootstrap):** los usuarios SON los autores (ya es el
+  modelo: `org_members` reemplaza `autores[]`). Dos casos que el login debe resolver
+  sin intervención manual sobre la BD:
+  1. **Sin usuarios** (`users` vacía, instalación nueva): la SPA muestra una pantalla
+     de configuración inicial — crear el primer usuario (nombre, email, password) —
+     en lugar del login; ese usuario queda como `admin`. En el CLI local, cualquier
+     comando que requiera autor dispara el alta interactiva equivalente.
+  2. **Único usuario sin password** (`password_hash NULL`, típico tras
+     `doctyp migrate` desde el modo monousuario): la pantalla de login lo detecta y
+     le pide **crear su password en ese primer login**, directamente y sin token de
+     invitación (no hay otro usuario que se la envíe ni riesgo de suplantación: es
+     el único). El flujo de invitación con token queda reservado para las altas en
+     orgs que ya tienen más de un usuario.
 - Sesiones: cookie `httpOnly` + `SameSite=Lax`; login/logout en la SPA; todas las
   rutas `/api/…` exigen sesión o Bearer token (salvo `/api/login` y salud).
 - Rate-limit simple en login (contador en memoria por IP; suficiente detrás del proxy).
@@ -267,11 +291,104 @@ GET    /api/v1/orgs/<slug>/plantillas                    # plantillas disponible
 
 | Etapa | Alcance | Estado |
 |---|---|---|
-| 18 | **Docker:** Dockerfile + compose (servicio único), `DOCTYP_DOCS_ROOT`/`DOCTYP_DB_PATH`/`DOCTYP_BIND`, túnel del puerto de preview de tinymist (⚠ §2), fuentes por volumen, override de desarrollo, verificación de que la app se levanta tal cual está hoy | Pendiente |
-| 19 | **Registro en SQLite:** esquema §3, módulo `doctyp_db.py` (acceso único para CLI/web/API), reemplazo de lectura/escritura de `org.json` en el core, correlativos transaccionales, `doctyp migrate` (+ `--check`), archivo de los JSON como `*.migrated` | Pendiente |
-| 20 | **Multiusuario:** users/sessions/api_tokens (scrypt), email como identificador, login/logout + perfil + admin de usuarios en la SPA, roles en `org_members`, invitaciones con token de un solo uso, rate-limit login | Pendiente |
-| 21 | **CLI remoto:** `doctyp login/logout/remote`, comandos contra la API (`--local` como escape), flujo pull/save con detección de conflicto por hash, compilación remota opcional | Pendiente |
-| 22 | **API de composición:** endpoints v1, esquema de bloques (`schema_version` 1), traductor `doctyp_bloques.py` con sanitización anti-inyección Typst, marcadores en `.typ`, subida de imágenes, endpoint PDF, estado `desacoplado` | Pendiente |
+| 18 | **Docker:** Dockerfile + compose (servicio único, sin puerto publicado en el host: labels de Traefik + red compartida, ⚠ §2), `DOCTYP_DOCS_ROOT`/`DOCTYP_DB_PATH`/`DOCTYP_ORGS_DIR`/`DOCTYP_SETTINGS_PATH`/`DOCTYP_BIND`, fuentes por volumen, override de desarrollo, verificación real con podman (build, CLI, auth, persistencia entre restarts, shutdown limpio) | **Completada** (túnel del puerto de preview de tinymist bajo `/preview/…` queda **pendiente** — ver nota) |
+| 19 | **Registro en SQLite:** esquema §3, módulo `doctyp_db.py` (acceso único para CLI/web/API), reemplazo de lectura/escritura de `org.json` en el core, correlativos transaccionales, `doctyp migrate` (+ `--check`), archivo de los JSON como `*.migrated` | **Completada** |
+| 20 | **Multiusuario:** users/sessions (scrypt), email como identificador, login/logout en la SPA, **bootstrap** (sin usuarios → crear el primero como admin; único usuario sin password → fijarla en el primer login, ver §4) | **Completada** (alcance reducido — ver nota: sin `api_tokens`, sin roles/admin de usuarios en la SPA, sin invitaciones, sin rate-limit persistente) |
+| 21 | **CLI remoto:** `doctyp login/logout/remote`, comandos contra la API (`--local` como escape), flujo pull/save con detección de conflicto por hash, compilación remota opcional | Pendiente (fuera de alcance por decisión explícita del usuario, 2026-07-17) |
+| 22 | **API de composición:** endpoints v1, esquema de bloques (`schema_version` 1), traductor `doctyp_bloques.py` con sanitización anti-inyección Typst, marcadores en `.typ`, subida de imágenes, endpoint PDF, estado `desacoplado` | Pendiente (fuera de alcance por decisión explícita del usuario, 2026-07-17) |
+
+**Nota sobre el alcance real de las Etapas 18-20** (ejecutadas juntas el 2026-07-17, sesión
+larga; decisión explícita del usuario de dejar fuera las Etapas 21/22 — CLI remoto y API de
+composición — y de cerrar solo motor de datos + login + Docker "para tener algo corriendo hoy"):
+
+- **Etapa 19 (SQLite):** `doctyp_db.py` (nuevo) implementa el esquema de §3 con una capa de
+  compatibilidad deliberada: `cargar_org(slug)`/`guardar_org(slug, dict)` devuelven/reciben
+  el mismo shape de dict que tenía `org.json`, en vez de que cada función de `doctyp.py`/
+  `doctyp_web.py` hable SQL directo. Esto evitó reescribir los ~54 sitios que ya llamaban
+  `cargar_org`/`guardar_org` (incluye `autor_crear`, `equipo_editar`, `buscar_doc_org`, etc.)
+  — el único cambio real en esos módulos fue swap del backend de almacenamiento, no de su
+  API. La única vía que sí necesitó ruta transaccional propia (no bastaba el round-trip de
+  dict) es el correlativo: `asignar_correlativo(slug, anio)` hace `BEGIN IMMEDIATE` + lee
+  máximo + escribe en una sola transacción — verificado con 20 asignaciones concurrentes
+  reales (hilos Python) sin duplicados ni saltos. `doctyp migrate` (nuevo subcomando)
+  importa cada `org.json`, crea la fila en la BD, y renombra el original a
+  `org.json.migrated` (respaldo de solo lectura); `--check` compara conteos sin escribir.
+  **Bug pre-existente encontrado y corregido durante la verificación** (no introducido por
+  esta etapa, pero solo se manifestaba con una org recién creada sin autores — caso que
+  nunca se había probado hasta ahora): `autor_activo()` (`doctyp.py`) caía a
+  `AUTHOR_DEFAULTS` usando la clave `autor` (shape v2 de `settings.json → local.author`) en
+  vez de `nombre` (shape real del modelo de organizaciones), reventando `cmd_nuevo` con
+  `KeyError: 'nombre'` en cualquier org sin autores. Corregido para traducir correctamente.
+  Verificado exhaustivamente contra una **copia aislada** de los datos reales del usuario
+  (`organizations/` + `~/Documentos/doctyp/`, nunca los originales): migración con
+  reconstrucción byte-a-byte idéntica (config, documentos, versiones, autores), CLI completo
+  (`list`/`new`/`save`/`team new`/`history`), y `doctyp web` con API+SSE reales.
+- **Etapa 20 (login):** `doctyp_auth.py` (nuevo) implementa exactamente lo pedido — scrypt
+  para hash de password, sesiones por cookie `HttpOnly`+`SameSite=Lax` (14 días), rate-limit
+  simple en memoria por IP, y el bootstrap de dos casos decidido con el usuario (§4): sin
+  usuarios → alta del primer usuario como admin implícito; único usuario sin password (caso
+  real tras `doctyp migrate` desde monousuario) → fijar password en el primer login sin
+  token de invitación. **Recortado del alcance original de §4/§7** (explícitamente, para
+  caber en el tiempo disponible): sin tabla `api_tokens` (innecesaria sin Etapa 21/22 — CLI
+  remoto y API pública, que son las que la iban a consumir), sin columna `role`/vista de
+  administración de usuarios en la SPA (con un solo usuario típico hoy, no bloquea), sin
+  invitaciones con token (solo aplica a altas en orgs con 2+ usuarios, no es el caso de
+  arranque), rate-limit en memoria del proceso (se resetea con cada restart del contenedor,
+  no persistente — suficiente para el volumen actual, revisar si el tráfico crece). Todas las
+  rutas `/api/...` (incluye SSE y el bridge WS de tinymist LSP) exigen sesión salvo
+  `/api/auth/bootstrap|primer-usuario|fijar-password-inicial|login`. Frontend: `useAuth.js`
+  (mismo patrón "bus" de módulo-singleton que `useOrgContext.js`), `LoginView.vue` (una sola
+  vista para los 3 modos: alta del primer usuario, fijar password inicial, login normal),
+  guard de navegación en `router.js`, botón "Salir" + nombre del usuario en la topbar de
+  `App.vue`. Verificado end-to-end con `curl` real contra `doctyp web` (bootstrap, alta,
+  fijar password, login, cookie, acceso protegido, logout, invalidación de sesión) y build
+  real de la SPA (`npm run build` sin errores) — **sin verificación visual en navegador**
+  (Playwright no estaba instalado en esta sesión y instalarlo + descargar Chromium no era
+  compatible con el plazo "hoy"; el código de los componentes Vue se revisó a mano).
+- **Etapa 18 (Docker):** `Dockerfile` (multi-stage: `node:20-slim` para el build de la SPA +
+  `python:3.12-slim` runtime con `typst` y `tinymist` descargados de sus releases oficiales
+  de GitHub, mismo mecanismo que ya usa `init`), `docker-compose.yml` (sin puerto publicado,
+  labels de Traefik, red externa `traefik`, volúmenes `data`/`docs_data`/`fonts`) y
+  `compose.override.yml` (desarrollo local: publica `127.0.0.1:8787`, monta el código fuente,
+  reemplaza la red `traefik` por la red default de compose ya que esa red externa no existe
+  fuera del VPS). **Verificado de extremo a extremo con podman real** (`flatpak-spawn --host`,
+  ver nota de metodología abajo): build completo, `doctyp org new`/`template new`/`new` desde
+  dentro del contenedor, auth completo vía API, y **persistencia real entre restarts** de
+  `doctyp.db`, los documentos y `settings.json` (los tres viven bajo el volumen `data`).
+  **Dos bugs reales de Docker encontrados y corregidos:**
+  (1) `organizations/` se copiaba a la imagen con `COPY` — se retiró: vive enteramente en el
+  volumen `data` para que un rebuild nunca pise plantillas ya creadas por el usuario.
+  (2) `docker stop`/`restart` mandan **SIGTERM** (no SIGINT) al proceso `PID 1`; sin manejarlo,
+  Python lo ignoraba, `serve_forever()` nunca retornaba, y el orquestador esperaba el grace
+  period completo (10s) antes de forzar SIGKILL — saltándose el `finally` que detiene
+  `tinymist`/el LSP (mismo problema de huérfanos que CLAUDE.md ya documentaba para
+  `pkill -9` manual, ahora también posible vía Docker). Fix en `cmd_web`
+  (`doctyp_web.py`): handler de `SIGTERM` que reusa la misma excepción que ya maneja Ctrl+C.
+  Verificado: `docker kill -s TERM` produce "Servidor detenido." y exit 0; `docker restart`
+  pasó de ~10.2s (timeout + SIGKILL) a ~0.2s.
+  **Pendiente, no bloqueante:** el túnel del puerto de preview de tinymist bajo
+  `/preview/…` (§2, necesario para que la vista previa con clic↔cursor funcione detrás de
+  Traefik) no se implementó — la preview typst.ts (sin clic↔cursor) sigue funcionando en
+  contenedor sin cambios; solo el motor tinymist queda a medias hasta que se haga ese túnel.
+- **Nueva variable de entorno no listada originalmente en §2:** `DOCTYP_SETTINGS_PATH`
+  (`doctyp.py: registro_path()`) — sin ella, `settings.json` (org/autor activos) vivía en
+  `/app` (no persistido) y se perdía en cada restart del contenedor aunque `doctyp.db` y los
+  documentos sí sobrevivieran. Ahora apunta a `/data/settings.json`, dentro del volumen `data`
+  ya existente (no fue necesario un volumen nuevo).
+- **Nota de metodología:** toda la verificación de esta sesión se hizo contra **copias
+  aisladas** de los datos reales del usuario en el scratchpad de la sesión (nunca contra
+  `organizations/`/`~/Documentos/doctyp/` originales) y, para Docker, contra **volúmenes
+  podman nuevos y vacíos** (nunca bind-mounts a rutas reales del host). Se encontró y limpió
+  de inmediato un incidente menor durante las primeras pruebas: antes de aislar `DOCTYP_
+  DOCS_ROOT`/`DOCTYP_ORGS_DIR` con variables de entorno, un `doctyp new` de prueba escribió
+  una carpeta de documento ficticia (`TI-INF-SFW_2026-0040`, sin registro en `org.json`) bajo
+  el `~/Documentos/doctyp/slep-chinchorro/` real — se detectó de inmediato (el registro real
+  nunca la referenció) y se borró antes de continuar; no afectó ningún documento real.
+  Confirmado con `git status` + inspección de `~/Documentos/doctyp/` al cierre de la sesión
+  que no queda ningún rastro.
+- **`npm install` en `web/`** se re-ejecutó durante esta sesión (drift preexistente: el
+  `package.json` ya declaraba `vue-router` desde la Etapa 17, pero `node_modules/` no lo
+  tenía instalado) — no relacionado con el trabajo de esta sesión, solo destrabó el build.
 
 **Reglas de cierre por etapa:**
 1. Actualizar esta tabla y CLAUDE.md §14 (incluye reescribir en CLAUDE.md toda

@@ -121,6 +121,12 @@ button.primary {
   border-color: var(--accent);
 }
 
+.topbar-usuario {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
 .vista-grid {
   flex: 1;
   overflow-y: auto;
@@ -482,6 +488,24 @@ button.primary {
   width: 42em;
   max-height: 85vh;
   overflow-y: auto;
+}
+
+.pagina-login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
+.pagina-login .modal-box {
+  width: 24em;
+}
+
+.login-subtitulo {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-dim);
 }
 
 .org-manager-header {

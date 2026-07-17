@@ -1,0 +1,40 @@
+# doctyp — despliegue de un único servicio (Etapa 18, PLAN-V4.md §2).
+#
+# Sin puerto publicado al host: el VPS corre Traefik, que descubre este contenedor por la red
+# externa `traefik` (ya debe existir en el VPS -- créala una vez con
+# `docker network create traefik` si aún no está) y le rutea el tráfico por dominio hacia el
+# puerto interno 8787. Ajusta el Host() de la regla del router y el nombre de la red antes de
+# desplegar -- los valores de abajo son placeholders.
+
+services:
+  doctyp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - data:/data
+      - docs_data:/data/docs
+      - fonts:/data/fonts:ro
+    environment:
+      - DOCTYP_ORGS_DIR=/data/organizations
+      - DOCTYP_DB_PATH=/data/doctyp.db
+      - DOCTYP_DOCS_ROOT=/data/docs
+      - DOCTYP_BIND=0.0.0.0
+    networks:
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.doctyp.rule=Host(`doctyp.example.cl`)
+      - traefik.http.routers.doctyp.entrypoints=websecure
+      - traefik.http.routers.doctyp.tls.certresolver=letsencrypt
+      - traefik.http.services.doctyp.loadbalancer.server.port=8787
+
+networks:
+  traefik:
+    external: true
+
+volumes:
+  data:
+  docs_data:
+  fonts:

@@ -1,0 +1,32 @@
+# Override de desarrollo (PLAN-V4.md §2): se aplica automáticamente junto a docker-compose.yml
+# cuando no se pasa -f explícito. Publica el puerto en localhost (no hay Traefik en dev), monta
+# el código para iterar sin reconstruir la imagen en cada cambio, y reemplaza la red externa
+# `traefik` (no existe fuera del VPS) por la red default de compose.
+#
+# Uso: docker compose up --build   (toma docker-compose.yml + este archivo automáticamente)
+# Producción real (VPS con Traefik): docker compose -f docker-compose.yml up -d --build
+#   (omite este override explícitamente con -f)
+
+services:
+  doctyp:
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - ./doctyp.py:/app/doctyp.py:ro
+      - ./doctyp_db.py:/app/doctyp_db.py:ro
+      - ./doctyp_auth.py:/app/doctyp_auth.py:ro
+      - ./doctyp_web.py:/app/doctyp_web.py:ro
+      - ./doctyp_preview_binary.py:/app/doctyp_preview_binary.py:ro
+      - ./doctyp_preview_server.py:/app/doctyp_preview_server.py:ro
+      - ./doctyp_lsp_server.py:/app/doctyp_lsp_server.py:ro
+      - ./doctyp_ws_server.py:/app/doctyp_ws_server.py:ro
+      - ./doctyp_ws_client.py:/app/doctyp_ws_client.py:ro
+      - ./lib.typ:/app/lib.typ:ro
+    # `!override` reemplaza la lista completa en vez de fusionarla con docker-compose.yml
+    # (compose merge por defecto concatena listas) -- en dev no existe la red `traefik`
+    # externa, así que el override debe REEMPLAZAR ["traefik"] por ["default"], no agregarse.
+    networks: !override
+      - default
+
+networks:
+  default: {}

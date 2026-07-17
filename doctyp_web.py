@@ -16,12 +16,13 @@ reutiliza exactamente compilar_typ().
 No requiere paquetes externos (solo stdlib).
 """
 from __future__ import annotations
-import base64, binascii, datetime, difflib, json, mimetypes, os, queue, shutil, subprocess, threading, time, webbrowser
+import base64, binascii, datetime, difflib, http.cookies, json, mimetypes, os, queue, shutil, subprocess, threading, time, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote
 
 import doctyp as core
+import doctyp_auth as auth
 from doctyp_preview_binary import resolver_tinymist_utilizable
 from doctyp_preview_server import PreviewServer, PreviewServerError
 from doctyp_lsp_server import LspServer, LspServerError
@@ -111,7 +112,7 @@ class ApiError(Exception):
 def _cargar_org_api(slug: str) -> dict:
     _slug_seguro(slug)
     _resolver_ruta_segura(core.organizations_dir(), slug)
-    if not core.org_path(slug).exists():
+    if not core.org_existe(slug):
         raise ApiError(404, f"no existe la organización '{slug}'")
     return core.cargar_org(slug)
 
@@ -148,11 +149,11 @@ def api_org_new(payload: dict) -> dict:
     slug = (payload.get("slug") or "").strip().lower()
     if not core._slug_valido(slug):
         raise ApiError(400, "el slug solo admite minúsculas, dígitos y guiones (p. ej. 'mi-org')")
-    if core.org_path(slug).exists():
+    if core.org_existe(slug):
         raise ApiError(400, f"ya existe una organización '{slug}'")
     nombre = payload.get("nombre") or slug
-    org = core._org_vacia(slug, nombre)
-    core.guardar_org(slug, org)
+    import doctyp_db as _db
+    _db.crear_org_vacia(slug, nombre)
 
     settings = core.cargar_settings()
     settings.setdefault("local", {})
@@ -1209,12 +1210,18 @@ _sse_colas: set[queue.Queue] = set()
 
 def _snapshot_mtimes() -> dict[str, float]:
     snap: dict[str, float] = {}
+    # Etapa 19: org.json ya no existe (archivado como .migrated tras `doctyp migrate`), así que
+    # el mtime del registro ya no es por-organización -- se usa el mtime de doctyp.db como señal
+    # gruesa "algo cambió en el registro" para todas las orgs (cualquier escritura, sea de la
+    # org que sea, toca el mismo archivo). Sobre-notifica entre orgs distintas (el cliente
+    # simplemente vuelve a pedir su propia org), nunca sub-notifica.
+    import doctyp_db as _db
+    try:
+        db_mtime = _db.db_path().stat().st_mtime
+    except OSError:
+        db_mtime = 0.0
     for slug in core.listar_orgs():
-        p = core.org_path(slug)
-        try:
-            snap[f"org:{slug}"] = p.stat().st_mtime
-        except OSError:
-            continue
+        snap[f"org:{slug}"] = db_mtime
         root = core.docs_root_org(slug)
         try:
             with os.scandir(root) as it:
@@ -1297,6 +1304,96 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, UnicodeDecodeError):
             raise ApiError(400, "cuerpo JSON inválido")
 
+    # ── Sesión (Etapa 20) ──────────────────────────────────────────────────────────────
+    def _token_sesion(self) -> str | None:
+        crudo = self.headers.get("Cookie")
+        if not crudo:
+            return None
+        galletas = http.cookies.SimpleCookie()
+        galletas.load(crudo)
+        item = galletas.get(auth.SESSION_COOKIE)
+        return item.value if item else None
+
+    def _usuario_actual(self) -> dict | None:
+        return auth.usuario_de_sesion(self._token_sesion())
+
+    def _fijar_cookie_sesion(self, token: str) -> None:
+        max_age = auth.SESSION_TTL_HORAS * 3600
+        self.send_header(
+            "Set-Cookie",
+            f"{auth.SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}",
+        )
+
+    def _borrar_cookie_sesion(self) -> None:
+        self.send_header("Set-Cookie", f"{auth.SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0")
+
+    def _json_con_cookie(self, status: int, data, set_cookie: str | None = None,
+                          borrar_cookie: bool = False) -> None:
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        if set_cookie:
+            self._fijar_cookie_sesion(set_cookie)
+        if borrar_cookie:
+            self._borrar_cookie_sesion()
+        self.end_headers()
+        self.wfile.write(body)
+
+    # ── Auth (Etapa 20) ────────────────────────────────────────────────────────────────
+    def _api_auth(self, metodo: str, segs: list[str]) -> None:
+        if segs == ["bootstrap"] and metodo == "GET":
+            self._json(200, auth.bootstrap_estado())
+            return
+
+        if segs == ["primer-usuario"] and metodo == "POST":
+            cuerpo = self._leer_cuerpo_json()
+            try:
+                usuario = auth.crear_primer_usuario(
+                    cuerpo.get("email", ""), cuerpo.get("nombre", ""), cuerpo.get("password", ""))
+            except auth.AuthError as e:
+                raise ApiError(e.status, e.mensaje)
+            _, token = auth.login(usuario["email"], cuerpo["password"], self._ip_cliente(),
+                                   self.headers.get("User-Agent", ""))
+            self._json_con_cookie(201, {"usuario": auth.usuario_publico(usuario)}, set_cookie=token)
+            return
+
+        if segs == ["fijar-password-inicial"] and metodo == "POST":
+            cuerpo = self._leer_cuerpo_json()
+            try:
+                auth.fijar_password_primer_login(cuerpo.get("user_id", ""), cuerpo.get("password", ""))
+            except auth.AuthError as e:
+                raise ApiError(e.status, e.mensaje)
+            self._json(200, {"ok": True})
+            return
+
+        if segs == ["login"] and metodo == "POST":
+            cuerpo = self._leer_cuerpo_json()
+            try:
+                usuario, token = auth.login(cuerpo.get("email", ""), cuerpo.get("password", ""),
+                                             self._ip_cliente(), self.headers.get("User-Agent", ""))
+            except auth.AuthError as e:
+                raise ApiError(e.status, e.mensaje)
+            self._json_con_cookie(200, {"usuario": auth.usuario_publico(usuario)}, set_cookie=token)
+            return
+
+        if segs == ["logout"] and metodo == "POST":
+            auth.logout(self._token_sesion())
+            self._json_con_cookie(200, {"ok": True}, borrar_cookie=True)
+            return
+
+        if segs == ["yo"] and metodo == "GET":
+            usuario = self._usuario_actual()
+            if usuario is None:
+                raise ApiError(401, "no autenticado")
+            self._json(200, {"usuario": auth.usuario_publico(usuario)})
+            return
+
+        raise ApiError(404, "ruta de auth desconocida")
+
+    def _ip_cliente(self) -> str:
+        return self.client_address[0] if self.client_address else ""
+
     def _despachar(self, metodo: str) -> None:
         partes_url = urlsplit(self.path)
         # self.path llega percent-encoded (p. ej. espacios como %20 en nombres de archivo con
@@ -1323,11 +1420,17 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         partes_url = urlsplit(self.path)
-        if partes_url.path == "/api/events":
-            self._sse()
-            return
-        if partes_url.path == "/api/lsp":
-            self._lsp_bridge(parse_qs(partes_url.query))
+        if partes_url.path in ("/api/events", "/api/lsp"):
+            # No pasan por _despachar()/_api() (SSE y el bridge WS necesitan control fino de
+            # la respuesta) -- la sesión se exige aquí directo, mismo criterio de la Etapa 20
+            # que el resto de /api/... (salvo auth/bootstrap/login).
+            if self._usuario_actual() is None:
+                self._error(401, "no autenticado")
+                return
+            if partes_url.path == "/api/events":
+                self._sse()
+            else:
+                self._lsp_bridge(parse_qs(partes_url.query))
             return
         self._despachar("GET")
 
@@ -1341,7 +1444,25 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
         self._despachar("DELETE")
 
     # ── Ruteo de la API ────────────────────────────────────────────────────────────────
+    # Rutas de /api/... que NO exigen sesión (Etapa 20): bootstrap y login la necesitan
+    # precisamente para poder crear la primera sesión; el resto de la API sí la exige.
+    _RUTAS_PUBLICAS = {
+        ("auth", "bootstrap"), ("auth", "primer-usuario"),
+        ("auth", "fijar-password-inicial"), ("auth", "login"),
+    }
+
     def _api(self, metodo: str, segs: list[str], query: dict) -> None:
+        ruta = tuple(segs[:2])
+        if ruta not in self._RUTAS_PUBLICAS:
+            usuario = self._usuario_actual()
+            if usuario is None:
+                raise ApiError(401, "no autenticado")
+            self._usuario_sesion = usuario  # disponible para endpoints que necesiten el autor
+
+        if segs and segs[0] == "auth":
+            self._api_auth(metodo, segs[1:])
+            return
+
         if segs and segs[0] == "tipos-documento" and len(segs) == 1 and metodo == "GET":
             self._json(200, api_tipos_documento())
             return
@@ -1872,6 +1993,19 @@ def cmd_web(args) -> None:
 
     hilo_eventos = threading.Thread(target=_eventos_loop, daemon=True)
     hilo_eventos.start()
+
+    # Etapa 18: en contenedor, `docker stop`/`restart` mandan SIGTERM (no SIGINT) al proceso
+    # PID 1 -- sin este handler, Python lo ignora por defecto, serve_forever() nunca retorna, y
+    # el orquestador espera el grace period completo y termina en SIGKILL, saltándose el
+    # `finally` de abajo (mismo problema que un `pkill -9` manual, ya documentado en CLAUDE.md
+    # §14/Etapa 15 como fuente de procesos tinymist huérfanos). Traducir SIGTERM a la misma
+    # excepción que ya maneja Ctrl+C reusa el único camino de shutdown limpio que existe.
+    import signal as _signal
+
+    def _on_sigterm(signum, frame):
+        raise KeyboardInterrupt
+
+    _signal.signal(_signal.SIGTERM, _on_sigterm)
 
     url = f"http://{host}:{port}/"
     core._ok(f"Servidor doctyp web escuchando en {core._c(core._C.BOLD, url)}")

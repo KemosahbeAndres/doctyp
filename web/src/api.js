@@ -1,5 +1,42 @@
 const enc = encodeURIComponent;
 
+// Auth (Etapa 20). request() no necesita `credentials: "include"` -- la SPA se sirve desde el
+// mismo origin que la API, así que el navegador ya adjunta la cookie de sesión (HttpOnly,
+// SameSite=Lax) sola. La única diferencia con las demás llamadas es que un 401 aquí no es un
+// error de la operación pedida sino la señal de "no hay sesión" -- ver useAuth.js.
+export function authBootstrap() {
+  return request("/api/auth/bootstrap");
+}
+
+export function authCrearPrimerUsuario(email, nombre, password) {
+  return request("/api/auth/primer-usuario", {
+    method: "POST",
+    body: JSON.stringify({ email, nombre, password }),
+  });
+}
+
+export function authFijarPasswordInicial(userId, password) {
+  return request("/api/auth/fijar-password-inicial", {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId, password }),
+  });
+}
+
+export function authLogin(email, password) {
+  return request("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function authLogout() {
+  return request("/api/auth/logout", { method: "POST" });
+}
+
+export function authYo() {
+  return request("/api/auth/yo");
+}
+
 async function request(path, options = {}) {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },

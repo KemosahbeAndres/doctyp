@@ -201,7 +201,11 @@ def docs_dir(anio: int) -> Path:
 # ── Registro JSON ─────────────────────────────────────────────────────────────
 
 def registro_path(script_dir: Path) -> Path:
-    return script_dir / REGISTRO
+    """Ubicación de settings.json. Override vía DOCTYP_SETTINGS_PATH (Etapa 18: en contenedor
+    SCRIPT_DIR es /app, que no se persiste -- sin esto, la org/autor activos se perderían en
+    cada restart del contenedor aunque doctyp.db y los documentos sí sobrevivan)."""
+    override = os.environ.get("DOCTYP_SETTINGS_PATH")
+    return Path(override) if override else script_dir / REGISTRO
 
 
 def cargar_registro(script_dir: Path) -> dict:
@@ -278,7 +282,10 @@ INDICE_SNAPSHOTS = "index.json"
 
 
 def organizations_dir() -> Path:
-    return SCRIPT_DIR / ORGANIZATIONS
+    """Carpeta organizations/ (config + plantillas). Override vía DOCTYP_ORGS_DIR (Etapa 18:
+    en contenedor apunta al volumen data/organizations; también usado para aislar pruebas)."""
+    override = os.environ.get("DOCTYP_ORGS_DIR")
+    return Path(override) if override else SCRIPT_DIR / ORGANIZATIONS
 
 
 def org_dir(slug: str) -> Path:
@@ -328,29 +335,25 @@ def _org_vacia(slug: str, nombre: str) -> dict:
 
 
 def cargar_org(slug: str) -> dict:
-    p = org_path(slug)
-    if not p.exists():
-        sys.exit(f"ERROR: no existe la organización '{slug}' ({p}).")
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        sys.exit(f"ERROR: no se pudo leer {p}: {e}")
-    data.setdefault("config", {}).setdefault("correlativo_inicio", {})
-    data.setdefault("equipos", [])
-    data.setdefault("autores", [])
-    data.setdefault("documentos", [])
-    return data
+    """Fuente de verdad: doctyp.db (Etapa 19, PLAN-V4.md §0.2/§3). org.json queda solo como
+    respaldo archivado (`org.json.migrated`) tras `doctyp migrate`, no se vuelve a leer."""
+    import doctyp_db as _db
+    return _db.cargar_org(slug)
 
 
 def guardar_org(slug: str, data: dict) -> None:
-    _escribir_json_atomico(org_path(slug), data)
+    import doctyp_db as _db
+    _db.guardar_org(slug, data)
+
+
+def org_existe(slug: str) -> bool:
+    import doctyp_db as _db
+    return _db.existe_org(slug)
 
 
 def listar_orgs() -> list[str]:
-    d = organizations_dir()
-    if not d.exists():
-        return []
-    return sorted(p.name for p in d.iterdir() if p.is_dir() and (p / ORG_REGISTRO).exists())
+    import doctyp_db as _db
+    return _db.listar_orgs()
 
 
 def cargar_settings() -> dict:
@@ -407,6 +410,8 @@ def migrar_v2_a_org() -> None:
         }
         for d in docs_v2
     ]
+    import doctyp_db as _db
+    _db.crear_org_vacia(ORG_SLUG_DEFAULT, ORG_NOMBRE_DEFAULT)
     guardar_org(ORG_SLUG_DEFAULT, org)
 
     settings.setdefault("local", {})
@@ -421,7 +426,7 @@ def org_activa_slug() -> str:
     slug = settings.get("local", {}).get("org_activa")
     if not slug:
         sys.exit("ERROR: no hay organización activa. Usa 'doctyp org use <slug>'.")
-    if not org_path(slug).exists():
+    if not org_existe(slug):
         sys.exit(f"ERROR: la organización activa '{slug}' no existe.")
     return slug
 
@@ -449,12 +454,23 @@ def autor_activo(org: dict) -> dict:
                 return a
     if autores:
         return autores[0]
-    return {"id": None, **AUTHOR_DEFAULTS, "equipos": []}
+    # Org recién creada, sin autores todavía: cae a AUTHOR_DEFAULTS pero traducido a la forma
+    # del modelo de organizaciones ({nombre,cargo,correo}, no {autor,cargo,correo} -- ese es el
+    # shape v2 de settings.json/local.author, distinto -- ver author_defaults()).
+    return {"id": None, "nombre": AUTHOR_DEFAULTS["autor"],
+            "cargo": AUTHOR_DEFAULTS["cargo"], "correo": AUTHOR_DEFAULTS["correo"], "equipos": []}
 
 
 def docs_root() -> Path:
-    """Resuelve <Documentos>/doctyp/ según el SO (ver CLAUDE.md §1). No se usa aún para mover
-    archivos (eso es Etapa 2); por ahora solo queda disponible como utilidad de resolución."""
+    """Resuelve <Documentos>/doctyp/ según el SO (ver CLAUDE.md §1). Override explícito vía
+    DOCTYP_DOCS_ROOT (Etapa 18: en contenedor apunta al volumen docs_data; también usado para
+    aislar pruebas de datos reales del usuario sin depender de la resolución por SO)."""
+    override = os.environ.get("DOCTYP_DOCS_ROOT")
+    if override:
+        root = Path(override)
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
     home = Path.home()
     if sys.platform.startswith("linux"):
         try:
@@ -1254,11 +1270,11 @@ def cmd_org_new(args):
     slug = args.slug.strip().lower()
     if not _slug_valido(slug):
         sys.exit("ERROR: el slug solo admite minúsculas, dígitos y guiones (p. ej. 'mi-org').")
-    if org_path(slug).exists():
+    if org_existe(slug):
         sys.exit(f"ERROR: ya existe una organización '{slug}'.")
     nombre = args.nombre or slug
-    org = _org_vacia(slug, nombre)
-    guardar_org(slug, org)
+    import doctyp_db as _db
+    _db.crear_org_vacia(slug, nombre)
 
     settings = cargar_settings()
     settings.setdefault("local", {})
@@ -1267,7 +1283,7 @@ def cmd_org_new(args):
         guardar_settings(settings)
 
     _ok(f"Organización creada: {_c(_C.BOLD, slug)} ({nombre})")
-    print(f"       {_c(_C.DIM, str(org_path(slug)))}\n")
+    print(f"       {_c(_C.DIM, 'registro: doctyp.db  ·  plantillas: ' + str(org_dir(slug)))}\n")
 
 
 def cmd_org_list(args):
@@ -1290,12 +1306,52 @@ def cmd_org_list(args):
 
 def cmd_org_use(args):
     slug = args.slug.strip().lower()
-    if not org_path(slug).exists():
+    if not org_existe(slug):
         sys.exit(f"ERROR: no existe la organización '{slug}'.")
     settings = cargar_settings()
     settings.setdefault("local", {})["org_activa"] = slug
     guardar_settings(settings)
     _ok(f"Organización activa: {_c(_C.BOLD, slug)}")
+
+
+def cmd_migrate(args):
+    """doctyp migrate — importa organizations/*/org.json a doctyp.db (Etapa 19). Idempotente:
+    re-ejecutarlo sobre organizaciones ya migradas actualiza sus filas en vez de duplicarlas
+    (usa guardar_org, que reemplaza equipos/autores/documentos de la org por el contenido del
+    JSON). Con --check no escribe nada: solo compara conteos BD vs. JSON."""
+    import doctyp_db as _db
+    orgs_dir = organizations_dir()
+    if not orgs_dir.exists():
+        print(f"\n  {_c(_C.YELLOW, '!')} No existe {orgs_dir}; nada que migrar.\n")
+        return
+
+    if args.check:
+        print(f"\n  {_c(_C.DIM, 'Verificando doctyp.db contra org.json / org.json.migrated…')}\n")
+        ok = _db.verificar_migracion(orgs_dir)
+        print()
+        if not ok:
+            sys.exit("ERROR: la verificación encontró diferencias (ver arriba).")
+        _ok("Todo coincide.\n")
+        return
+
+    print(f"\n  {_c(_C.DIM, 'Migrando organizations/*/org.json → doctyp.db…')}\n")
+    resumen = _db.migrar_desde_json(orgs_dir, verbose=True)
+    if not resumen:
+        print(f"\n  {_c(_C.YELLOW, '!')} No se encontró ningún org.json bajo {orgs_dir}.\n")
+        return
+
+    archivados = []
+    for slug in resumen:
+        json_path = org_path(slug)
+        if json_path.exists():
+            json_path.rename(json_path.with_suffix(json_path.suffix + ".migrated"))
+            archivados.append(slug)
+
+    print()
+    _ok(f"{len(resumen)} organización(es) migrada(s) a doctyp.db.")
+    if archivados:
+        _ok(f"org.json archivado como org.json.migrated en: {', '.join(archivados)}")
+    print(f"  {_c(_C.DIM, 'Verifica con: doctyp migrate --check')}\n")
 
 
 def equipo_crear(org: dict, equipo_id: str, nombre: str | None) -> dict:
@@ -1619,7 +1675,7 @@ def cmd_listar(args):
     docs = sorted(org["documentos"], key=lambda d: (d.get("anio", 0), d.get("correlativo", 0)))
     anio = args.anio or datetime.date.today().year
 
-    print(f"\n  {_c(_C.DIM, 'Organización: ' + slug + '  (' + str(org_path(slug)) + ')')}")
+    print(f"\n  {_c(_C.DIM, 'Organización: ' + slug + '  (doctyp.db)')}")
 
     if docs:
         print()
@@ -1704,7 +1760,13 @@ def cmd_nuevo(args):
     slug = org_activa_slug()
     org = cargar_org(slug)
     plantilla = args.plantilla or org.get("config", {}).get("plantilla_default", "informe-ti")
-    corr = args.correlativo if args.correlativo is not None else next_correlativo_org(org, anio)
+    if args.correlativo is not None:
+        corr = args.correlativo
+    else:
+        # Asignación transaccional (BEGIN IMMEDIATE): cierra la carrera que tendría calcular
+        # esto sobre el dict `org` ya cargado y recién guardarlo más abajo (PLAN-V4.md §0.2).
+        import doctyp_db as _db
+        corr = _db.asignar_correlativo(slug, anio)
 
     autor_org = autor_activo(org)
     autoria = {"autor": autor_org["nombre"], "cargo": autor_org["cargo"], "correo": autor_org["correo"]}
@@ -2182,7 +2244,7 @@ def cmd_add(args):
     print()
     _ok(f"Registrado: {_c(_C.BOLD, base)}  (v{meta['version']})")
     print(f"       Archivo:  {_c(_C.DIM, str(destino))}")
-    print(f"       Registro: {_c(_C.DIM, str(org_path(slug)))}\n")
+    print(f"       Registro: {_c(_C.DIM, f'doctyp.db (org {slug})')}\n")
 
 
 def _quitar_de_doctyp_json(cwd: Path, correlativo: int, anio: int) -> bool:
@@ -2252,7 +2314,7 @@ def cmd_delete(args):
         _ok(f"Carpeta eliminada:  {_c(_C.DIM, str(dest_dir))}")
     else:
         _warn(f"Carpeta no encontrada (ya no existía): {dest_dir}")
-    _ok(f"Eliminado del registro: {_c(_C.DIM, str(org_path(slug)))}")
+    _ok(f"Eliminado del registro: {_c(_C.DIM, f'doctyp.db (org {slug})')}")
     if eliminado_json:
         _ok(f"Eliminado de {DOCTYP_JSON} en el directorio actual.")
     print()
@@ -2417,6 +2479,12 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--anio", type=int, help="Año a consultar (por defecto, el actual).")
     pl.add_argument("--org", help="Organización a consultar (por defecto, la activa).")
     pl.set_defaults(func=cmd_listar)
+
+    pm = sub.add_parser("migrate",
+                        help="Importa organizations/*/org.json a doctyp.db (Etapa 19, idempotente).")
+    pm.add_argument("--check", action="store_true",
+                    help="No migra: compara conteos entre doctyp.db y los org.json/.migrated.")
+    pm.set_defaults(func=cmd_migrate)
 
     po = sub.add_parser("org", help="Gestiona organizaciones.")
     po_sub = po.add_subparsers(dest="org_cmd", required=True)
