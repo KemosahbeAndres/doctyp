@@ -42,6 +42,12 @@ _preview_actual: PreviewServer | None = None
 _preview_recurso_actual: tuple[str, str, str] | None = None
 _preview_legacy_forzado = False  # `doctyp web --legacy-preview` (Plan 15 F8)
 
+# `doctyp web --verbose`: accesos HTTP (log_message, silenciado por defecto) + salida en vivo
+# de los subprocesos tinymist (preview/lsp), que hasta ahora solo se guardaba en memoria
+# (PreviewServer.log_lines) y nunca llegaba a `docker compose logs` -- sin esto, un tinymist
+# colgado o que nunca llega a arrancar es indistinguible de "nadie abrió el editor todavía".
+_VERBOSE = False
+
 # ── Fase 1A de tinymist-implementation-plan.md: proceso único `tinymist lsp` de la sesión ──
 # A diferencia de PreviewServer (una instancia por documento/plantilla, se reinicia al cambiar),
 # el LSP es UN SOLO proceso para toda la sesión de `doctyp web` -- cambiar de documento/
@@ -323,6 +329,7 @@ def _asegurar_preview_generico(
             main_typ=main_typ,
             root=root,
             font_dir=font_dir if font_dir.is_dir() else None,
+            verbose=_VERBOSE,
         )
         # F5: clic→cursor -- el control plane vive en el backend (decisión confirmada con el
         # usuario, ver F0 §5); acá se reexpone editorScrollTo hacia el frontend por SSE
@@ -367,6 +374,9 @@ def _asegurar_preview_generico(
 
         _preview_actual = nuevo
         _preview_recurso_actual = clave
+        if _VERBOSE:
+            core._ok(f"Preview tinymist iniciada: {tipo}/{nombre} "
+                     f"(puerto datos {nuevo.data_plane_port}).")
         return nuevo
 
 
@@ -615,7 +625,7 @@ def _asegurar_lsp(root: Path, font_dir: Path | None) -> LspServer | None:
                 core._warn(f"no se pudo reiniciar tinymist lsp: {e}")
                 return None
             return _lsp_actual
-        nuevo = LspServer(root=root, font_dir=font_dir)
+        nuevo = LspServer(root=root, font_dir=font_dir, verbose=_VERBOSE)
         nuevo.on_reiniciado = _on_lsp_reiniciado
         try:
             nuevo.start()
@@ -1272,7 +1282,8 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
     server_version = "doctyp-web/1.0"
 
     def log_message(self, fmt, *args):
-        pass  # silencioso; evita ruido en stdout durante uso normal
+        if _VERBOSE:
+            super().log_message(fmt, *args)  # accesos HTTP normales de BaseHTTPRequestHandler
 
     def _json(self, status: int, data) -> None:
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
@@ -1974,12 +1985,15 @@ def _build_frontend() -> None:
 
 
 def cmd_web(args) -> None:
-    global _preview_legacy_forzado
+    global _preview_legacy_forzado, _VERBOSE
     host = args.host or "127.0.0.1"
     port = args.port or 8787
     _preview_legacy_forzado = getattr(args, "legacy_preview", False)
     if _preview_legacy_forzado:
         core._warn("--legacy-preview: se usará la vista previa typst.ts (sin clic↔cursor).")
+    _VERBOSE = getattr(args, "verbose", False)
+    if _VERBOSE:
+        core._warn("--verbose: se verán accesos HTTP y la salida en vivo de tinymist (preview/lsp).")
 
     if not getattr(args, "no_build", False):
         try:

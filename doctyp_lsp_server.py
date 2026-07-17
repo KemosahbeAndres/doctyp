@@ -82,6 +82,9 @@ class LspServer:
 
     root: Path
     font_dir: Path | None = None
+    # `doctyp web --verbose`: por defecto el stderr de `tinymist lsp` se descarta por completo
+    # (DEVNULL) -- con esto se captura y reenvía en vivo, igual que PreviewServer.verbose.
+    verbose: bool = False
 
     on_message: Callable[[dict], None] | None = field(default=None, init=False, repr=False)
 
@@ -128,12 +131,24 @@ class LspServer:
             self._generacion += 1
             generacion = self._generacion
         self._proc = subprocess.Popen(
-            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE if self.verbose else subprocess.DEVNULL,
             bufsize=0,  # binario, sin buffering -- a diferencia del Popen de texto de preview
         )
         self._lector = threading.Thread(target=self._bucle_lectura, args=(generacion,), daemon=True)
         self._lector.start()
+        if self.verbose and self._proc.stderr is not None:
+            threading.Thread(target=self._bucle_stderr, args=(generacion,), daemon=True).start()
         self._initialize()
+
+    def _bucle_stderr(self, generacion: int) -> None:
+        proc = self._proc
+        if proc is None or proc.stderr is None:
+            return
+        for cruda in iter(proc.stderr.readline, b""):
+            texto = cruda.decode("utf-8", errors="replace").rstrip("\n")
+            if texto:
+                print(f"  [tinymist lsp] {texto}", flush=True)
 
     def _bucle_lectura(self, generacion: int) -> None:
         proc = self._proc

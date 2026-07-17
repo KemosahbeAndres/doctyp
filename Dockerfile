@@ -85,4 +85,4 @@ ENV DOCTYP_ORGS_DIR=/data/organizations \
 
 EXPOSE 8787
 
-CMD ["python3", "doctyp.py", "web", "--host", "0.0.0.0", "--port", "8787", "--no-browser", "--no-build"]
+CMD ["python3", "doctyp.py", "web", "--host", "0.0.0.0", "--port", "8787", "--no-browser", "--no-build", "--verbose"]

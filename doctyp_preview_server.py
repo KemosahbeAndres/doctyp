@@ -100,6 +100,9 @@ class PreviewServer:
     main_typ: Path
     root: Path
     font_dir: Path | None = None
+    # `doctyp web --verbose`: reenvía en vivo la salida de `tinymist preview` (por defecto solo
+    # se guarda en log_lines, en memoria, y nunca llega a `docker compose logs` -- ver doctyp_web.py).
+    verbose: bool = False
 
     _proc: subprocess.Popen | None = field(default=None, init=False, repr=False)
     _ctl: WebSocketClient | None = field(default=None, init=False, repr=False)
@@ -188,9 +191,12 @@ class PreviewServer:
         if proc is None or proc.stdout is None:
             return
         for linea in proc.stdout:
-            self.log_lines.append(linea.rstrip("\n"))
+            limpia = linea.rstrip("\n")
+            self.log_lines.append(limpia)
             if len(self.log_lines) > 500:
                 del self.log_lines[:250]  # cap simple: no crecer sin límite en sesiones largas
+            if self.verbose:
+                print(f"  [tinymist preview: {self.main_typ.name}] {limpia}", flush=True)
         # El stdout se cerró: el proceso terminó. Si no fue un stop() manual Y esta lectura sigue
         # siendo la de la generación vigente (no un reinicio ya en curso por otra vía), es una
         # caída real que hay que atender.

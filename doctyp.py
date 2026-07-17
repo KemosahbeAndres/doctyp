@@ -2852,6 +2852,9 @@ def build_parser() -> argparse.ArgumentParser:
     pw.add_argument("--legacy-preview", action="store_true", dest="legacy_preview",
                     help="Fuerza la vista previa typst.ts (Etapa 12.1) en vez de tinymist, "
                          "aunque el binario esté disponible. Sin clic↔cursor (Plan 15 F5/F6).")
+    pw.add_argument("--verbose", action="store_true", dest="verbose",
+                    help="Más logs: accesos HTTP y salida en vivo de los subprocesos "
+                         "tinymist (preview y lsp). Por defecto solo se ven advertencias/errores.")
     pw.set_defaults(func=_cmd_web)
 
     return p
