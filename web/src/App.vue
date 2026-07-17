@@ -2,6 +2,7 @@
 import { ref, computed, watch, onUnmounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import NewOrgModal from "./components/NewOrgModal.vue";
+import InvitarModal from "./components/InvitarModal.vue";
 import { useOrgContext } from "./composables/useOrgContext.js";
 import { useAuth } from "./composables/useAuth.js";
 
@@ -14,7 +15,9 @@ const {
 const { usuario, logout } = useAuth();
 
 const mostrarNuevaOrg = ref(false);
+const mostrarInvitar = ref(false);
 const enSesion = computed(() => route.name !== "login" && !!usuario.value);
+const orgActivaNombre = computed(() => orgs.value.find((o) => o.slug === orgSlug.value)?.nombre || "");
 
 // Cambiar de organización activa deja atrás cualquier documento/plantilla que se estuviera
 // editando (era de la org anterior) -- mismo criterio que el `vista.value = "grid"`
@@ -60,7 +63,10 @@ onUnmounted(detener);
       </div>
       <router-link to="/documentos" title="Documentos">Documentos</router-link>
       <router-link to="/plantillas" title="Editor de plantillas">Plantillas</router-link>
-      <router-link to="/organizacion" title="Gestionar organización">⚙ Organización</router-link>
+      <router-link to="/organizacion" title="Mi cuenta">⚙ Mi cuenta</router-link>
+      <button title="Invitar a alguien a la organización activa" @click="mostrarInvitar = true">
+        Invitar
+      </button>
       <span class="topbar-usuario" :title="usuario.email">{{ usuario.nombre }}</span>
       <button title="Cerrar sesión" @click="onLogout">Salir</button>
     </div>
@@ -69,5 +75,12 @@ onUnmounted(detener);
     <router-view />
 
     <NewOrgModal v-if="mostrarNuevaOrg" @creada="onOrgCreada" @cancelar="mostrarNuevaOrg = false" />
+    <InvitarModal
+      v-if="mostrarInvitar"
+      :org-slug="orgSlug"
+      :org-nombre="orgActivaNombre"
+      @invitado="mostrarInvitar = false"
+      @cancelar="mostrarInvitar = false"
+    />
   </div>
 </template>

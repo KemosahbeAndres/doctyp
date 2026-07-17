@@ -522,6 +522,19 @@ def fijar_password(user_id: str, password_hash: str) -> None:
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
 
 
+def actualizar_usuario(user_id: str, nombre: str, cargo: str, correo: str) -> dict:
+    """Perfil propio del usuario (nombre/cargo/correo) -- ver la limitación ya documentada en el
+    plan de registro/invitaciones: estos campos son compartidos por `users`, no por membresía,
+    así que se ven iguales en todas las organizaciones a las que pertenece."""
+    conn = _connect()
+    with _tx(conn):
+        conn.execute(
+            "UPDATE users SET nombre = ?, cargo = ?, correo = ? WHERE id = ?",
+            (nombre, cargo, correo, user_id),
+        )
+    return obtener_usuario(user_id)
+
+
 def fijar_org_activa(user_id: str, org_id: str | None) -> None:
     """Preferencia de organización activa POR USUARIO (Etapa de registro/invitaciones) -- a
     diferencia de settings.json (`local.org_activa`), que solo aplica al CLI de un operador

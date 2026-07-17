@@ -1,5 +1,8 @@
 import { ref } from "vue";
-import { authBootstrap, authCrearPrimerUsuario, authRegistrar, authFijarPasswordInicial, authLogin, authLogout, authYo } from "../api.js";
+import {
+  authBootstrap, authCrearPrimerUsuario, authRegistrar, authFijarPasswordInicial, authLogin,
+  authLogout, authYo, authActualizarPerfil, authCambiarPassword,
+} from "../api.js";
 
 // Mismo patrón "bus" de módulo-singleton que useOrgContext.js/editorScrollToBus.js (el
 // proyecto no usa store, ver nota Etapa 5 en CLAUDE.md) -- App.vue y el guard del router
@@ -56,6 +59,18 @@ async function logout() {
   bootstrapInfo.value = await authBootstrap().catch(() => null);
 }
 
+async function actualizarPerfil(payload) {
+  const { usuario: u } = await authActualizarPerfil(payload);
+  usuario.value = u;
+}
+
+async function cambiarPassword(actual, nueva) {
+  await authCambiarPassword(actual, nueva);
+}
+
 export function useAuth() {
-  return { usuario, cargando, bootstrapInfo, iniciar, crearPrimerUsuario, registrar, fijarPasswordInicial, login, logout };
+  return {
+    usuario, cargando, bootstrapInfo, iniciar, crearPrimerUsuario, registrar,
+    fijarPasswordInicial, login, logout, actualizarPerfil, cambiarPassword,
+  };
 }

@@ -1,27 +1,88 @@
 <script setup>
 import { ref, watch, onMounted } from "vue";
 import {
-  crearAutor, editarAutor, eliminarAutor, invitarMiembro,
   listEquipos, crearEquipo, editarEquipo, eliminarEquipo,
 } from "../api.js";
 import NewOrgModal from "../components/NewOrgModal.vue";
 import { useOrgContext } from "../composables/useOrgContext.js";
+import { useAuth } from "../composables/useAuth.js";
 
 const {
-  orgs, orgSlug, autores, cargarOrgs, cargarAutores, cargarDocs, cambiarOrgActiva, error,
+  orgs, orgSlug, cargarOrgs, cambiarOrgActiva, error,
 } = useOrgContext();
+const { usuario, actualizarPerfil, cambiarPassword } = useAuth();
 
-const tab = ref("organizacion");
+const seccion = ref("perfil"); // "perfil" | "organizaciones" | "equipos"
 const equipos = ref([]);
-const autorForm = ref(null); // null | { id?, nombre, cargo, correo, equipos: [] }
-const invitarForm = ref(null); // null | { email, role }
 const equipoForm = ref(null); // null | { id?, idOriginal?, nombre }
 const mostrarNuevaOrg = ref(false);
 
-function equipoNombre(id) {
-  return equipos.value.find((e) => e.id === id)?.nombre || id;
+// ── Mi perfil ────────────────────────────────────────────────────────────
+const perfilForm = ref({ nombre: "", cargo: "", correo: "" });
+const perfilGuardando = ref(false);
+const perfilMensaje = ref("");
+const perfilError = ref("");
+
+function cargarPerfilForm() {
+  if (!usuario.value) return;
+  perfilForm.value = {
+    nombre: usuario.value.nombre || "", cargo: usuario.value.cargo || "",
+    correo: usuario.value.correo || "",
+  };
+}
+onMounted(cargarPerfilForm);
+watch(usuario, cargarPerfilForm);
+
+async function guardarPerfil() {
+  perfilError.value = "";
+  perfilMensaje.value = "";
+  perfilGuardando.value = true;
+  try {
+    await actualizarPerfil(perfilForm.value);
+    perfilMensaje.value = "Perfil actualizado.";
+  } catch (e) {
+    perfilError.value = e.message;
+  } finally {
+    perfilGuardando.value = false;
+  }
 }
 
+const passwordActual = ref("");
+const passwordNueva = ref("");
+const passwordNueva2 = ref("");
+const passwordGuardando = ref(false);
+const passwordMensaje = ref("");
+const passwordError = ref("");
+
+async function guardarPassword() {
+  passwordError.value = "";
+  passwordMensaje.value = "";
+  if (passwordNueva.value !== passwordNueva2.value) {
+    passwordError.value = "Las contraseñas nuevas no coinciden.";
+    return;
+  }
+  passwordGuardando.value = true;
+  try {
+    await cambiarPassword(passwordActual.value, passwordNueva.value);
+    passwordMensaje.value = "Contraseña actualizada.";
+    passwordActual.value = "";
+    passwordNueva.value = "";
+    passwordNueva2.value = "";
+  } catch (e) {
+    passwordError.value = e.message;
+  } finally {
+    passwordGuardando.value = false;
+  }
+}
+
+// ── Organizaciones ──────────────────────────────────────────────────────
+async function onOrgCreada(org) {
+  mostrarNuevaOrg.value = false;
+  await cargarOrgs();
+  cambiarOrgActiva(org.slug);
+}
+
+// ── Equipos ──────────────────────────────────────────────────────────────
 async function cargarEquipos() {
   if (!orgSlug.value) {
     equipos.value = [];
@@ -39,69 +100,6 @@ onMounted(cargarEquipos);
 // App.vue: onMounted resuelve después) -- sin este watch, equipos quedaba vacío para siempre.
 watch(orgSlug, cargarEquipos);
 
-// ── Organización ─────────────────────────────────────────────────────────
-async function onOrgCreada(org) {
-  mostrarNuevaOrg.value = false;
-  await cargarOrgs();
-  cambiarOrgActiva(org.slug);
-}
-
-// ── Autores ──────────────────────────────────────────────────────────────
-function nuevoAutor() {
-  autorForm.value = { nombre: "", cargo: "", correo: "", equipos: [] };
-}
-
-function editarAutorForm(a) {
-  autorForm.value = { id: a.id, nombre: a.nombre, cargo: a.cargo, correo: a.correo, equipos: [...(a.equipos || [])] };
-}
-
-async function guardarAutor() {
-  error.value = "";
-  try {
-    const f = autorForm.value;
-    if (f.id) {
-      await editarAutor(orgSlug.value, f.id, { nombre: f.nombre, cargo: f.cargo, correo: f.correo, equipos: f.equipos });
-    } else {
-      await crearAutor(orgSlug.value, f);
-    }
-    autorForm.value = null;
-    await cargarAutores();
-    await cargarDocs();
-  } catch (e) {
-    error.value = e.message;
-  }
-}
-
-async function borrarAutor(a) {
-  if (!window.confirm(`¿Eliminar al autor "${a.nombre}"?`)) return;
-  error.value = "";
-  try {
-    await eliminarAutor(orgSlug.value, a.id);
-    await cargarAutores();
-    await cargarDocs();
-  } catch (e) {
-    error.value = e.message;
-  }
-}
-
-// Invitar = agregar directo a un usuario que YA existe en el sistema (sin correo, sin paso de
-// aceptación) -- distinto de "Nuevo autor", que crea metadata sin cuenta de login.
-function abrirInvitar() {
-  invitarForm.value = { email: "", role: "member" };
-}
-
-async function enviarInvitacion() {
-  error.value = "";
-  try {
-    await invitarMiembro(orgSlug.value, invitarForm.value.email, invitarForm.value.role);
-    invitarForm.value = null;
-    await cargarAutores();
-  } catch (e) {
-    error.value = e.message;
-  }
-}
-
-// ── Equipos ──────────────────────────────────────────────────────────────
 function nuevoEquipo() {
   equipoForm.value = { nombre: "" };
 }
@@ -121,7 +119,6 @@ async function guardarEquipo() {
     }
     equipoForm.value = null;
     await cargarEquipos();
-    await cargarAutores();
   } catch (e) {
     error.value = e.message;
   }
@@ -133,7 +130,6 @@ async function borrarEquipo(e) {
   try {
     await eliminarEquipo(orgSlug.value, e.id);
     await cargarEquipos();
-    await cargarAutores();
   } catch (err) {
     error.value = err.message;
   }
@@ -141,132 +137,97 @@ async function borrarEquipo(e) {
 </script>
 
 <template>
-  <div class="panel panel-organizacion">
-    <h2>Gestionar organización</h2>
-    <div v-if="error" class="error-banner">{{ error }}</div>
-    <div class="tabs">
-      <button :class="{ activo: tab === 'organizacion' }" @click="tab = 'organizacion'">Organización</button>
-      <button :class="{ activo: tab === 'autores' }" @click="tab = 'autores'">Autores</button>
-      <button :class="{ activo: tab === 'equipos' }" @click="tab = 'equipos'">Equipos</button>
+  <div class="panel-cuenta">
+    <div class="cuenta-sidebar">
+      <button :class="{ activo: seccion === 'perfil' }" @click="seccion = 'perfil'">Mi perfil</button>
+      <button :class="{ activo: seccion === 'organizaciones' }" @click="seccion = 'organizaciones'">
+        Organizaciones
+      </button>
+      <button :class="{ activo: seccion === 'equipos' }" @click="seccion = 'equipos'">Equipos</button>
     </div>
 
-    <div v-if="tab === 'organizacion'" class="tab-panel">
-      <button class="primary" @click="mostrarNuevaOrg = true">+ Nueva organización</button>
-      <table class="crud-table">
-        <thead><tr><th></th><th>Nombre</th><th>Slug</th><th>Documentos</th><th></th></tr></thead>
-        <tbody>
-          <tr v-for="o in orgs" :key="o.slug">
-            <td><span v-if="o.slug === orgSlug" class="badge-activo" title="Organización activa">●</span></td>
-            <td>{{ o.nombre }}</td>
-            <td>{{ o.slug }}</td>
-            <td>{{ o.documentos }}</td>
-            <td class="acciones">
-              <button v-if="o.slug !== orgSlug" @click="cambiarOrgActiva(o.slug)">Usar</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <div class="cuenta-contenido">
+      <div v-if="error" class="error-banner">{{ error }}</div>
 
-    <div v-if="tab === 'autores'" class="tab-panel">
-      <button class="primary" @click="nuevoAutor">+ Nuevo autor</button>
-      <button @click="abrirInvitar">Invitar usuario</button>
-      <table class="crud-table">
-        <thead>
-          <tr><th></th><th>Nombre</th><th>Cargo</th><th>Correo</th><th>Equipos</th><th></th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="a in autores" :key="a.id">
-            <td><span v-if="a.activo" class="badge-activo" title="Eres tú">●</span></td>
-            <td>{{ a.nombre }}</td>
-            <td>{{ a.cargo }}</td>
-            <td>{{ a.correo }}</td>
-            <td>{{ (a.equipos || []).map(equipoNombre).join(", ") }}</td>
-            <td class="acciones">
-              <button @click="editarAutorForm(a)">Editar</button>
-              <button @click="borrarAutor(a)">Eliminar</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div v-if="invitarForm" class="crud-form">
-        <h3>Invitar usuario</h3>
-        <p class="login-subtitulo">
-          Debe ser un correo de una cuenta que ya exista en doctyp — queda agregado de inmediato,
-          sin correo de invitación.
-        </p>
-        <label>Correo <input v-model="invitarForm.email" type="email" placeholder="usuario@correo.cl" /></label>
-        <label>
-          Rol
-          <select v-model="invitarForm.role">
-            <option value="member">Miembro</option>
-            <option value="admin">Administrador</option>
-          </select>
-        </label>
-        <div class="modal-acciones">
-          <button @click="invitarForm = null">Cancelar</button>
-          <button class="primary" @click="enviarInvitacion">Invitar</button>
+      <section v-if="seccion === 'perfil'">
+        <h2>Mi perfil</h2>
+        <div v-if="perfilError" class="error-banner">{{ perfilError }}</div>
+        <p v-if="perfilMensaje" class="login-subtitulo">{{ perfilMensaje }}</p>
+        <div class="crud-form">
+          <label>Nombre <input v-model="perfilForm.nombre" type="text" /></label>
+          <label>Cargo <input v-model="perfilForm.cargo" type="text" /></label>
+          <label>Correo <input v-model="perfilForm.correo" type="email" /></label>
+          <label>Email de acceso <input :value="usuario?.email" type="email" readonly /></label>
+          <div class="modal-acciones">
+            <button class="primary" :disabled="perfilGuardando" @click="guardarPerfil">
+              {{ perfilGuardando ? "Guardando…" : "Guardar" }}
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div v-if="autorForm" class="crud-form">
-        <h3>{{ autorForm.id ? "Editar autor" : "Nuevo autor" }}</h3>
-        <label>Nombre <input v-model="autorForm.nombre" type="text" /></label>
-        <label>Cargo <input v-model="autorForm.cargo" type="text" /></label>
-        <label>Correo <input v-model="autorForm.correo" type="email" /></label>
-        <label>
-          Equipos
-          <select v-model="autorForm.equipos" multiple size="4">
-            <option v-for="e in equipos" :key="e.id" :value="e.id">{{ e.nombre }}</option>
-          </select>
-        </label>
-        <div class="modal-acciones">
-          <button @click="autorForm = null">Cancelar</button>
-          <button class="primary" @click="guardarAutor">Guardar</button>
+        <h3 class="cuenta-subtitulo">Cambiar contraseña</h3>
+        <div v-if="passwordError" class="error-banner">{{ passwordError }}</div>
+        <p v-if="passwordMensaje" class="login-subtitulo">{{ passwordMensaje }}</p>
+        <div class="crud-form">
+          <label>Contraseña actual <input v-model="passwordActual" type="password" /></label>
+          <label>Contraseña nueva <input v-model="passwordNueva" type="password" /></label>
+          <label>Confirmar contraseña nueva <input v-model="passwordNueva2" type="password" /></label>
+          <div class="modal-acciones">
+            <button class="primary" :disabled="passwordGuardando" @click="guardarPassword">
+              {{ passwordGuardando ? "Guardando…" : "Cambiar contraseña" }}
+            </button>
+          </div>
         </div>
-      </div>
-    </div>
+      </section>
 
-    <div v-if="tab === 'equipos'" class="tab-panel">
-      <button class="primary" @click="nuevoEquipo">+ Nuevo equipo</button>
-      <table class="crud-table">
-        <thead><tr><th>Id</th><th>Nombre</th><th></th></tr></thead>
-        <tbody>
-          <tr v-for="e in equipos" :key="e.id">
-            <td>{{ e.id }}</td>
-            <td>{{ e.nombre }}</td>
-            <td class="acciones">
-              <button @click="editarEquipoForm(e)">Editar</button>
-              <button @click="borrarEquipo(e)">Eliminar</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <section v-if="seccion === 'organizaciones'">
+        <h2>Organizaciones</h2>
+        <button class="primary" @click="mostrarNuevaOrg = true">+ Nueva organización</button>
+        <table class="crud-table">
+          <thead><tr><th></th><th>Nombre</th><th>Slug</th><th>Documentos</th><th></th></tr></thead>
+          <tbody>
+            <tr v-for="o in orgs" :key="o.slug">
+              <td><span v-if="o.slug === orgSlug" class="badge-activo" title="Organización activa">●</span></td>
+              <td>{{ o.nombre }}</td>
+              <td>{{ o.slug }}</td>
+              <td>{{ o.documentos }}</td>
+              <td class="acciones">
+                <button v-if="o.slug !== orgSlug" @click="cambiarOrgActiva(o.slug)">Usar</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
 
-      <div v-if="equipoForm" class="crud-form">
-        <h3>{{ equipoForm.idOriginal ? "Editar equipo" : "Nuevo equipo" }}</h3>
-        <label v-if="!equipoForm.idOriginal">Id <input v-model="equipoForm.id" type="text" placeholder="p. ej. ti" /></label>
-        <label>Nombre <input v-model="equipoForm.nombre" type="text" /></label>
-        <div class="modal-acciones">
-          <button @click="equipoForm = null">Cancelar</button>
-          <button class="primary" @click="guardarEquipo">Guardar</button>
+      <section v-if="seccion === 'equipos'">
+        <h2>Equipos</h2>
+        <button class="primary" @click="nuevoEquipo">+ Nuevo equipo</button>
+        <table class="crud-table">
+          <thead><tr><th>Id</th><th>Nombre</th><th></th></tr></thead>
+          <tbody>
+            <tr v-for="e in equipos" :key="e.id">
+              <td>{{ e.id }}</td>
+              <td>{{ e.nombre }}</td>
+              <td class="acciones">
+                <button @click="editarEquipoForm(e)">Editar</button>
+                <button @click="borrarEquipo(e)">Eliminar</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-if="equipoForm" class="crud-form">
+          <h3>{{ equipoForm.idOriginal ? "Editar equipo" : "Nuevo equipo" }}</h3>
+          <label v-if="!equipoForm.idOriginal">Id <input v-model="equipoForm.id" type="text" placeholder="p. ej. ti" /></label>
+          <label>Nombre <input v-model="equipoForm.nombre" type="text" /></label>
+          <div class="modal-acciones">
+            <button @click="equipoForm = null">Cancelar</button>
+            <button class="primary" @click="guardarEquipo">Guardar</button>
+          </div>
         </div>
-      </div>
+      </section>
     </div>
 
     <NewOrgModal v-if="mostrarNuevaOrg" @creada="onOrgCreada" @cancelar="mostrarNuevaOrg = false" />
   </div>
 </template>
-
-<style>
-.panel-organizacion {
-  padding: 1.2em;
-  max-width: 60em;
-  margin: 0 auto;
-  overflow-y: auto;
-}
-.panel-organizacion h2 {
-  margin-top: 0;
-}
-</style>

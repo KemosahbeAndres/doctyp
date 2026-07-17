@@ -1525,6 +1525,32 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             self._json(200, {"usuario": auth.usuario_publico(usuario)})
             return
 
+        if segs == ["perfil"] and metodo == "PUT":
+            usuario = self._usuario_actual()
+            if usuario is None:
+                raise ApiError(401, "no autenticado")
+            cuerpo = self._leer_cuerpo_json()
+            nombre = (cuerpo.get("nombre") or "").strip()
+            if not nombre:
+                raise ApiError(400, "el nombre es obligatorio")
+            import doctyp_db as _db
+            actualizado = _db.actualizar_usuario(
+                usuario["id"], nombre, cuerpo.get("cargo") or "", cuerpo.get("correo") or "")
+            self._json(200, {"usuario": auth.usuario_publico(actualizado)})
+            return
+
+        if segs == ["password"] and metodo == "POST":
+            usuario = self._usuario_actual()
+            if usuario is None:
+                raise ApiError(401, "no autenticado")
+            cuerpo = self._leer_cuerpo_json()
+            try:
+                auth.cambiar_password(usuario["id"], cuerpo.get("actual", ""), cuerpo.get("nueva", ""))
+            except auth.AuthError as e:
+                raise ApiError(e.status, e.mensaje)
+            self._json(200, {"ok": True})
+            return
+
         raise ApiError(404, "ruta de auth desconocida")
 
     def _ip_cliente(self) -> str:

@@ -44,6 +44,17 @@ export function authYo() {
   return request("/api/auth/yo");
 }
 
+export function authActualizarPerfil(payload) {
+  return request("/api/auth/perfil", { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function authCambiarPassword(actual, nueva) {
+  return request("/api/auth/password", {
+    method: "POST",
+    body: JSON.stringify({ actual, nueva }),
+  });
+}
+
 async function request(path, options = {}) {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },

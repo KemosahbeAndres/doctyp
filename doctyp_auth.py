@@ -122,6 +122,19 @@ def fijar_password_primer_login(user_id: str, password: str) -> None:
     db.fijar_password(user_id, hash_password(password))
 
 
+def cambiar_password(user_id: str, password_actual: str, password_nueva: str) -> None:
+    """Cambio de contraseña desde 'Mi perfil' (a diferencia de fijar_password_primer_login, acá
+    el usuario YA tiene una contraseña y debe confirmarla antes de reemplazarla)."""
+    if not password_nueva or len(password_nueva) < 8:
+        raise AuthError(400, "la contraseña nueva debe tener al menos 8 caracteres")
+    usuario = db.obtener_usuario(user_id)
+    if usuario is None or not usuario.get("password_hash"):
+        raise AuthError(404, "usuario no encontrado")
+    if not verificar_password(password_actual, usuario["password_hash"]):
+        raise AuthError(401, "la contraseña actual no es correcta")
+    db.fijar_password(user_id, hash_password(password_nueva))
+
+
 # ── Rate limit simple en memoria (por IP) ──────────────────────────────────────────────────
 _intentos: dict[str, list[float]] = {}
 _RATE_LIMIT_VENTANA_S = 60
