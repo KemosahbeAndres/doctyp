@@ -175,6 +175,12 @@ class WebSocketClient:
     def enviar_texto(self, texto: str) -> None:
         self._enviar_frame(_OP_TEXT, texto.encode("utf-8"))
 
+    def enviar_datos(self, payload: bytes, es_binario: bool) -> None:
+        """Reenvía bytes crudos preservando el opcode (texto/binario) -- para relays "tontos"
+        que no interpretan el contenido, a diferencia de enviar_texto() (ver el proxy del data
+        plane de tinymist preview en doctyp_web.py)."""
+        self._enviar_frame(_OP_BINARY if es_binario else _OP_TEXT, payload)
+
     def cerrar(self) -> None:
         if self._cerrado or self._sock is None:
             return

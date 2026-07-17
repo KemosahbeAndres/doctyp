@@ -16,7 +16,7 @@ reutiliza exactamente compilar_typ().
 No requiere paquetes externos (solo stdlib).
 """
 from __future__ import annotations
-import base64, binascii, datetime, difflib, http.cookies, json, mimetypes, os, queue, shutil, subprocess, threading, time, webbrowser
+import base64, binascii, datetime, difflib, http.client, http.cookies, json, mimetypes, os, queue, shutil, subprocess, threading, time, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote
@@ -27,6 +27,7 @@ from doctyp_preview_binary import resolver_tinymist_utilizable
 from doctyp_preview_server import PreviewServer, PreviewServerError
 from doctyp_lsp_server import LspServer, LspServerError
 import doctyp_ws_server as ws_server
+import doctyp_ws_client as ws_client
 
 WEB_DIR = core.SCRIPT_DIR / "web"
 WEB_DIST = WEB_DIR / "dist"
@@ -41,6 +42,17 @@ _preview_lock = threading.Lock()
 _preview_actual: PreviewServer | None = None
 _preview_recurso_actual: tuple[str, str, str] | None = None
 _preview_legacy_forzado = False  # `doctyp web --legacy-preview` (Plan 15 F8)
+
+# Proxy del data plane de tinymist preview: `tinymist preview` valida el Origin de sus conexiones
+# WebSocket contra una lista fija de excepciones (127.0.0.1, vscode-webview, Gitpod, ...) --
+# bindearlo a 0.0.0.0 y exponerlo tras un dominio propio "no está soportado y no lo estará"
+# (issue #2105 de Myriad-Dreamin/tinymist). Por eso Traefik ya NO le habla directo al data plane
+# (ver docker-compose.yml): le habla a este mismo proceso con el Host público de la preview, y
+# _proxy_preview() reenvía a 127.0.0.1:<puerto>, presentando el Origin que tinymist sí acepta --
+# mismo truco que ya usa PreviewServer._conectar_control_plane() para el control plane. None si
+# DOCTYP_PREVIEW_PUBLIC_URL no está fijada (desarrollo local sin Docker/Traefik): esta ruta nunca
+# se activa en ese caso, cero cambio de comportamiento.
+_PREVIEW_PUBLIC_HOST = urlsplit(os.environ.get("DOCTYP_PREVIEW_PUBLIC_URL", "")).hostname
 
 # `doctyp web --verbose`: accesos HTTP (log_message, silenciado por defecto) + salida en vivo
 # de los subprocesos tinymist (preview/lsp), que hasta ahora solo se guardaba en memoria
@@ -1429,7 +1441,18 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001 - no debe tumbar el hilo del servidor
             self._error(500, f"error interno: {e}")
 
+    def _es_preview_proxy(self) -> bool:
+        """True si esta petición llegó con el Host público de la vista previa de tinymist --
+        ver _PREVIEW_PUBLIC_HOST y _proxy_preview() más abajo."""
+        if _PREVIEW_PUBLIC_HOST is None:
+            return False
+        host = (self.headers.get("Host") or "").split(":")[0].lower()
+        return host == _PREVIEW_PUBLIC_HOST.lower()
+
     def do_GET(self):
+        if self._es_preview_proxy():
+            self._proxy_preview("GET")
+            return
         partes_url = urlsplit(self.path)
         if partes_url.path in ("/api/events", "/api/lsp"):
             # No pasan por _despachar()/_api() (SSE y el bridge WS necesitan control fino de
@@ -1446,7 +1469,79 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
         self._despachar("GET")
 
     def do_POST(self):
+        if self._es_preview_proxy():
+            self._proxy_preview("POST")
+            return
         self._despachar("POST")
+
+    def _proxy_preview(self, metodo: str) -> None:
+        """Proxy transparente HTTP+WS hacia el data plane de `tinymist preview` (127.0.0.1,
+        mismo contenedor/proceso) para el tráfico que llega con el Host público de la preview --
+        ver _PREVIEW_PUBLIC_HOST arriba. No pasa por el sistema de sesión/auth (ya no lo hacía
+        antes tampoco: la cookie de sesión no cruza de dominio sin `Domain=` explícito, así que
+        esto no es una regresión de seguridad)."""
+        servidor_activo = _preview_actual
+        if servidor_activo is None or not servidor_activo.is_running:
+            self._error(502, "no hay vista previa activa en este momento")
+            return
+        puerto = servidor_activo.data_plane_port
+        if ws_server.es_peticion_upgrade(self.headers):
+            self._proxy_preview_ws(puerto)
+        else:
+            self._proxy_preview_http(metodo, puerto)
+
+    def _proxy_preview_http(self, metodo: str, puerto: int) -> None:
+        largo = int(self.headers.get("Content-Length", 0) or 0)
+        cuerpo = self.rfile.read(largo) if largo else None
+        cabeceras_saltar = {"host", "connection"}
+        cabeceras = {k: v for k, v in self.headers.items() if k.lower() not in cabeceras_saltar}
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", puerto, timeout=15)
+            conn.request(metodo, self.path, body=cuerpo, headers=cabeceras)
+            resp = conn.getresponse()
+            cuerpo_resp = resp.read()
+            cabeceras_resp = resp.getheaders()
+            estado = resp.status
+            conn.close()
+        except OSError as e:
+            self._error(502, f"no se pudo conectar al data plane de tinymist: {e}")
+            return
+        self.send_response(estado)
+        for k, v in cabeceras_resp:
+            if k.lower() not in ("connection", "transfer-encoding", "content-length", "date"):
+                self.send_header(k, v)
+        self.send_header("Content-Length", str(len(cuerpo_resp)))
+        self.end_headers()
+        self.wfile.write(cuerpo_resp)
+
+    def _proxy_preview_ws(self, puerto: int) -> None:
+        if not ws_server.realizar_handshake(self.headers, self.wfile):
+            self._error(400, "handshake WebSocket inválido")
+            return
+        servidor = ws_server.WebSocketServerConnection(self.rfile, self.wfile)
+        cliente = ws_client.WebSocketClient(
+            host="127.0.0.1", port=puerto, path=self.path,
+            origin=f"http://127.0.0.1:{puerto}",
+            on_message=lambda payload, es_binario: servidor.enviar_datos(payload, es_binario),
+            on_close=servidor.cerrar,
+        )
+        try:
+            cliente.conectar()
+        except (ws_client.WebSocketError, OSError):
+            servidor.cerrar()
+            return
+        try:
+            while True:
+                mensaje = servidor.leer_mensaje()
+                if mensaje is None:
+                    break
+                opcode, payload = mensaje
+                try:
+                    cliente.enviar_datos(payload, ws_server.es_binario(opcode))
+                except (ws_client.WebSocketError, OSError):
+                    break
+        finally:
+            cliente.cerrar()
 
     def do_PUT(self):
         self._despachar("PUT")

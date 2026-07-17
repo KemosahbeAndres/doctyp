@@ -38,6 +38,13 @@ class WebSocketServerError(Exception):
     pass
 
 
+def es_binario(opcode: int) -> bool:
+    """True si el opcode de un mensaje leído vía leer_mensaje() es BINARIO -- para relays que
+    reenvían con enviar_datos() sin interpretar el contenido (ver el proxy del data plane de
+    tinymist preview en doctyp_web.py)."""
+    return opcode == _OP_BINARY
+
+
 def es_peticion_upgrade(headers) -> bool:
     """`headers`: `self.headers` de un `BaseHTTPRequestHandler` (email.message.Message)."""
     upgrade = (headers.get("Upgrade") or "").strip().lower()
@@ -172,6 +179,12 @@ class WebSocketServerConnection:
 
     def enviar_texto(self, texto: str) -> None:
         self._enviar_frame(_OP_TEXT, texto.encode("utf-8"))
+
+    def enviar_datos(self, payload: bytes, es_binario: bool) -> None:
+        """Reenvía bytes crudos preservando el opcode (texto/binario) -- para relays "tontos"
+        que no interpretan el contenido, a diferencia de enviar_texto() (ver el proxy del data
+        plane de tinymist preview en doctyp_web.py)."""
+        self._enviar_frame(_OP_BINARY if es_binario else _OP_TEXT, payload)
 
     def _responder_close(self, payload: bytes) -> None:
         if self._cerrado:
