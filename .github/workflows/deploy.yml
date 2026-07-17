@@ -1,0 +1,30 @@
+name: Desplegar a producción
+
+# Se dispara solo en push a master (o al ejecutarlo manualmente desde la pestaña Actions).
+# No compila ni prueba nada aquí -- el build real de la imagen ocurre EN el VPS (docker
+# compose build), este workflow solo hace `git pull` + `docker compose up -d --build` por
+# SSH. Mantiene el runner de GitHub simple y evita subir/gestionar una imagen a un registry
+# (decisión: sin registry externo, ver DESPLIEGUE.md).
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Desplegar por SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -euo pipefail
+            cd ${{ secrets.VPS_DEPLOY_PATH }}
+            git fetch origin master
+            git reset --hard origin/master
+            docker compose -f docker-compose.yml up -d --build
+            docker image prune -f

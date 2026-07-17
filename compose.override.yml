@@ -1,10 +1,11 @@
 # Override de desarrollo (PLAN-V4.md §2): se aplica automáticamente junto a docker-compose.yml
 # cuando no se pasa -f explícito. Publica el puerto en localhost (no hay Traefik en dev), monta
 # el código para iterar sin reconstruir la imagen en cada cambio, y reemplaza la red externa
-# `traefik` (no existe fuera del VPS) por la red default de compose.
+# de producción (no existe fuera del VPS, sea cual sea su nombre real) por la red default de
+# compose.
 #
 # Uso: docker compose up --build   (toma docker-compose.yml + este archivo automáticamente)
-# Producción real (VPS con Traefik): docker compose -f docker-compose.yml up -d --build
+# Producción real (VPS, ver DESPLIEGUE.md): docker compose -f docker-compose.yml up -d --build
 #   (omite este override explícitamente con -f)
 
 services:
