@@ -105,6 +105,17 @@ local, commitéalo y púshalo (no lo edites solo en el VPS: el paso 5 del flujo
 (`git reset --hard origin/master`) descartaría cualquier edición hecha directo en el
 servidor).
 
+> ⚠ **`certresolver` debe coincidir con el nombre real que usa TU Traefik, no un valor
+> fijo.** `letsencrypt` es solo un nombre de ejemplo — cada instalación de Traefik nombra
+> su(s) certResolver(s) como quiera en su propia configuración
+> (`--certificatesresolvers.<NOMBRE>.acme...`). Si no coincide exactamente, Traefik
+> registra `Router uses a nonexistent certificate resolver` en sus logs y nunca emite el
+> certificado — el navegador ve el certificado autofirmado por defecto
+> (`ERR_CERT_AUTHORITY_INVALID`) en vez de uno válido. Verifica el nombre real en la
+> configuración de tu Traefik y ajusta las dos líneas `tls.certresolver=...` de
+> `docker-compose.yml` (una por router: `doctyp` y `doctyp-preview`) para que coincidan
+> exactamente antes de desplegar.
+
 ### 3.2 DNS para la vista previa de tinymist (clic↔cursor)
 
 El editor usa `tinymist preview` como motor de vista previa con clic↔cursor real. Su
@@ -291,6 +302,7 @@ vive solo en la misma máquina no protege contra la pérdida del VPS completo.
 |---|---|---|
 | El workflow falla en "Desplegar por SSH" con "Permission denied" | La clave pública no quedó en `~/deploy/.ssh/authorized_keys`, o el secret `VPS_SSH_KEY` no tiene el contenido completo | Repite `ssh-copy-id` (§2); verifica el secret pegando la clave de nuevo, sin espacios extra al final |
 | El sitio no responde por HTTPS aunque el contenedor está `Up` | Traefik no está viendo las labels, o el `Host()` no coincide con el dominio real | `docker compose logs doctyp`; revisa el dashboard de Traefik si lo tienes expuesto; confirma que `doctyp` y Traefik comparten la misma red (`docker network inspect proxy`) |
+| El navegador marca `ERR_CERT_AUTHORITY_INVALID` en `doctyp.tinorte.cl`/`doctyp-preview.tinorte.cl` | El nombre de `certresolver` en `docker-compose.yml` no coincide con el nombre real configurado en tu Traefik (ver advertencia en §3.1) | `docker logs <contenedor-traefik> \| grep "certificate resolver"` — si aparece `nonexistent certificate resolver`, corrige el nombre en `docker-compose.yml`, commitea/pushea, y despliega de nuevo |
 | `docker compose up -d --build` tarda mucho en cada deploy | Normal la primera vez (descarga typst/tinymist + build de la SPA); en deploys siguientes debería cachear capas si el `Dockerfile` no cambió | Si siempre es lento, revisa que no estés invalidando la caché de Docker sin necesidad (p. ej. tocar un archivo temprano en el `Dockerfile` en cada commit) |
 | `doctyp migrate` no encuentra ningún `org.json` | Las carpetas de `organizations/` no se copiaron al volumen antes de migrar | Repite §3.5, confirmando la ruta de destino con `docker compose exec doctyp ls /data/organizations` |
 | Perdiste la clave privada de despliegue | — | Genera un par nuevo (§2), reemplaza la clave pública en el VPS y el secret `VPS_SSH_KEY` en GitHub; borra la entrada vieja de `authorized_keys` en el VPS |

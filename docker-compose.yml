@@ -37,7 +37,7 @@ services:
       - traefik.enable=true
       - traefik.http.routers.doctyp.rule=Host(`doctyp.tinorte.cl`)
       - traefik.http.routers.doctyp.entrypoints=websecure
-      - traefik.http.routers.doctyp.tls.certresolver=letsencrypt
+      - traefik.http.routers.doctyp.tls.certresolver=myle
       - traefik.http.routers.doctyp.service=doctyp
       - traefik.http.services.doctyp.loadbalancer.server.port=8787
       # Segundo router+service sobre el MISMO contenedor, apuntando al puerto fijo del data
@@ -46,7 +46,7 @@ services:
       # de un puerto de un mismo servicio Docker.
       - traefik.http.routers.doctyp-preview.rule=Host(`doctyp-preview.tinorte.cl`)
       - traefik.http.routers.doctyp-preview.entrypoints=websecure
-      - traefik.http.routers.doctyp-preview.tls.certresolver=letsencrypt
+      - traefik.http.routers.doctyp-preview.tls.certresolver=myle
       - traefik.http.routers.doctyp-preview.service=doctyp-preview
       - traefik.http.services.doctyp-preview.loadbalancer.server.port=37800
 
