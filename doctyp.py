@@ -1762,6 +1762,14 @@ def cmd_nuevo(args):
     plantilla = args.plantilla or org.get("config", {}).get("plantilla_default", "informe-ti")
     if args.correlativo is not None:
         corr = args.correlativo
+        if corr < 1:
+            sys.exit("ERROR: --correlativo debe ser >= 1.")
+        choque = [d["codigo_base"] for d in org["documentos"]
+                  if d.get("correlativo") == corr and d.get("anio") == anio]
+        if choque and not args.forzar:
+            sys.exit(f"ERROR: el correlativo {corr:04d} (año {anio}) ya está en uso por "
+                      f"'{choque[0]}'. Usa --forzar para crear igual (queda dos documentos "
+                      f"con el mismo correlativo — no recomendado).")
     else:
         # Asignación transaccional (BEGIN IMMEDIATE): cierra la carrera que tendría calcular
         # esto sobre el dict `org` ya cargado y recién guardarlo más abajo (PLAN-V4.md §0.2).
@@ -1812,6 +1820,114 @@ def cmd_nuevo(args):
     _ok(f"Creado: {_c(_C.DIM, str(out_file))}")
     print(f"       {_c(_C.BOLD, 'Código base:')}     {base}")
     print(f"       {_c(_C.BOLD, 'Código completo:')} {base}_v{f['version']}_{fecha}")
+    print(f"       {_c(_C.BOLD, 'Correlativo:')}     {_c(_C.CYAN, f'{corr:04d}')} (año {anio})\n")
+
+
+def cmd_clone(args):
+    """doctyp clone <correlativo>[@anio] [--correlativo N] [--forzar] — duplica la carpeta
+    completa de un documento existente (el .typ vigente en disco, no un snapshot antiguo) y le
+    asigna un correlativo nuevo (automático si no se pasa --correlativo). Mantiene área/tipo/
+    categoría/año/título/autor/etc. del original; resetea version a 1.0 y el historial de
+    versiones del clon parte de cero (documento independiente del original)."""
+    slug = org_activa_slug()
+    org = cargar_org(slug)
+    anio_origen = args.anio or datetime.date.today().year
+    origen = buscar_doc_org(org, args.correlativo_origen, anio_origen)
+
+    anio = origen["anio"]
+    if args.correlativo is not None:
+        corr = args.correlativo
+        if corr < 1:
+            sys.exit("ERROR: --correlativo debe ser >= 1.")
+        choque = [d["codigo_base"] for d in org["documentos"]
+                  if d.get("correlativo") == corr and d.get("anio") == anio]
+        if choque and not args.forzar:
+            sys.exit(f"ERROR: el correlativo {corr:04d} (año {anio}) ya está en uso por "
+                      f"'{choque[0]}'. Usa --forzar para crear igual (queda dos documentos "
+                      f"con el mismo correlativo — no recomendado).")
+    else:
+        import doctyp_db as _db
+        corr = _db.asignar_correlativo(slug, anio)
+
+    base = codigo_base(origen["area"], origen["tipo"], origen["categoria"], anio, corr)
+    src_dir = doc_dir(slug, origen["codigo_base"])
+    dest_dir = doc_dir(slug, base)
+    out_file = dest_dir / f"{base}.typ"
+    if not src_dir.is_dir():
+        sys.exit(f"ERROR: no se encontró la carpeta del documento origen: {src_dir}")
+    if dest_dir.exists() and not args.forzar:
+        sys.exit(f"ERROR: {dest_dir} ya existe. Usa --forzar para sobrescribir.")
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir)
+
+    # Copia solo lo que pertenece a un documento-carpeta v3 (§4 CLAUDE.md): la plantilla propia
+    # (lib.typ, Images/ con los logos, fonts/ opcional) y las imágenes propias del documento
+    # (img/). Deliberadamente NO se copia .snapshots/ (el clon es un documento independiente,
+    # su historial de versiones parte de cero) ni cruft oculto/legacy (miniaturas cacheadas,
+    # carpetas "versions/" de organizaciones pre-Etapa 6).
+    dest_dir.mkdir(parents=True)
+    lib_src = src_dir / "lib.typ"
+    if not lib_src.exists():
+        sys.exit(f"ERROR: el documento origen no tiene lib.typ: {lib_src}")
+    shutil.copy2(lib_src, dest_dir / "lib.typ")
+    for carpeta in ("Images", "fonts", "img"):
+        src_sub = src_dir / carpeta
+        if src_sub.is_dir():
+            shutil.copytree(src_sub, dest_dir / carpeta)
+    (dest_dir / "img").mkdir(exist_ok=True)
+    (dest_dir / SNAPSHOTS_DIRNAME).mkdir(exist_ok=True)
+
+    shutil.copy2(src_dir / f"{origen['codigo_base']}.typ", out_file)
+
+    hoy = datetime.date.today()
+    fecha = hoy.strftime("%Y%m%d")
+    version_nueva = "1.0"
+
+    texto = out_file.read_text(encoding="utf-8")
+    texto, n = re.subn(r'(anio:\s*)\d+(,\s*correlativo:\s*)\d+',
+                        lambda m: f'{m.group(1)}{anio}{m.group(2)}{corr}', texto, count=1)
+    if n == 0:
+        sys.exit(f"ERROR: no se encontró el campo 'anio:/correlativo:' en {out_file}.")
+    texto, n = re.subn(r'(version:\s*")[^"]*(")',
+                        lambda m: f'{m.group(1)}{version_nueva}{m.group(2)}', texto, count=1)
+    if n == 0:
+        sys.exit(f"ERROR: no se encontró el campo 'version:' en {out_file}.")
+    texto, n = re.subn(r'(fecha-codigo:\s*")[^"]*(")',
+                        lambda m: f'{m.group(1)}{fecha}{m.group(2)}', texto, count=1)
+    if n == 0:
+        sys.exit(f"ERROR: no se encontró el campo 'fecha-codigo:' en {out_file}.")
+    fecha_iso = f"{fecha[:4]}-{fecha[4:6]}-{fecha[6:]}"
+    autor = extraer_meta_typ(out_file).get("autor", "")
+    texto, n = re.subn(r'#s-versiones\(\s*meta\s*,\s*\(\n.*?\n\)\)',
+                        lambda m: (f'#s-versiones(meta, (\n'
+                                    f'  ("v{version_nueva}", "{fecha_iso}", "{ty_str(autor)}", '
+                                    f'"Versión inicial (clonado de {origen["codigo_base"]})."),\n))'),
+                        texto, count=1, flags=re.DOTALL)
+    if n == 0:
+        sys.exit(f"ERROR: no se encontró el bloque '#s-versiones(meta, (' en {out_file}.")
+    out_file.write_text(texto, encoding="utf-8")
+
+    ahora = datetime.datetime.now().isoformat(timespec="seconds")
+    entrada_org = {
+        "codigo_base": base,
+        "area": origen["area"], "tipo": origen["tipo"], "categoria": origen["categoria"],
+        "anio": anio, "correlativo": corr,
+        "titulo": origen["titulo"], "autor_id": origen.get("autor_id"),
+        "equipo_id": origen.get("equipo_id"),
+        "plantilla": origen.get("plantilla"),
+        "ruta": base,
+        "creado": ahora,
+        "versiones": [{"version": version_nueva, "fecha": fecha, "creado": ahora,
+                        "mensaje": f"Versión inicial (clonado de {origen['codigo_base']})."}],
+    }
+    org["documentos"].append(entrada_org)
+    guardar_org(slug, org)
+    escribir_indice_snapshots(dest_dir, entrada_org)
+
+    print()
+    _ok(f"Clonado: {_c(_C.DIM, origen['codigo_base'])} → {_c(_C.DIM, str(out_file))}")
+    print(f"       {_c(_C.BOLD, 'Código base:')}     {base}")
+    print(f"       {_c(_C.BOLD, 'Código completo:')} {base}_v{version_nueva}_{fecha}")
     print(f"       {_c(_C.BOLD, 'Correlativo:')}     {_c(_C.CYAN, f'{corr:04d}')} (año {anio})\n")
 
 
@@ -2609,6 +2725,18 @@ def build_parser() -> argparse.ArgumentParser:
     pn.add_argument("--forzar", action="store_true",
                     help="Sobrescribir si el archivo ya existe.")
     pn.set_defaults(func=cmd_nuevo)
+
+    pcl = sub.add_parser("clone", aliases=["dup"],
+                         help="Duplica la carpeta completa de un documento existente con un "
+                              "correlativo nuevo (automático si no se indica --correlativo).")
+    pcl.add_argument("correlativo_origen", type=int, metavar="CORRELATIVO",
+                     help="Correlativo del documento a clonar.")
+    pcl.add_argument("--anio", type=int, help="Año del documento origen (por defecto, el actual).")
+    pcl.add_argument("--correlativo", "--code", type=int, dest="correlativo",
+                     help="Forzar correlativo del clon (por defecto: secuencial automático).")
+    pcl.add_argument("--forzar", action="store_true",
+                     help="Sobrescribir si la carpeta destino ya existe.")
+    pcl.set_defaults(func=cmd_clone)
 
     ps = sub.add_parser("save", aliases=["s", "commit"],
                         help="Registra una nueva versión de un documento (bump del número menor).")
