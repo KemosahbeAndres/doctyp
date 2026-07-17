@@ -23,6 +23,7 @@ jobs:
           port: ${{ secrets.VPS_PORT || 22 }}
           script: |
             set -euo pipefail
+            ls -la
             cd ${{ secrets.VPS_DEPLOY_PATH }}
             git fetch origin master
             git reset --hard origin/master
