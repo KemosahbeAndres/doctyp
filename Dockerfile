@@ -58,7 +58,7 @@ RUN export TINYMIST_INSTALL_DIR=/usr/local/bin TINYMIST_NO_MODIFY_PATH=1; \
 
 WORKDIR /app
 
-COPY doctyp.py doctyp_db.py doctyp_auth.py doctyp_web.py doctyp_preview_binary.py \
+COPY doctyp.py doctyp_db.py doctyp_auth.py doctyp_web.py doctyp_sync.py doctyp_preview_binary.py \
      doctyp_preview_server.py doctyp_lsp_server.py doctyp_ws_server.py doctyp_ws_client.py \
      lib.typ ./
 COPY templates_base/ ./templates_base/
