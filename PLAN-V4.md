@@ -105,14 +105,25 @@ de una imagen.
   sola instancia central del servidor** atendida por dominio, que es justamente lo que
   garantiza el **correlativo global por organización** (§3: todos los usuarios crean
   documentos contra la misma BD, `BEGIN IMMEDIATE` en `correlative_counters`).
-- **⚠ Punto técnico a resolver en la Etapa 18:** la vista previa de tinymist usa un
-  **puerto dinámico propio** (static server + data plane WS, CLAUDE.md Etapa 15) que
-  hoy funciona porque navegador y proceso comparten host. En Docker + Traefik ese
-  puerto queda inalcanzable desde el navegador: la única vía es **tunelizarlo a
-  través de doctyp_web.py** (proxy HTTP/WS interno bajo `/preview/…`, mismo puerto
-  8787 que ya rutea Traefik) — publicar un rango de puertos queda descartado, Traefik
-  rutea por dominio hacia un único puerto de servicio. Prerrequisito del editor en
-  Docker.
+- **Preview de tinymist detrás de Traefik — resuelto (2026-07-17, ver DESPLIEGUE.md):**
+  decisión final del usuario, distinta a la primera hipótesis de este documento (proxy
+  interno bajo `/preview/…`, descartada). En vez de tunelizar por Python, el data plane
+  de tinymist (`doctyp_preview_server.py`) pasa de puerto **aleatorio** a un puerto
+  **fijo** (`DOCTYP_PREVIEW_DATA_PORT`, default `37800`), bindeado a `0.0.0.0`
+  (`DOCTYP_PREVIEW_BIND`) para que sea alcanzable desde otro contenedor. Traefik declara
+  un **segundo router+service** sobre el mismo contenedor (`docker-compose.yml`:
+  `traefik.http.routers.doctyp-preview...`, `loadbalancer.server.port=37800`) apuntando
+  a un subdominio dedicado (`doctyp-preview.<dominio>`) — mismo patrón que Traefik
+  documenta oficialmente para exponer más de un puerto de un mismo servicio Docker.
+  `PreviewServer.info()` reporta `DOCTYP_PREVIEW_PUBLIC_URL` (ese subdominio) como
+  `static_url` en vez de `127.0.0.1:<puerto>`; sin esa variable (desarrollo local, fuera
+  de Docker) el comportamiento no cambia. El control plane (WebSocket que solo habla
+  `doctyp_web.py`, nunca el navegador) sigue interno en `127.0.0.1` con puerto
+  aleatorio, sin cambios. La exclusión mutua "una preview a la vez" que ya garantizaba
+  `_asegurar_preview_generico()` (`doctyp_web.py`) es lo que hace seguro reusar un
+  puerto fijo entre reinicios del subproceso — verificado en vivo con tinymist real:
+  arranque, HTTP 200 del data plane, `stop()` limpio, y un segundo arranque en el mismo
+  puerto sin colisión.
 - `compose.override.yml` para desarrollo: montaje del código, `--no-build`, Vite dev
   server, puertos extra.
 - **Backups:** `sqlite3 doctyp.db ".backup ..."` programado (backup en caliente,
@@ -291,7 +302,7 @@ GET    /api/v1/orgs/<slug>/plantillas                    # plantillas disponible
 
 | Etapa | Alcance | Estado |
 |---|---|---|
-| 18 | **Docker:** Dockerfile + compose (servicio único, sin puerto publicado en el host: labels de Traefik + red compartida, ⚠ §2), `DOCTYP_DOCS_ROOT`/`DOCTYP_DB_PATH`/`DOCTYP_ORGS_DIR`/`DOCTYP_SETTINGS_PATH`/`DOCTYP_BIND`, fuentes por volumen, override de desarrollo, verificación real con podman (build, CLI, auth, persistencia entre restarts, shutdown limpio) | **Completada** (túnel del puerto de preview de tinymist bajo `/preview/…` queda **pendiente** — ver nota) |
+| 18 | **Docker:** Dockerfile + compose (servicio único, sin puerto publicado en el host: labels de Traefik + red compartida, ⚠ §2), `DOCTYP_DOCS_ROOT`/`DOCTYP_DB_PATH`/`DOCTYP_ORGS_DIR`/`DOCTYP_SETTINGS_PATH`/`DOCTYP_BIND`, fuentes por volumen, override de desarrollo, verificación real con podman (build, CLI, auth, persistencia entre restarts, shutdown limpio), **subdominio dedicado para la preview de tinymist** (`DOCTYP_PREVIEW_DATA_PORT`/`DOCTYP_PREVIEW_BIND`/`DOCTYP_PREVIEW_PUBLIC_URL` + segundo router de Traefik, ver nota) | **Completada** |
 | 19 | **Registro en SQLite:** esquema §3, módulo `doctyp_db.py` (acceso único para CLI/web/API), reemplazo de lectura/escritura de `org.json` en el core, correlativos transaccionales, `doctyp migrate` (+ `--check`), archivo de los JSON como `*.migrated` | **Completada** |
 | 20 | **Multiusuario:** users/sessions (scrypt), email como identificador, login/logout en la SPA, **bootstrap** (sin usuarios → crear el primero como admin; único usuario sin password → fijarla en el primer login, ver §4) | **Completada** (alcance reducido — ver nota: sin `api_tokens`, sin roles/admin de usuarios en la SPA, sin invitaciones, sin rate-limit persistente) |
 | 21 | **CLI remoto:** `doctyp login/logout/remote`, comandos contra la API (`--local` como escape), flujo pull/save con detección de conflicto por hash, compilación remota opcional | Pendiente (fuera de alcance por decisión explícita del usuario, 2026-07-17) |
@@ -366,10 +377,11 @@ composición — y de cerrar solo motor de datos + login + Docker "para tener al
   (`doctyp_web.py`): handler de `SIGTERM` que reusa la misma excepción que ya maneja Ctrl+C.
   Verificado: `docker kill -s TERM` produce "Servidor detenido." y exit 0; `docker restart`
   pasó de ~10.2s (timeout + SIGKILL) a ~0.2s.
-  **Pendiente, no bloqueante:** el túnel del puerto de preview de tinymist bajo
-  `/preview/…` (§2, necesario para que la vista previa con clic↔cursor funcione detrás de
-  Traefik) no se implementó — la preview typst.ts (sin clic↔cursor) sigue funcionando en
-  contenedor sin cambios; solo el motor tinymist queda a medias hasta que se haga ese túnel.
+  **Vista previa de tinymist detrás de Traefik: resuelto en un pase posterior (mismo
+  día).** La primera versión de esta nota decía "pendiente, no bloqueante" (túnel bajo
+  `/preview/…`) — el usuario, al desplegar de verdad en el VPS, pidió en su lugar un
+  subdominio dedicado (`doctyp-preview.tinorte.cl`). Ver el detalle completo en §2 (nota
+  "Preview de tinymist detrás de Traefik — resuelto") y DESPLIEGUE.md.
 - **Nueva variable de entorno no listada originalmente en §2:** `DOCTYP_SETTINGS_PATH`
   (`doctyp.py: registro_path()`) — sin ella, `settings.json` (org/autor activos) vivía en
   `/app` (no persistido) y se perdía en cada restart del contenedor aunque `doctyp.db` y los

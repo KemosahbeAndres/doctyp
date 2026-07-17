@@ -98,25 +98,41 @@ ruta, pero debe coincidir con el secret.
 
 ### 3.1 Ajustar el dominio real
 
-Edita `docker-compose.yml` en el VPS y cambia el `Host()` por tu dominio real (ya lo
-hiciste en tu copia local con `doctyp.tinorte.cl` y la red `proxy` — asegúrate de que el
-VPS tenga exactamente esos mismos valores, o vuelve a aplicarlos ahí si el clon trajo los
-placeholders del repo):
+`docker-compose.yml` ya trae el dominio real (`doctyp.tinorte.cl`, red `proxy`) y el
+subdominio dedicado a la vista previa (`doctyp-preview.tinorte.cl`, ver §3.2) — no hace
+falta editarlo en el VPS. Si en algún momento cambias de dominio, hazlo en tu máquina
+local, commitéalo y púshalo (no lo edites solo en el VPS: el paso 5 del flujo
+(`git reset --hard origin/master`) descartaría cualquier edición hecha directo en el
+servidor).
 
-```yaml
-labels:
-  - traefik.http.routers.doctyp.rule=Host(`doctyp.tinorte.cl`)
-networks:
-  - proxy   # o el nombre real de tu red de Traefik en este VPS
+### 3.2 DNS para la vista previa de tinymist (clic↔cursor)
+
+El editor usa `tinymist preview` como motor de vista previa con clic↔cursor real. Su
+"data plane" (lo que ve el navegador dentro del `<iframe>`) necesita su **propio
+subdominio**, enrutado por Traefik directo a un puerto fijo del mismo contenedor —
+`docker-compose.yml` ya declara ese segundo router
+(`traefik.http.routers.doctyp-preview...`, puerto `37800`).
+
+Solo falta el registro DNS — agrega un registro `A` (o `CNAME`) para
+`doctyp-preview.tinorte.cl` apuntando a la misma IP que ya usa `doctyp.tinorte.cl`, en el
+proveedor donde gestionas el dominio. Traefik con `certresolver: letsencrypt` emitirá el
+certificado TLS de ese subdominio automáticamente la primera vez que reciba tráfico para
+él (igual que ya hace con el dominio principal) — no hace falta configurar nada más en el
+VPS.
+
+Verifica que quedó bien:
+
+```bash
+curl -I https://doctyp-preview.tinorte.cl/
 ```
 
-> Si vas a mantener el `docker-compose.yml` del repo como la fuente de verdad (recomendado
-> para que el CI/CD no dependa de una edición manual que se pierde en cada `git reset
-> --hard`), **haz este cambio en tu máquina local, commitéalo y púshalo** en vez de editarlo
-> solo en el VPS — el paso 0.3 del flujo (`git reset --hard origin/master`) descartaría
-> cualquier edición hecha directo en el servidor.
+Debería responder `200` (o similar) una vez que haya al menos una vista previa activa —
+antes de que el usuario abra un documento en el editor, tinymist ni siquiera está corriendo
+(`PreviewServer` arranca bajo demanda, ver `doctyp_preview_server.py`), así que un `curl`
+contra el subdominio antes de eso puede devolver `502 Bad Gateway` — eso es normal, no un
+error de configuración.
 
-### 3.2 Fuentes con licencia (Museo Sans)
+### 3.3 Fuentes con licencia (Museo Sans)
 
 Museo Sans no se redistribuye (licencia) y por eso nunca viaja en la imagen ni en el repo.
 Si quieres que los PDFs generados usen Museo Sans en vez del fallback (Liberation Sans),
@@ -131,7 +147,7 @@ docker compose restart doctyp
 Si no tienes la licencia o no te importa por ahora, omite este paso — el sistema funciona
 igual con Liberation Sans.
 
-### 3.3 Primer arranque
+### 3.4 Primer arranque
 
 ```bash
 cd /opt/doctyp
@@ -149,15 +165,15 @@ docker compose logs -f doctyp   # Ctrl+C para salir del seguimiento de logs
 Deberías ver `✔ Servidor doctyp web escuchando en http://0.0.0.0:8787/`. Si Traefik está
 bien configurado, el sitio ya debería responder en `https://tu-dominio/`.
 
-### 3.4 Migrar el registro y crear el primer usuario
+### 3.5 Migrar el registro y crear el primer usuario
 
 Los datos **no** vienen en el repo — el VPS arranca con `organizations/`, `doctyp.db` y los
 documentos completamente vacíos (viven en volúmenes, no en el código). Tienes dos casos:
 
 **Caso A — primera instalación real, sin datos previos:** no hay nada que migrar. Entra a
 `https://tu-dominio/` y la propia SPA te va a mostrar la pantalla de "crear el primer
-usuario" (bootstrap, Etapa 20) — created ahí tu organización, plantilla y usuario admin
-desde cero con `doctyp org new`/`template new` vía CLI (§3.5) o desde la interfaz.
+usuario" (bootstrap, Etapa 20) — créala ahí tu organización, plantilla y usuario admin
+desde cero con `doctyp org new`/`template new` vía CLI (§3.6) o desde la interfaz.
 
 **Caso B — ya tenías datos en `organizations/*/org.json` de una instalación anterior (fuera
 de Docker) y quieres traerlos:** copia esas carpetas `organizations/<slug>/` al volumen
@@ -176,7 +192,7 @@ docker compose exec doctyp python3 doctyp.py migrate --check   # verifica conteo
 Y si además tenías documentos ya creados (carpetas bajo `<Documentos>/doctyp/<org>/`),
 cópialos al volumen `docs_data` con el mismo patrón (`docker compose cp ... doctyp:/data/docs/tu-org`).
 
-### 3.5 Comandos CLI dentro del contenedor
+### 3.6 Comandos CLI dentro del contenedor
 
 Cualquier subcomando de `doctyp` se ejecuta con `docker compose exec`:
 
@@ -276,5 +292,7 @@ vive solo en la misma máquina no protege contra la pérdida del VPS completo.
 | El workflow falla en "Desplegar por SSH" con "Permission denied" | La clave pública no quedó en `~/deploy/.ssh/authorized_keys`, o el secret `VPS_SSH_KEY` no tiene el contenido completo | Repite `ssh-copy-id` (§2); verifica el secret pegando la clave de nuevo, sin espacios extra al final |
 | El sitio no responde por HTTPS aunque el contenedor está `Up` | Traefik no está viendo las labels, o el `Host()` no coincide con el dominio real | `docker compose logs doctyp`; revisa el dashboard de Traefik si lo tienes expuesto; confirma que `doctyp` y Traefik comparten la misma red (`docker network inspect proxy`) |
 | `docker compose up -d --build` tarda mucho en cada deploy | Normal la primera vez (descarga typst/tinymist + build de la SPA); en deploys siguientes debería cachear capas si el `Dockerfile` no cambió | Si siempre es lento, revisa que no estés invalidando la caché de Docker sin necesidad (p. ej. tocar un archivo temprano en el `Dockerfile` en cada commit) |
-| `doctyp migrate` no encuentra ningún `org.json` | Las carpetas de `organizations/` no se copiaron al volumen antes de migrar | Repite §3.4, confirmando la ruta de destino con `docker compose exec doctyp ls /data/organizations` |
+| `doctyp migrate` no encuentra ningún `org.json` | Las carpetas de `organizations/` no se copiaron al volumen antes de migrar | Repite §3.5, confirmando la ruta de destino con `docker compose exec doctyp ls /data/organizations` |
 | Perdiste la clave privada de despliegue | — | Genera un par nuevo (§2), reemplaza la clave pública en el VPS y el secret `VPS_SSH_KEY` en GitHub; borra la entrada vieja de `authorized_keys` en el VPS |
+| La vista previa del editor dice "ha rechazado la conexión" o queda en blanco | El navegador está intentando cargar `127.0.0.1:<puerto>` en vez del subdominio — típico si `DOCTYP_PREVIEW_PUBLIC_URL` no está en el `environment:` del contenedor, o si el DNS de `doctyp-preview.tinorte.cl` no está creado todavía | Confirma la variable con `docker compose exec doctyp env \| grep PREVIEW`; confirma el DNS con `dig doctyp-preview.tinorte.cl`; ver §3.2 |
+| `curl https://doctyp-preview.tinorte.cl/` da `502 Bad Gateway` | Normal si nadie tiene un documento abierto en el editor en ese momento — `tinymist preview` arranca bajo demanda, no con el contenedor | Abre un documento en el editor web y reintenta; si sigue en 502 con el editor abierto, revisa `docker compose logs doctyp` buscando errores de `tinymist` |

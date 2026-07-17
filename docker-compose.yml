@@ -22,6 +22,15 @@ services:
       - DOCTYP_SETTINGS_PATH=/data/settings.json
       - DOCTYP_DOCS_ROOT=/data/docs
       - DOCTYP_BIND=0.0.0.0
+      # Vista previa de tinymist (clic↔cursor) detrás de Traefik: el data plane escucha en un
+      # puerto FIJO (no aleatorio, ver doctyp_preview_server.py) para que el router de abajo
+      # pueda apuntarle siempre al mismo puerto; DOCTYP_PREVIEW_PUBLIC_URL es lo que se le
+      # manda al navegador (el <iframe> de la vista previa), un subdominio propio -- Traefik
+      # rutea ese dominio directo al puerto fijo del data plane, doctyp_web.py no proxea nada
+      # de este tráfico.
+      - DOCTYP_PREVIEW_DATA_PORT=37800
+      - DOCTYP_PREVIEW_BIND=0.0.0.0
+      - DOCTYP_PREVIEW_PUBLIC_URL=https://doctyp-preview.tinorte.cl
     networks:
       - proxy
     labels:
@@ -29,7 +38,17 @@ services:
       - traefik.http.routers.doctyp.rule=Host(`doctyp.tinorte.cl`)
       - traefik.http.routers.doctyp.entrypoints=websecure
       - traefik.http.routers.doctyp.tls.certresolver=letsencrypt
+      - traefik.http.routers.doctyp.service=doctyp
       - traefik.http.services.doctyp.loadbalancer.server.port=8787
+      # Segundo router+service sobre el MISMO contenedor, apuntando al puerto fijo del data
+      # plane de tinymist (37800) en vez del 8787 de la API -- mismo patrón "un contenedor,
+      # varios servicios Traefik" documentado en la doc oficial de Traefik para exponer más
+      # de un puerto de un mismo servicio Docker.
+      - traefik.http.routers.doctyp-preview.rule=Host(`doctyp-preview.tinorte.cl`)
+      - traefik.http.routers.doctyp-preview.entrypoints=websecure
+      - traefik.http.routers.doctyp-preview.tls.certresolver=letsencrypt
+      - traefik.http.routers.doctyp-preview.service=doctyp-preview
+      - traefik.http.services.doctyp-preview.loadbalancer.server.port=37800
 
 networks:
   proxy:

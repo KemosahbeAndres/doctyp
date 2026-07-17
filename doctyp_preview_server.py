@@ -16,6 +16,7 @@ herramienta de edición (ver `plan 15.md` §0).
 """
 from __future__ import annotations
 import json
+import os
 import re
 import socket
 import subprocess
@@ -27,6 +28,38 @@ from pathlib import Path
 import doctyp as core
 from doctyp_preview_binary import resolver_tinymist_utilizable
 from doctyp_ws_client import WebSocketClient, WebSocketError
+
+# Etapa 18 (Docker/VPS, ver DESPLIEGUE.md): el data plane (lo único que habla directo el
+# navegador) necesita un puerto FIJO y conocido de antemano para que Traefik pueda enrutarle
+# un subdominio propio (doctyp-preview.<dominio>) -- un puerto aleatorio por proceso, como
+# tenía la Etapa 15/16 (pensada para navegador+proceso en el mismo host), no se puede mapear a
+# una regla de Traefik fija. DOCTYP_PREVIEW_DATA_PORT fija ese puerto (default 37800, arbitrario
+# pero estable); DOCTYP_PREVIEW_BIND fija la interfaz (default 127.0.0.1 fuera de Docker, tal
+# cual antes; 0.0.0.0 en el contenedor -- Traefik le llega por la red `proxy`, no localhost).
+# El control plane (solo lo habla este proceso Python, nunca el navegador) sigue siendo
+# 127.0.0.1 con puerto aleatorio -- no necesita ser alcanzable desde fuera del contenedor.
+_DATA_PLANE_PORT_DEFAULT = 37800
+
+
+def _puerto_data_plane_fijo() -> int:
+    return int(os.environ.get("DOCTYP_PREVIEW_DATA_PORT", _DATA_PLANE_PORT_DEFAULT))
+
+
+def _bind_data_plane() -> str:
+    return os.environ.get("DOCTYP_PREVIEW_BIND", "127.0.0.1")
+
+
+def _url_publica_data_plane() -> str:
+    """URL que se le manda al navegador para el <iframe> de TinymistPreview.vue. Por defecto
+    (sin DOCTYP_PREVIEW_PUBLIC_URL) sigue siendo http://127.0.0.1:<puerto>/, el caso de
+    desarrollo local donde navegador y proceso comparten host (sin cambios de comportamiento
+    fuera de Docker). En producción (VPS, ver DESPLIEGUE.md) se fija al subdominio dedicado
+    que Traefik enruta directo al puerto fijo del data plane -- doctyp_web.py no proxea nada
+    de esto, es un router de Traefik aparte apuntando al mismo contenedor/puerto."""
+    override = os.environ.get("DOCTYP_PREVIEW_PUBLIC_URL")
+    if override:
+        return override.rstrip("/") + "/"
+    return f"http://127.0.0.1:{_puerto_data_plane_fijo()}/"
 
 # Ver plan15_notas.md §6: tinymist hace `.unwrap()` sobre el bind del socket y aborta (SIGABRT)
 # si el puerto ya está ocupado -- no maneja el conflicto con gracia. Sin --data-plane-host/
@@ -111,12 +144,13 @@ class PreviewServer:
 
     def _lanzar_proceso(self) -> None:
         tinymist = self._tinymist_path()
-        puerto_data = _puerto_libre()
-        puerto_control = _puerto_libre()  # llamadas separadas: cada bind/close es atómico
+        bind_data = _bind_data_plane()
+        puerto_data = _puerto_data_plane_fijo()
+        puerto_control = _puerto_libre()  # solo lo habla este proceso -- sigue siendo interno
         cmd = [
             str(tinymist), "preview",
             "--root", str(self.root),
-            "--data-plane-host", f"127.0.0.1:{puerto_data}",
+            "--data-plane-host", f"{bind_data}:{puerto_data}",
             "--control-plane-host", f"127.0.0.1:{puerto_control}",
             "--no-open",
             "--verbose",
@@ -129,6 +163,9 @@ class PreviewServer:
         # Se fijan de antemano (no se espera a que tinymist los anuncie por stdout) porque
         # nosotros elegimos los puertos -- _esperar_puertos_anunciados() igual confirma que el
         # proceso los adoptó realmente, por si el binario cambiara de comportamiento.
+        # data_plane_host queda en 127.0.0.1 aunque el bind real sea 0.0.0.0 (Docker): es el
+        # host que usa la conexión INTERNA control-plane->data-plane (cabecera Origin, más
+        # abajo), no la URL pública -- esa la arma info() por separado (ver _url_publica()).
         self.data_plane_host, self.data_plane_port = "127.0.0.1", puerto_data
         self.control_plane_host, self.control_plane_port = "127.0.0.1", puerto_control
         with self._lock:
@@ -304,10 +341,7 @@ class PreviewServer:
         """Para el endpoint /api/preview/info (F2, punto 2 del plan)."""
         return {
             "enabled": self.is_running,
-            "static_url": (
-                f"http://{self.data_plane_host}:{self.data_plane_port}/"
-                if self.data_plane_port else None
-            ),
+            "static_url": _url_publica_data_plane() if self.data_plane_port else None,
             # No hay endpoint WS directo expuesto al frontend por diseño (F0 §5): el frontend
             # no se conecta él mismo al control plane, así que no se publica su URL aquí.
         }
