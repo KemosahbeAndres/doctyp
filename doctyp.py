@@ -526,8 +526,25 @@ def docs_root() -> Path:
 # org.json guarda la ruta como *relativa* a docs_root_org(slug) (solo el codigo_base); la ruta
 # absoluta se deriva en runtime con doc_dir().
 
+def sanear_usuario_email(email: str) -> str:
+    """Parte local del email, saneada para usarse como nombre de carpeta -- compartida entre
+    docs_root_org() y doctyp_sync.py (una sola definición, evita que ambos lados calculen un
+    nombre de carpeta distinto para la misma cuenta)."""
+    local = email.split("@", 1)[0].lower()
+    return "".join(c if (c.isalnum() or c == "-") else "-" for c in local).strip("-") or "usuario"
+
+
 def docs_root_org(slug: str) -> Path:
-    root = docs_root() / slug
+    """Carpeta local de una organización. Con sesión remota activa (`doctyp login`) y `slug`
+    entre las organizaciones de esa cuenta, intercala el usuario:
+    Documentos/doctyp/<org>/<usuario>/ -- para que distintas cuentas usadas en el mismo equipo
+    no se pisen entre sí (ver doctyp_sync.py). Documentos locales creados antes de cualquier
+    login, o de organizaciones fuera de la cuenta activa, siguen en la ruta plana de siempre."""
+    sesion = cargar_settings().get("local", {}).get("sesion_remota")
+    if sesion and slug in (sesion.get("orgs") or []):
+        root = docs_root() / slug / sanear_usuario_email(sesion["email"])
+    else:
+        root = docs_root() / slug
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -839,6 +856,21 @@ def resolver_desde_doctyp_json(cwd: Path, registro: dict, anio_arg: int | None,
 
 def codigo_base(area, tipo, cat, anio, corr) -> str:
     return f"{area}-{tipo}-{cat}_{anio}-{corr:04d}"
+
+
+_RE_CODIGO_BASE = re.compile(r"^([A-Z0-9]+)-([A-Z]{3})-([A-Z]{3})_(\d{4})-(\d+)$")
+
+
+def parsear_codigo_base(codigo: str) -> dict | None:
+    """Inversa de codigo_base() -- área/tipo/categoría/año/correlativo a partir de
+    'AREA-TIPO-CAT_AAAA-NNNN' (§7 CLAUDE.md). None si no calza el patrón. Usado por la
+    sincronización CLI↔servidor (doctyp_web.py: api_doc_sync) para registrar en el servidor un
+    documento creado 100% offline, del que solo se conoce el nombre de su carpeta."""
+    m = _RE_CODIGO_BASE.match(codigo)
+    if not m:
+        return None
+    area, tipo, cat, anio, corr = m.groups()
+    return {"area": area, "tipo": tipo, "categoria": cat, "anio": int(anio), "correlativo": int(corr)}
 
 
 def ty_str(s: str) -> str:
@@ -1539,6 +1571,72 @@ def cmd_user_set_password(args):
     _ok(f"Contraseña actualizada para {_c(_C.BOLD, email)}.")
 
 
+def cmd_login(args):
+    """doctyp login <email> -- conecta el CLI a una cuenta del servidor oficial (URL fija, ver
+    doctyp_sync.DOCTYP_REMOTE_HOST) y sincroniza de inmediato todas sus organizaciones. Solo una
+    cuenta remota a la vez -- 'doctyp logout' primero para cambiar."""
+    import doctyp_sync as sync
+    email = args.email.strip().lower()
+    sesion = sync.sesion_activa()
+    if sesion is not None and sesion.get("email") != email:
+        sys.exit(f"ERROR: ya hay una sesión activa como '{sesion['email']}'. "
+                  f"Usa 'doctyp logout' primero.")
+
+    import getpass
+    password = getpass.getpass("  Contraseña: ")
+    try:
+        usuario, cookie = sync.login(email, password)
+    except sync.SyncError as e:
+        sys.exit(f"ERROR: {e}")
+    sync.guardar_sesion(email, cookie)
+    _ok(f"Sesión iniciada: {_c(_C.BOLD, usuario['nombre'])} ({email})")
+
+    print(f"  {_c(_C.DIM, 'Sincronizando…')}")
+    try:
+        orgs = sync.sincronizar_todo()
+    except sync.SyncError as e:
+        _warn(f"la sincronización falló ({e}); vuelve a intentar con 'doctyp sync'.")
+        return
+    _ok(f"Sincronizado: {len(orgs)} organización(es).\n")
+
+
+def cmd_logout(args):
+    import doctyp_sync as sync
+    sesion = sync.sesion_activa()
+    if sesion is None:
+        _warn("no había ninguna sesión remota activa.")
+        return
+    sync.logout_remoto(sesion["cookie"])
+    sync.borrar_sesion()
+    _ok(f"Sesión cerrada ({sesion['email']}).")
+
+
+def cmd_sync(args):
+    import doctyp_sync as sync
+    if sync.sesion_activa() is None:
+        sys.exit("ERROR: no hay sesión remota activa. Usa 'doctyp login <email>'.")
+    print(f"  {_c(_C.DIM, 'Sincronizando…')}")
+    try:
+        orgs = sync.sincronizar_todo()
+    except sync.SyncError as e:
+        sys.exit(f"ERROR: {e}")
+    _ok(f"Sincronizado: {len(orgs)} organización(es).\n")
+
+
+def _sincronizar_si_hay_sesion(slug: str, codigo_base: str) -> None:
+    """Sincroniza un documento con el servidor si hay sesión remota activa para esa
+    organización -- nunca bloquea: una falla de red solo se muestra como advertencia (mismo
+    criterio que ya usa el proyecto para el build de la SPA en `doctyp web`). Enganchado tras
+    new/save/compile/add, y antes de edit (ver cada cmd_*)."""
+    import doctyp_sync as sync
+    if not sync.org_en_sesion(slug):
+        return
+    try:
+        sync.sincronizar_documento(slug, codigo_base)
+    except sync.SyncError as e:
+        _warn(f"la sincronización con el servidor falló ({e}); sigue solo local.")
+
+
 def cmd_template_add(args):
     slug = org_activa_slug()
     org = cargar_org(slug)
@@ -1787,7 +1885,36 @@ def cmd_nuevo(args):
     slug = org_activa_slug()
     org = cargar_org(slug)
     plantilla = args.plantilla or org.get("config", {}).get("plantilla_default", "informe-ti")
-    if args.correlativo is not None:
+
+    import doctyp_sync as sync
+    remoto = sync.org_en_sesion(slug)
+    if remoto and args.correlativo is not None:
+        sys.exit("ERROR: --correlativo no es compatible con sesión remota activa -- el servidor "
+                  "asigna el correlativo para evitar choques entre equipos ('doctyp logout' si "
+                  "de verdad necesitas fijarlo a mano).")
+
+    dest_dir_ya_lista = None
+    if remoto:
+        # Con sesión remota, la creación se delega al servidor (correlativo asignado ahí, de
+        # forma atómica -- ver POST /api/orgs/<slug>/documentos) en vez de reservarlo local:
+        # evita que dos equipos offline elijan el mismo número. La carpeta local se materializa
+        # bajando lo que el servidor acaba de copiar de SU plantilla (no de la local, que podría
+        # estar desactualizada).
+        try:
+            entrada_remota = sync.crear_documento_remoto(slug, {
+                "titulo": titulo, "tipo": tipo, "categoria": cat,
+                "area": args.area.upper(), "plantilla": plantilla,
+                "subtitulo": args.subtitulo or None,
+            })
+        except sync.SyncError as e:
+            sys.exit(f"ERROR: no se pudo crear el documento en el servidor: {e}")
+        corr = entrada_remota["correlativo"]
+        anio = entrada_remota["anio"]
+        try:
+            dest_dir_ya_lista = sync.bajar_documento_completo(slug, entrada_remota["codigo_base"])
+        except sync.SyncError as e:
+            sys.exit(f"ERROR: el documento se creó en el servidor pero no se pudo descargar: {e}")
+    elif args.correlativo is not None:
         corr = args.correlativo
         if corr < 1:
             sys.exit("ERROR: --correlativo debe ser >= 1.")
@@ -1819,7 +1946,7 @@ def cmd_nuevo(args):
     }
 
     base = codigo_base(f["area"], tipo, cat, anio, corr)
-    dest_dir = crear_carpeta_documento(slug, base, plantilla, forzar=args.forzar)
+    dest_dir = dest_dir_ya_lista or crear_carpeta_documento(slug, base, plantilla, forzar=args.forzar)
     out_file = dest_dir / f"{base}.typ"
 
     out_file.write_text(build_typ(f, "lib.typ"), encoding="utf-8")
@@ -1842,6 +1969,7 @@ def cmd_nuevo(args):
     escribir_indice_snapshots(dest_dir, entrada_org)
 
     agregar_doctyp_json(Path.cwd(), corr, anio, f"{base}.typ", f["autor"])
+    _sincronizar_si_hay_sesion(slug, base)
 
     print()
     _ok(f"Creado: {_c(_C.DIM, str(out_file))}")
@@ -2058,6 +2186,7 @@ def cmd_save(args):
     version_actual, version_nueva = realizar_save_org(dest_dir, doc, mensaje)
     guardar_org(slug, org)
     ruta_str = str(dest_dir / f"{doc['codigo_base']}.typ")
+    _sincronizar_si_hay_sesion(slug, doc["codigo_base"])
 
     print()
     _ok(f"Versión actualizada: {_c(_C.DIM, 'v' + version_actual)} → "
@@ -2217,6 +2346,7 @@ def cmd_compile(args):
           f"{_c(_C.DIM, typ_path.with_suffix('.pdf').name)}")
     if not compilar_typ(typ_path):
         sys.exit(1)
+    _sincronizar_si_hay_sesion(slug, doc["codigo_base"])
 
     pdf = typ_path.with_suffix(".pdf")
     if pdf.exists():
@@ -2236,6 +2366,12 @@ def cmd_edit(args):
     else:
         anio = args.anio or datetime.date.today().year
         doc = buscar_doc_org(org, args.correlativo, anio)
+
+    # Antes de abrir, no después: un editor externo no avisa cuándo se cierra, así que no hay
+    # un "después" confiable donde enganchar el sync -- esto asegura abrir la versión más
+    # reciente, aunque no se detecten cambios hechos DURANTE la edición hasta el próximo
+    # save/compile/sync.
+    _sincronizar_si_hay_sesion(slug, doc["codigo_base"])
 
     typ_path = resolver_ruta_doc_org(slug, doc)
     if not typ_path.exists():
@@ -2365,6 +2501,7 @@ def cmd_add(args):
     org["documentos"].append(entrada_org)
     guardar_org(slug, org)
     agregar_doctyp_json(cwd, meta["correlativo"], meta["anio"], f"{base}.typ", meta["autor"])
+    _sincronizar_si_hay_sesion(slug, base)
 
     print()
     _ok(f"Registrado: {_c(_C.BOLD, base)}  (v{meta['version']})")
@@ -2663,6 +2800,16 @@ def build_parser() -> argparse.ArgumentParser:
     pu_setpw.add_argument(
         "--password", help="Contraseña en texto plano (evítalo; sin esto se pide interactivo sin eco).")
     pu_setpw.set_defaults(func=cmd_user_set_password)
+
+    pl = sub.add_parser("login", help="Conecta el CLI a una cuenta remota y sincroniza.")
+    pl.add_argument("email", metavar="EMAIL")
+    pl.set_defaults(func=cmd_login)
+
+    plo = sub.add_parser("logout", help="Cierra la sesión remota activa.")
+    plo.set_defaults(func=cmd_logout)
+
+    psy = sub.add_parser("sync", help="Repite la sincronización con la cuenta remota activa.")
+    psy.set_defaults(func=cmd_sync)
 
     ptp = sub.add_parser("template", help="Gestiona plantillas de la organización activa.")
     ptp_sub = ptp.add_subparsers(dest="template_cmd", required=True)

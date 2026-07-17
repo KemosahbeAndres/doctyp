@@ -296,6 +296,29 @@ def api_docs_list(slug: str) -> list[dict]:
     return sorted(org["documentos"], key=lambda d: (d.get("anio", 0), d.get("correlativo", 0)))
 
 
+def api_sync_manifiesto(slug: str) -> dict:
+    """Manifiesto para `doctyp login`/`doctyp sync` (CLI↔servidor): por cada documento y
+    plantilla, el mtime REAL del archivo principal en el filesystem del servidor -- no la fecha
+    de versión, porque el autoguardado de la Etapa 16 cambia contenido sin bumpear versión, así
+    que esa fecha no sirve para decidir qué lado está más al día. Los documentos vienen con
+    todos sus campos de registro (spread de `org["documentos"]`) para que el CLI pueda
+    reconstruir la fila local si hace falta un pull completo, sin una segunda llamada."""
+    org = _cargar_org_api(slug)
+    documentos = []
+    for d in org["documentos"]:
+        typ_path = core.doc_dir(slug, d["codigo_base"]) / f"{d['codigo_base']}.typ"
+        if typ_path.exists():
+            documentos.append({**d, "mtime": typ_path.stat().st_mtime})
+    plantillas = []
+    base = core.org_dir(slug) / "templates"
+    if base.exists():
+        for nombre in sorted(p.name for p in base.iterdir() if p.is_dir()):
+            lib_path = core.plantilla_dir(slug, nombre) / "lib.typ"
+            if lib_path.exists():
+                plantillas.append({"nombre": nombre, "mtime": lib_path.stat().st_mtime})
+    return {"documentos": documentos, "plantillas": plantillas}
+
+
 def api_tipos_documento() -> dict:
     return {
         "tipos": core.TIPOS, "categorias": sorted(core.CATEGORIAS),
@@ -327,7 +350,13 @@ def api_doc_new(slug: str, payload: dict) -> dict:
     hoy = datetime.date.today()
     fecha = hoy.strftime("%Y%m%d")
     anio = hoy.year
-    corr = core.next_correlativo_org(org, anio)
+    # Asignación transaccional (BEGIN IMMEDIATE) -- next_correlativo_org() solo lee el dict en
+    # memoria, sin lock: dos POST concurrentes a este endpoint (ThreadingHTTPServer, un hilo por
+    # request) podían recibir el mismo correlativo. Mismo fix que ya usaba cmd_nuevo (doctyp.py)
+    # vía _db.asignar_correlativo -- encontrado al construir la sincronización CLI↔servidor, que
+    # depende de que esta asignación sea realmente atómica.
+    import doctyp_db as _db
+    corr = _db.asignar_correlativo(slug, anio)
 
     autor_org = _autor_de_sesion(org)
     f = {
@@ -361,6 +390,80 @@ def api_doc_new(slug: str, payload: dict) -> dict:
     core.guardar_org(slug, org)
     core.escribir_indice_snapshots(dest_dir, entrada_org)
     return entrada_org
+
+
+def _crear_entrada_sync_doc(org: dict, codigo_base: str) -> dict:
+    """Registra en `org` un documento que llegó por `doctyp sync` sin existir todavía en el
+    servidor -- se creó 100% offline con el CLI, antes de cualquier login. Parsea el
+    `codigo_base` (único dato disponible) para recuperar área/tipo/categoría/año/correlativo;
+    409 si ese correlativo ya está en uso por otro documento (el servidor sigue siendo la única
+    fuente de verdad de correlativos -- no se resuelve el choque solo, se avisa)."""
+    campos = core.parsear_codigo_base(codigo_base)
+    if campos is None:
+        raise ApiError(400, f"'{codigo_base}' no tiene el formato AREA-TIPO-CAT_AAAA-NNNN")
+    choque = [d for d in org["documentos"] if d.get("anio") == campos["anio"]
+              and d.get("correlativo") == campos["correlativo"]]
+    if choque:
+        raise ApiError(409, f"el correlativo {campos['correlativo']:04d}/{campos['anio']} ya "
+                             f"está en uso por '{choque[0]['codigo_base']}'")
+    autor_org = _autor_de_sesion(org)
+    ahora = datetime.datetime.now().isoformat(timespec="seconds")
+    entrada = {
+        "codigo_base": codigo_base,
+        "area": campos["area"], "tipo": campos["tipo"], "categoria": campos["categoria"],
+        "anio": campos["anio"], "correlativo": campos["correlativo"],
+        "titulo": codigo_base, "autor_id": autor_org.get("id"), "equipo_id": None,
+        "plantilla": org.get("config", {}).get("plantilla_default", "informe-ti"),
+        "ruta": codigo_base, "creado": ahora,
+        "versiones": [{"version": "1.0.0", "fecha": ahora[:10].replace("-", ""), "creado": ahora}],
+    }
+    org["documentos"].append(entrada)
+    return entrada
+
+
+def _respaldar_typ_antes_de_sync(dest_dir: Path, codigo_base: str) -> None:
+    """El lado que pierde un conflicto de sync SIEMPRE se respalda antes de sobrescribir, sea
+    cual sea el lado (nunca se descarta en silencio) -- espejo servidor de
+    doctyp_sync._respaldar_documento_perdedor() (lado CLI). No es un snapshot 'oficial' (no
+    bumpea version: ni entra a #s-versiones), solo una copia de seguridad en .snapshots/."""
+    typ_path = dest_dir / f"{codigo_base}.typ"
+    if not typ_path.exists():
+        return
+    snapshots = dest_dir / core.SNAPSHOTS_DIRNAME
+    snapshots.mkdir(exist_ok=True)
+    marca = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    shutil.copy2(typ_path, snapshots / f"{codigo_base}_conflicto-sync_{marca}.typ")
+
+
+def api_doc_sync(slug: str, codigo_base: str, payload: dict) -> dict:
+    """POST .../documentos/<codigo_base>/sync -- usado por `doctyp sync` para subir (push) el
+    contenido local cuando gana el lado local. Si el documento no existe todavía en el
+    servidor lo registra primero (ver _crear_entrada_sync_doc); si ya existe, respalda el `.typ`
+    vigente en .snapshots/ (ver _respaldar_typ_antes_de_sync) y sobrescribe los archivos
+    recibidos (mismo criterio que el autoguardado de la Etapa 16: actualiza contenido, no
+    bumpea versión oficial)."""
+    org = _cargar_org_api(slug)
+    archivos = payload.get("archivos") or {}
+    if not archivos:
+        raise ApiError(400, "no se enviaron archivos")
+    dest_dir = core.doc_dir(slug, codigo_base)
+    if core.buscar_doc_org_por_codigo(org, codigo_base) is None:
+        _crear_entrada_sync_doc(org, codigo_base)
+        core.guardar_org(slug, org)
+    else:
+        _respaldar_typ_antes_de_sync(dest_dir, codigo_base)
+    for ruta, b64 in archivos.items():
+        partes = [p for p in ruta.split("/") if p]
+        if not partes:
+            continue
+        _resolver_ruta_segura(core.docs_root(), slug, codigo_base, *partes)
+        try:
+            datos = base64.b64decode(b64, validate=True)
+        except (binascii.Error, ValueError):
+            raise ApiError(400, f"contenido base64 inválido para '{ruta}'")
+        core._escribir_bytes_atomico(dest_dir.joinpath(*partes), datos)
+    _emitir_evento_sse({"tipo": "doc-saved", "slug": slug, "codigo": codigo_base})
+    return {"ok": True, "codigo_base": codigo_base}
 
 
 def api_doc_get(slug: str, codigo_base: str) -> dict:
@@ -1054,6 +1157,44 @@ def api_template_default(slug: str, nombre: str) -> dict:
     core.plantilla_fijar_default(org, nombre)
     core.guardar_org(slug, org)
     return {"plantilla_default": org["config"]["plantilla_default"]}
+
+
+def api_template_sync(slug: str, nombre: str, payload: dict) -> dict:
+    """POST .../plantillas/<nombre>/sync -- equivalente de api_doc_sync para plantillas: crea la
+    carpeta si no existe (una plantilla nunca choca por correlativo, a diferencia de un
+    documento). Si `lib.typ` ya existe, se respalda vía guardar_version_plantilla (mismo
+    mecanismo que ya usa el editor de plantillas -- el lado que pierde un conflicto de sync
+    queda en el índice de versiones igual que cualquier otro cambio cerrado) antes de
+    sobrescribir; el resto de los archivos (Images/, fonts/) se sobrescriben directo, sin
+    versión (mismo criterio que ya rige la edición manual de esos archivos)."""
+    _cargar_org_api(slug)
+    archivos = dict(payload.get("archivos") or {})
+    if not archivos:
+        raise ApiError(400, "no se enviaron archivos")
+    dest_dir = _plantilla_dir_segura(slug, nombre)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    lib_nuevo_b64 = archivos.pop("lib.typ", None)
+    if lib_nuevo_b64 is not None:
+        try:
+            texto_nuevo = base64.b64decode(lib_nuevo_b64, validate=True).decode("utf-8")
+        except (binascii.Error, ValueError, UnicodeDecodeError):
+            raise ApiError(400, "contenido base64/UTF-8 inválido para 'lib.typ'")
+        if (dest_dir / "lib.typ").exists():
+            core.guardar_version_plantilla(slug, nombre, texto_nuevo,
+                                            "Respaldo automático por sincronización")
+        else:
+            core._escribir_texto_atomico(dest_dir / "lib.typ", texto_nuevo)
+    for ruta, b64 in archivos.items():
+        partes = [p for p in ruta.split("/") if p]
+        if not partes:
+            continue
+        _resolver_ruta_segura(dest_dir, *partes)
+        try:
+            datos = base64.b64decode(b64, validate=True)
+        except (binascii.Error, ValueError):
+            raise ApiError(400, f"contenido base64 inválido para '{ruta}'")
+        core._escribir_bytes_atomico(dest_dir.joinpath(*partes), datos)
+    return {"ok": True, "nombre": nombre}
 
 
 def _plantilla_dir_segura(slug: str, nombre: str) -> Path:
@@ -1818,6 +1959,10 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             self._json(201, api_org_miembro_agregar(slug, cuerpo))
             return
 
+        if len(segs) == 4 and segs[2] == "sync" and segs[3] == "manifiesto" and metodo == "GET":
+            self._json(200, api_sync_manifiesto(slug))
+            return
+
         recurso = segs[2]
         if recurso == "documentos":
             if len(segs) == 3:  # /api/orgs/<slug>/documentos
@@ -1894,6 +2039,10 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                 cuerpo = self._leer_cuerpo_json()
                 self._json(200, api_doc_archivo_renombrar(slug, codigo_base, segs[5:], cuerpo.get("nombre_nuevo", "")))
                 return
+            if sub == "sync" and len(segs) == 5 and metodo == "POST":
+                cuerpo = self._leer_cuerpo_json()
+                self._json(200, api_doc_sync(slug, codigo_base, cuerpo))
+                return
             self._error(404, "ruta de API desconocida")
             return
 
@@ -1955,6 +2104,10 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             if sub == "archivo" and len(segs) >= 6 and metodo == "PUT":
                 cuerpo = self._leer_cuerpo_json()
                 self._json(200, api_template_archivo_renombrar(slug, nombre, segs[5:], cuerpo.get("nombre_nuevo", "")))
+                return
+            if sub == "sync" and len(segs) == 5 and metodo == "POST":
+                cuerpo = self._leer_cuerpo_json()
+                self._json(200, api_template_sync(slug, nombre, cuerpo))
                 return
             if sub == "muestra" and len(segs) == 5 and metodo == "GET":
                 self._json(200, {"contenido": api_template_muestra(slug, nombre)})
