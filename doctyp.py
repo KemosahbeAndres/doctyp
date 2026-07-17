@@ -1512,6 +1512,33 @@ def cmd_author_use(args):
     _ok(f"Autor activo: {_c(_C.BOLD, autor_id)}")
 
 
+def cmd_user_set_password(args):
+    # El bootstrap de doctyp_auth.py (Etapa 20) solo ofrece "crear tu contraseña sin token"
+    # cuando hay EXACTAMENTE un usuario sin password_hash -- una instalación migrada con más
+    # de un autor (doctyp migrate, Etapa 19) puede quedar con varios usuarios sin contraseña y
+    # sin ninguna vía para fijarla. Este comando cubre ese caso para cualquier usuario, por
+    # correo, sin pasar por el bootstrap.
+    import doctyp_db as _db
+    import doctyp_auth as auth
+
+    email = args.email.strip().lower()
+    usuario = _db.obtener_usuario_por_email(email)
+    if usuario is None:
+        sys.exit(f"ERROR: no existe ningún usuario con el correo '{email}'.")
+
+    password = args.password
+    if not password:
+        import getpass
+        password = getpass.getpass("  Nueva contraseña (mín. 8 caracteres): ")
+        if password != getpass.getpass("  Repite la contraseña: "):
+            sys.exit("ERROR: las contraseñas no coinciden.")
+    if not password or len(password) < 8:
+        sys.exit("ERROR: la contraseña debe tener al menos 8 caracteres.")
+
+    _db.fijar_password(usuario["id"], auth.hash_password(password))
+    _ok(f"Contraseña actualizada para {_c(_C.BOLD, email)}.")
+
+
 def cmd_template_add(args):
     slug = org_activa_slug()
     org = cargar_org(slug)
@@ -2626,6 +2653,16 @@ def build_parser() -> argparse.ArgumentParser:
     pau_use = pau_sub.add_parser("use", help="Fija el autor activo.")
     pau_use.add_argument("id", metavar="ID")
     pau_use.set_defaults(func=cmd_author_use)
+
+    pu = sub.add_parser("user", help="Gestiona credenciales de usuarios (login de doctyp web).")
+    pu_sub = pu.add_subparsers(dest="user_cmd", required=True)
+
+    pu_setpw = pu_sub.add_parser(
+        "set-password", help="Fija o resetea la contraseña de un usuario por correo.")
+    pu_setpw.add_argument("email", metavar="EMAIL")
+    pu_setpw.add_argument(
+        "--password", help="Contraseña en texto plano (evítalo; sin esto se pide interactivo sin eco).")
+    pu_setpw.set_defaults(func=cmd_user_set_password)
 
     ptp = sub.add_parser("template", help="Gestiona plantillas de la organización activa.")
     ptp_sub = ptp.add_subparsers(dest="template_cmd", required=True)
