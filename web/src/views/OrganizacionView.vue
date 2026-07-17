@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch, onMounted } from "vue";
 import {
-  crearAutor, editarAutor, eliminarAutor,
+  crearAutor, editarAutor, eliminarAutor, invitarMiembro,
   listEquipos, crearEquipo, editarEquipo, eliminarEquipo,
 } from "../api.js";
 import NewOrgModal from "../components/NewOrgModal.vue";
@@ -14,6 +14,7 @@ const {
 const tab = ref("organizacion");
 const equipos = ref([]);
 const autorForm = ref(null); // null | { id?, nombre, cargo, correo, equipos: [] }
+const invitarForm = ref(null); // null | { email, role }
 const equipoForm = ref(null); // null | { id?, idOriginal?, nombre }
 const mostrarNuevaOrg = ref(false);
 
@@ -78,6 +79,23 @@ async function borrarAutor(a) {
     await eliminarAutor(orgSlug.value, a.id);
     await cargarAutores();
     await cargarDocs();
+  } catch (e) {
+    error.value = e.message;
+  }
+}
+
+// Invitar = agregar directo a un usuario que YA existe en el sistema (sin correo, sin paso de
+// aceptación) -- distinto de "Nuevo autor", que crea metadata sin cuenta de login.
+function abrirInvitar() {
+  invitarForm.value = { email: "", role: "member" };
+}
+
+async function enviarInvitacion() {
+  error.value = "";
+  try {
+    await invitarMiembro(orgSlug.value, invitarForm.value.email, invitarForm.value.role);
+    invitarForm.value = null;
+    await cargarAutores();
   } catch (e) {
     error.value = e.message;
   }
@@ -152,13 +170,14 @@ async function borrarEquipo(e) {
 
     <div v-if="tab === 'autores'" class="tab-panel">
       <button class="primary" @click="nuevoAutor">+ Nuevo autor</button>
+      <button @click="abrirInvitar">Invitar usuario</button>
       <table class="crud-table">
         <thead>
           <tr><th></th><th>Nombre</th><th>Cargo</th><th>Correo</th><th>Equipos</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="a in autores" :key="a.id">
-            <td><span v-if="a.activo" class="badge-activo" title="Autor activo">●</span></td>
+            <td><span v-if="a.activo" class="badge-activo" title="Eres tú">●</span></td>
             <td>{{ a.nombre }}</td>
             <td>{{ a.cargo }}</td>
             <td>{{ a.correo }}</td>
@@ -170,6 +189,26 @@ async function borrarEquipo(e) {
           </tr>
         </tbody>
       </table>
+
+      <div v-if="invitarForm" class="crud-form">
+        <h3>Invitar usuario</h3>
+        <p class="login-subtitulo">
+          Debe ser un correo de una cuenta que ya exista en doctyp — queda agregado de inmediato,
+          sin correo de invitación.
+        </p>
+        <label>Correo <input v-model="invitarForm.email" type="email" placeholder="usuario@correo.cl" /></label>
+        <label>
+          Rol
+          <select v-model="invitarForm.role">
+            <option value="member">Miembro</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </label>
+        <div class="modal-acciones">
+          <button @click="invitarForm = null">Cancelar</button>
+          <button class="primary" @click="enviarInvitacion">Invitar</button>
+        </div>
+      </div>
 
       <div v-if="autorForm" class="crud-form">
         <h3>{{ autorForm.id ? "Editar autor" : "Nuevo autor" }}</h3>

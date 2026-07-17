@@ -93,6 +93,24 @@ def crear_primer_usuario(email: str, nombre: str, password: str) -> dict:
     return db.crear_usuario(email, nombre, hash_password(password))
 
 
+def registrar_usuario(email: str, nombre: str, password: str) -> dict:
+    """Auto-registro (a diferencia de crear_primer_usuario, no exige que el sistema esté vacío):
+    cualquiera puede darse de alta con su propia cuenta. La organización personal que acompaña a
+    cada registro la arma doctyp_web.py después de esta llamada (este módulo solo se ocupa de
+    credenciales, no de organizaciones)."""
+    email = (email or "").strip().lower()
+    nombre = (nombre or "").strip()
+    if not email or "@" not in email:
+        raise AuthError(400, "email inválido")
+    if not nombre:
+        raise AuthError(400, "el nombre es obligatorio")
+    if not password or len(password) < 8:
+        raise AuthError(400, "la contraseña debe tener al menos 8 caracteres")
+    if db.obtener_usuario_por_email(email) is not None:
+        raise AuthError(409, "ya existe una cuenta con ese correo")
+    return db.crear_usuario(email, nombre, hash_password(password))
+
+
 def fijar_password_primer_login(user_id: str, password: str) -> None:
     """Caso 2 del bootstrap: el único usuario del sistema fija su password en su primer
     login, sin token de invitación (PLAN-V4.md §4 -- no hay otro usuario que se la envíe)."""

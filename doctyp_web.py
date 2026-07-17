@@ -54,6 +54,19 @@ _preview_legacy_forzado = False  # `doctyp web --legacy-preview` (Plan 15 F8)
 # se activa en ese caso, cero cambio de comportamiento.
 _PREVIEW_PUBLIC_HOST = urlsplit(os.environ.get("DOCTYP_PREVIEW_PUBLIC_URL", "")).hostname
 
+# ── Registro/invitaciones: autorización por membresía ──────────────────────────────────────
+# `_cargar_org_api` (usada por ~47 funciones api_*) necesita saber quién es el usuario de la
+# sesión actual para validar membresía, pero esas funciones son de módulo (no métodos de
+# _DoctypRequestHandler) -- en vez de agregar un parámetro `user_id` a cada una, un
+# threading.local (mismo patrón que doctyp_db.py: _local para conexiones SQLite -- un hilo por
+# request en ThreadingHTTPServer) guarda el usuario vigente, fijado una vez en _api() junto a
+# self._usuario_sesion.
+_hilo_usuario = threading.local()
+
+
+def _usuario_id_actual() -> str | None:
+    return getattr(_hilo_usuario, "user_id", None)
+
 # `doctyp web --verbose`: accesos HTTP (log_message, silenciado por defecto) + salida en vivo
 # de los subprocesos tinymist (preview/lsp), que hasta ahora solo se guardaba en memoria
 # (PreviewServer.log_lines) y nunca llegaba a `docker compose logs` -- sin esto, un tinymist
@@ -127,12 +140,42 @@ class ApiError(Exception):
         self.mensaje = mensaje
 
 
+def _es_miembro(org: dict, user_id: str) -> bool:
+    return any(a.get("user_id") == user_id for a in org.get("autores", []))
+
+
+def _verificar_miembro(org: dict) -> None:
+    """Autorización por membresía (registro/invitaciones): sin esto, cualquier usuario
+    autenticado podía cargar cualquier organización con solo conocer el slug -- ver el hallazgo
+    documentado en el plan de esta funcionalidad. `user_id` es None solo en rutas públicas que
+    no deberían llegar hasta acá (defensivo, no se espera que ocurra en la práctica)."""
+    user_id = _usuario_id_actual()
+    if user_id is not None and not _es_miembro(org, user_id):
+        raise ApiError(403, "no tienes acceso a esta organización")
+
+
+def _autor_de_sesion(org: dict) -> dict:
+    """El autor SIEMPRE es el propio usuario de la sesión dentro de esta organización -- nunca
+    algo elegible a mano (decisión tomada con el usuario: nadie puede operar como otro autor/
+    usuario). _cargar_org_api ya exige membresía antes de que esto se llame, así que el usuario
+    de sesión siempre debería aparecer en org["autores"]; el fallback a core.autor_activo (lee
+    settings.json) solo cubre el caso defensivo de que no sea así."""
+    user_id = _usuario_id_actual()
+    if user_id is not None:
+        for a in org.get("autores", []):
+            if a.get("user_id") == user_id:
+                return a
+    return core.autor_activo(org)
+
+
 def _cargar_org_api(slug: str) -> dict:
     _slug_seguro(slug)
     _resolver_ruta_segura(core.organizations_dir(), slug)
     if not core.org_existe(slug):
         raise ApiError(404, f"no existe la organización '{slug}'")
-    return core.cargar_org(slug)
+    org = core.cargar_org(slug)
+    _verificar_miembro(org)
+    return org
 
 
 def _doc_o_404(org: dict, codigo_base: str) -> dict:
@@ -143,10 +186,16 @@ def _doc_o_404(org: dict, codigo_base: str) -> dict:
 
 
 def api_orgs_list() -> list[dict]:
-    activa = core.cargar_settings().get("local", {}).get("org_activa")
+    user_id = _usuario_id_actual()
+    activa = None
+    if user_id is not None:
+        import doctyp_db as _db
+        activa = _db.obtener_org_activa(user_id)
     out = []
     for slug in core.listar_orgs():
         org = core.cargar_org(slug)
+        if user_id is not None and not _es_miembro(org, user_id):
+            continue
         out.append({
             "slug": slug, "nombre": org.get("nombre", slug),
             "activa": slug == activa, "documentos": len(org.get("documentos", [])),
@@ -163,6 +212,27 @@ def api_org_get(slug: str) -> dict:
     }
 
 
+def _crear_org_con_admin(slug: str, nombre: str, usuario: dict, *, tipo: str | None = None) -> str:
+    """Crea una organización vacía y deja a `usuario` como admin de inmediato -- usada tanto por
+    el registro (organización personal autocreada) como por 'Nueva organización' (api_org_new),
+    que antes NO vinculaba al creador (bug pre-existente: con el fix de autorización por
+    membresía, sin esto el creador no podría ni ver la org que acaba de crear). Devuelve el id
+    interno de la organización creada."""
+    import doctyp_db as _db
+    org_id = _db.crear_org_vacia(slug, nombre)
+    org = core.cargar_org(slug)
+    if tipo:
+        org["config"]["tipo"] = tipo
+    org["autores"].append({
+        "id": core._proximo_autor_id(org),
+        "nombre": usuario["nombre"], "cargo": usuario.get("cargo") or "",
+        "correo": usuario.get("email") or usuario.get("correo") or "",
+        "equipos": [], "user_id": usuario["id"], "role": "admin",
+    })
+    core.guardar_org(slug, org)
+    return org_id
+
+
 def api_org_new(payload: dict) -> dict:
     slug = (payload.get("slug") or "").strip().lower()
     if not core._slug_valido(slug):
@@ -171,22 +241,54 @@ def api_org_new(payload: dict) -> dict:
         raise ApiError(400, f"ya existe una organización '{slug}'")
     nombre = payload.get("nombre") or slug
     import doctyp_db as _db
-    _db.crear_org_vacia(slug, nombre)
-
-    settings = core.cargar_settings()
-    settings.setdefault("local", {})
-    if not settings["local"].get("org_activa"):
-        settings["local"]["org_activa"] = slug
-        core.guardar_settings(settings)
+    user_id = _usuario_id_actual()
+    usuario = _db.obtener_usuario(user_id) if user_id else None
+    if usuario is not None:
+        org_id = _crear_org_con_admin(slug, nombre, usuario)
+        if _db.obtener_org_activa(user_id) is None:
+            _db.fijar_org_activa(user_id, org_id)
+    else:
+        _db.crear_org_vacia(slug, nombre)
     return {"slug": slug, "nombre": nombre}
 
 
 def api_org_activar(slug: str) -> dict:
-    _cargar_org_api(slug)
-    settings = core.cargar_settings()
-    settings.setdefault("local", {})["org_activa"] = slug
-    core.guardar_settings(settings)
+    _cargar_org_api(slug)  # ya valida membresía -- no se puede "activar" una org ajena
+    user_id = _usuario_id_actual()
+    if user_id is not None:
+        import doctyp_db as _db
+        _db.fijar_org_activa(user_id, _db.obtener_org_id(slug))
     return {"ok": True, "org_activa": slug}
+
+
+def api_org_miembro_agregar(slug: str, payload: dict) -> dict:
+    """Invitar = agregar directo a un usuario que YA existe en el sistema (decisión tomada con
+    el usuario: sin infraestructura de email en el proyecto, sin paso de aceptación). Cualquier
+    miembro de la organización puede invitar -- _cargar_org_api ya exige que quien invita sea
+    miembro."""
+    org = _cargar_org_api(slug)
+    if org.get("config", {}).get("tipo") == "personal":
+        raise ApiError(400, "una organización personal no admite invitados")
+    email = (payload.get("email") or "").strip().lower()
+    if not email:
+        raise ApiError(400, "el correo es obligatorio")
+    import doctyp_db as _db
+    encontrado = _db.obtener_usuario_por_email(email)
+    if encontrado is None:
+        raise ApiError(404, f"no existe ningún usuario con el correo '{email}'")
+    if _es_miembro(org, encontrado["id"]):
+        raise ApiError(409, "ese usuario ya es miembro de la organización")
+    role = payload.get("role") or "member"
+    if role not in ("admin", "member"):
+        raise ApiError(400, "role inválido (admin o member)")
+    org["autores"].append({
+        "id": core._proximo_autor_id(org),
+        "nombre": encontrado["nombre"], "cargo": encontrado.get("cargo") or "",
+        "correo": encontrado.get("correo") or encontrado.get("email") or "",
+        "equipos": [], "user_id": encontrado["id"], "role": role,
+    })
+    core.guardar_org(slug, org)
+    return {"ok": True}
 
 
 def api_docs_list(slug: str) -> list[dict]:
@@ -227,7 +329,7 @@ def api_doc_new(slug: str, payload: dict) -> dict:
     anio = hoy.year
     corr = core.next_correlativo_org(org, anio)
 
-    autor_org = core.autor_activo(org)
+    autor_org = _autor_de_sesion(org)
     f = {
         "area": area, "tipo": tipo, "categoria": categoria,
         "anio": anio, "correlativo": corr, "version": "1.0", "fecha": fecha,
@@ -1183,7 +1285,7 @@ def api_equipo_eliminar(slug: str, equipo_id: str) -> dict:
 
 def api_autores_list(slug: str) -> list[dict]:
     org = _cargar_org_api(slug)
-    activo_id = core.autor_activo(org).get("id")
+    activo_id = _autor_de_sesion(org).get("id")
     return [{**a, "activo": a.get("id") == activo_id} for a in org.get("autores", [])]
 
 
@@ -1213,15 +1315,6 @@ def api_autor_eliminar(slug: str, autor_id: str) -> dict:
         del settings["local"]["autor_activo"]
         core.guardar_settings(settings)
     return {"ok": True}
-
-
-def api_autor_activar(slug: str, autor_id: str) -> dict:
-    org = _cargar_org_api(slug)
-    core.autor_buscar(org, autor_id)
-    settings = core.cargar_settings()
-    settings.setdefault("local", {})["autor_activo"] = autor_id
-    core.guardar_settings(settings)
-    return {"ok": True, "autor_activo": autor_id}
 
 
 # ── SSE: detección de cambios por polling de mtimes (sin inotify/watchdog) ────────────────
@@ -1376,6 +1469,26 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                     cuerpo.get("email", ""), cuerpo.get("nombre", ""), cuerpo.get("password", ""))
             except auth.AuthError as e:
                 raise ApiError(e.status, e.mensaje)
+            _, token = auth.login(usuario["email"], cuerpo["password"], self._ip_cliente(),
+                                   self.headers.get("User-Agent", ""))
+            self._json_con_cookie(201, {"usuario": auth.usuario_publico(usuario)}, set_cookie=token)
+            return
+
+        if segs == ["registro"] and metodo == "POST":
+            cuerpo = self._leer_cuerpo_json()
+            try:
+                usuario = auth.registrar_usuario(
+                    cuerpo.get("email", ""), cuerpo.get("nombre", ""), cuerpo.get("password", ""))
+            except auth.AuthError as e:
+                raise ApiError(e.status, e.mensaje)
+            # Organización personal autocreada (única, solo el dueño es miembro -- "invitar"
+            # rechaza explícitamente las orgs tipo=personal, ver api_org_miembro_agregar) --
+            # slug con sufijo aleatorio: no depende del nombre, sin colisiones.
+            import uuid
+            import doctyp_db as _db
+            slug = f"personal-{uuid.uuid4().hex[:8]}"
+            org_id = _crear_org_con_admin(slug, "Personal", usuario, tipo="personal")
+            _db.fijar_org_activa(usuario["id"], org_id)
             _, token = auth.login(usuario["email"], cuerpo["password"], self._ip_cliente(),
                                    self.headers.get("User-Agent", ""))
             self._json_con_cookie(201, {"usuario": auth.usuario_publico(usuario)}, set_cookie=token)
@@ -1554,7 +1667,7 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
     # precisamente para poder crear la primera sesión; el resto de la API sí la exige.
     _RUTAS_PUBLICAS = {
         ("auth", "bootstrap"), ("auth", "primer-usuario"),
-        ("auth", "fijar-password-inicial"), ("auth", "login"),
+        ("auth", "fijar-password-inicial"), ("auth", "login"), ("auth", "registro"),
     }
 
     def _api(self, metodo: str, segs: list[str], query: dict) -> None:
@@ -1564,6 +1677,7 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             if usuario is None:
                 raise ApiError(401, "no autenticado")
             self._usuario_sesion = usuario  # disponible para endpoints que necesiten el autor
+            _hilo_usuario.user_id = usuario["id"]
 
         if segs and segs[0] == "auth":
             self._api_auth(metodo, segs[1:])
@@ -1671,6 +1785,11 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
 
         if len(segs) == 3 and segs[2] == "activar" and metodo == "POST":
             self._json(200, api_org_activar(slug))
+            return
+
+        if len(segs) == 3 and segs[2] == "miembros" and metodo == "POST":
+            cuerpo = self._leer_cuerpo_json()
+            self._json(201, api_org_miembro_agregar(slug, cuerpo))
             return
 
         recurso = segs[2]
@@ -1866,9 +1985,6 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                     self._json(200, api_autor_eliminar(slug, autor_id))
                 else:
                     self._error(405, "método no soportado")
-                return
-            if len(segs) == 5 and segs[4] == "activar" and metodo == "POST":
-                self._json(200, api_autor_activar(slug, autor_id))
                 return
             self._error(404, "ruta de API desconocida")
             return

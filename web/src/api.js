@@ -15,6 +15,13 @@ export function authCrearPrimerUsuario(email, nombre, password) {
   });
 }
 
+export function authRegistrar(email, nombre, password) {
+  return request("/api/auth/registro", {
+    method: "POST",
+    body: JSON.stringify({ email, nombre, password }),
+  });
+}
+
 export function authFijarPasswordInicial(userId, password) {
   return request("/api/auth/fijar-password-inicial", {
     method: "POST",
@@ -248,8 +255,14 @@ export function eliminarAutor(slug, id) {
   return request(`/api/orgs/${enc(slug)}/autores/${enc(id)}`, { method: "DELETE" });
 }
 
-export function activarAutor(slug, id) {
-  return request(`/api/orgs/${enc(slug)}/autores/${enc(id)}/activar`, { method: "POST" });
+// Invitar = agregar directo a un usuario que YA existe en el sistema (sin correo, sin paso de
+// aceptación -- ver el plan de registro/invitaciones). Cualquier miembro de la organización
+// puede invitar.
+export function invitarMiembro(slug, email, role = "member") {
+  return request(`/api/orgs/${enc(slug)}/miembros`, {
+    method: "POST",
+    body: JSON.stringify({ email, role }),
+  });
 }
 
 export function getDoc(slug, codigo) {

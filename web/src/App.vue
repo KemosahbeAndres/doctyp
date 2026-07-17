@@ -8,8 +8,8 @@ import { useAuth } from "./composables/useAuth.js";
 const router = useRouter();
 const route = useRoute();
 const {
-  orgs, orgSlug, autores, autorActivoId, error,
-  cambiarOrgActiva, cambiarAutorActivo, cargarOrgs, iniciar, detener,
+  orgs, orgSlug, error,
+  cambiarOrgActiva, cargarOrgs, iniciar, detener,
 } = useOrgContext();
 const { usuario, logout } = useAuth();
 
@@ -58,11 +58,6 @@ onUnmounted(detener);
         </select>
         <button title="Nueva organización" @click="mostrarNuevaOrg = true">+</button>
       </div>
-      <select :value="autorActivoId" @change="cambiarAutorActivo($event.target.value)">
-        <option v-for="a in autores" :key="a.id" :value="a.id">
-          {{ a.nombre }}{{ a.activo ? " (yo)" : "" }}
-        </option>
-      </select>
       <router-link to="/documentos" title="Documentos">Documentos</router-link>
       <router-link to="/plantillas" title="Editor de plantillas">Plantillas</router-link>
       <router-link to="/organizacion" title="Gestionar organización">⚙ Organización</router-link>

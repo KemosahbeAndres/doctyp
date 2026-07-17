@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS users (
     cargo         TEXT,
     correo        TEXT,
     activo        INTEGER NOT NULL DEFAULT 1,
+    org_activa_id TEXT REFERENCES organizations(id) ON DELETE SET NULL,
     created_at    TEXT NOT NULL
 );
 
@@ -168,12 +169,25 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(str(path), timeout=30, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA_SQL)
+    _migrar_columnas_nuevas(conn)
     conn.execute(
         "INSERT OR IGNORE INTO meta(clave, valor) VALUES ('schema_version', ?)",
         (str(SCHEMA_VERSION),),
     )
     _local.conn = conn
     return conn
+
+
+def _migrar_columnas_nuevas(conn: sqlite3.Connection) -> None:
+    """`CREATE TABLE IF NOT EXISTS` no altera una tabla ya creada -- las columnas nuevas
+    agregadas después del primer despliegue necesitan un ALTER TABLE explícito, idempotente
+    (se corre en cada conexión, revisa PRAGMA table_info antes de intentarlo)."""
+    columnas = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+    if "org_activa_id" not in columnas:
+        conn.execute(
+            "ALTER TABLE users ADD COLUMN org_activa_id TEXT "
+            "REFERENCES organizations(id) ON DELETE SET NULL"
+        )
 
 
 @contextmanager
@@ -205,16 +219,21 @@ def existe_org(slug: str) -> bool:
     return conn.execute("SELECT 1 FROM organizations WHERE slug = ?", (slug,)).fetchone() is not None
 
 
-def crear_org_vacia(slug: str, nombre: str) -> None:
+def crear_org_vacia(slug: str, nombre: str) -> str:
+    """Devuelve el id interno (UUID) de la organización recién creada -- lo necesitan los
+    llamadores que además deben vincular a un usuario como miembro (ver
+    doctyp_web.py: _crear_org_con_admin) sin depender de una segunda consulta."""
     import uuid, datetime
+    org_id = str(uuid.uuid4())
     conn = _connect()
     with _tx(conn):
         conn.execute(
             "INSERT INTO organizations(id, slug, nombre, config_json, created_at) VALUES (?,?,?,?,?)",
-            (str(uuid.uuid4()), slug, nombre,
+            (org_id, slug, nombre,
              json.dumps({"correlativo_inicio": {}, "plantilla_default": "informe-ti"}),
              datetime.datetime.now().isoformat(timespec="seconds")),
         )
+    return org_id
 
 
 def _org_id(conn: sqlite3.Connection, slug: str) -> str:
@@ -222,6 +241,15 @@ def _org_id(conn: sqlite3.Connection, slug: str) -> str:
     if row is None:
         sys.exit(f"ERROR: no existe la organización '{slug}'.")
     return row["id"]
+
+
+def obtener_org_id(slug: str) -> str | None:
+    """Variante pública/no-fatal de _org_id -- para llamadores que ya validaron que la org existe
+    (p. ej. doctyp_web.py: api_org_activar, tras _cargar_org_api) y solo necesitan el id interno
+    para guardar una referencia (org_activa_id)."""
+    conn = _connect()
+    row = conn.execute("SELECT id FROM organizations WHERE slug = ?", (slug,)).fetchone()
+    return row["id"] if row else None
 
 
 def cargar_org(slug: str) -> dict:
@@ -492,6 +520,27 @@ def fijar_password(user_id: str, password_hash: str) -> None:
     conn = _connect()
     with _tx(conn):
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+
+
+def fijar_org_activa(user_id: str, org_id: str | None) -> None:
+    """Preferencia de organización activa POR USUARIO (Etapa de registro/invitaciones) -- a
+    diferencia de settings.json (`local.org_activa`), que solo aplica al CLI de un operador
+    local, sin relación con el modelo multi-usuario del servidor web."""
+    conn = _connect()
+    with _tx(conn):
+        conn.execute("UPDATE users SET org_activa_id = ? WHERE id = ?", (org_id, user_id))
+
+
+def obtener_org_activa(user_id: str) -> str | None:
+    """Devuelve el SLUG (no el id interno) de la organización activa del usuario, o None si no
+    tiene ninguna fijada o la que tenía fijada ya no existe."""
+    conn = _connect()
+    row = conn.execute(
+        """SELECT o.slug FROM users u JOIN organizations o ON o.id = u.org_activa_id
+           WHERE u.id = ?""",
+        (user_id,),
+    ).fetchone()
+    return row["slug"] if row else None
 
 
 def agregar_miembro_org(slug: str, user_id: str, autor_id: str, role: str = "member") -> None:

@@ -4,7 +4,7 @@ import { useRouter } from "vue-router";
 import { useAuth } from "../composables/useAuth.js";
 
 const router = useRouter();
-const { bootstrapInfo, crearPrimerUsuario, fijarPasswordInicial, login } = useAuth();
+const { bootstrapInfo, crearPrimerUsuario, registrar, fijarPasswordInicial, login } = useAuth();
 
 const email = ref("");
 const nombre = ref("");
@@ -12,15 +12,19 @@ const password = ref("");
 const password2 = ref("");
 const enviando = ref(false);
 const error = ref("");
+const quiereRegistrarse = ref(false);
 
-// Tres pantallas posibles según el bootstrap (PLAN-V4.md §4):
-//  - sin_usuarios: alta del primer usuario (queda como admin).
+// Cuatro pantallas posibles:
+//  - sin_usuarios: alta del primer usuario (queda como admin) -- bootstrap, PLAN-V4.md §4.
 //  - usuario_unico_sin_password: fijar contraseña en el primer login, sin token de
 //    invitación (no hay nadie más en el sistema que se la envíe).
-//  - ninguno de los dos: login normal.
+//  - registro: alta libre de una cuenta nueva (con su propia organización personal) --
+//    alternada a mano desde el login normal, no depende del bootstrap.
+//  - ninguno de los anteriores: login normal.
 const modo = computed(() => {
   if (bootstrapInfo.value?.sin_usuarios) return "primer-usuario";
   if (bootstrapInfo.value?.usuario_unico_sin_password) return "fijar-password";
+  if (quiereRegistrarse.value) return "registro";
   return "login";
 });
 
@@ -40,6 +44,8 @@ async function enviar() {
   try {
     if (modo.value === "primer-usuario") {
       await crearPrimerUsuario(email.value, nombre.value, password.value);
+    } else if (modo.value === "registro") {
+      await registrar(email.value, nombre.value, password.value);
     } else if (modo.value === "fijar-password") {
       await fijarPasswordInicial(bootstrapInfo.value.usuario_unico_sin_password.id, password.value);
       await login(email.value, password.value);
@@ -66,6 +72,10 @@ async function enviar() {
       <p v-else-if="modo === 'fijar-password'" class="login-subtitulo">
         Bienvenido de nuevo. Este equipo aún no tiene contraseña configurada — créala para continuar.
       </p>
+      <p v-else-if="modo === 'registro'" class="login-subtitulo">
+        Crea tu cuenta. Empiezas con tu propia organización personal — a la que solo tú tienes
+        acceso, hasta que alguien te invite a otra.
+      </p>
 
       <div v-if="error" class="error-banner">{{ error }}</div>
 
@@ -75,7 +85,7 @@ async function enviar() {
                placeholder="tu@correo.cl" @keyup.enter="enviar" autofocus />
       </label>
 
-      <label v-if="modo === 'primer-usuario'">
+      <label v-if="modo === 'primer-usuario' || modo === 'registro'">
         Nombre
         <input v-model="nombre" type="text" placeholder="Nombre completo" @keyup.enter="enviar" />
       </label>
@@ -95,6 +105,27 @@ async function enviar() {
           {{ enviando ? "…" : (modo === "login" ? "Iniciar sesión" : "Continuar") }}
         </button>
       </div>
+
+      <p v-if="modo === 'login'" class="login-alterno">
+        ¿No tienes cuenta?
+        <a href="#" @click.prevent="quiereRegistrarse = true; error = ''">Regístrate</a>
+      </p>
+      <p v-else-if="modo === 'registro'" class="login-alterno">
+        ¿Ya tienes cuenta?
+        <a href="#" @click.prevent="quiereRegistrarse = false; error = ''">Inicia sesión</a>
+      </p>
     </div>
   </div>
 </template>
+
+<style>
+.login-alterno {
+  margin-top: 1em;
+  text-align: center;
+  font-size: 0.9em;
+}
+.login-alterno a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+</style>

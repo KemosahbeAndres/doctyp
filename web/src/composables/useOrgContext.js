@@ -1,5 +1,5 @@
 import { ref, computed, watch } from "vue";
-import { listOrgs, listDocs, listAutores, activarOrg, activarAutor, listPlantillas, suscribirEventos } from "../api.js";
+import { listOrgs, listDocs, listAutores, activarOrg, listPlantillas, suscribirEventos } from "../api.js";
 import { emitirEditorScrollTo } from "./editorScrollToBus.js";
 import { emitirCompileStatus } from "./compileStatusBus.js";
 
@@ -105,20 +105,6 @@ async function cambiarOrgActiva(slug) {
   if (slug) activarOrg(slug).catch(() => {});
 }
 
-async function cambiarAutorActivo(id) {
-  if (id === autorActivoId.value) return;
-  if (editorSucio.value && !window.confirm("Tienes cambios sin guardar en el editor. ¿Descartarlos y cambiar de autor activo?")) {
-    return;
-  }
-  try {
-    await activarAutor(orgSlug.value, id);
-  } catch (e) {
-    error.value = `No se pudo activar el autor: ${e.message}`;
-    return;
-  }
-  autorActivoId.value = id;
-}
-
 let cancelarEventos = null;
 let iniciado = false;
 
@@ -155,7 +141,7 @@ export function useOrgContext() {
   return {
     orgs, orgSlug, docs, docsFiltrados, docActivo, autores, autorActivoId,
     cargandoDocs, plantillas, cargandoPlantillas, error, editorSucio, plantillaEditorSucio,
-    cargarOrgs, cargarDocs, cargarAutores, cargarPlantillas, cambiarOrgActiva, cambiarAutorActivo,
+    cargarOrgs, cargarDocs, cargarAutores, cargarPlantillas, cambiarOrgActiva,
     iniciar, detener,
   };
 }

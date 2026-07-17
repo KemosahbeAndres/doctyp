@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import { authBootstrap, authCrearPrimerUsuario, authFijarPasswordInicial, authLogin, authLogout, authYo } from "../api.js";
+import { authBootstrap, authCrearPrimerUsuario, authRegistrar, authFijarPasswordInicial, authLogin, authLogout, authYo } from "../api.js";
 
 // Mismo patrón "bus" de módulo-singleton que useOrgContext.js/editorScrollToBus.js (el
 // proyecto no usa store, ver nota Etapa 5 en CLAUDE.md) -- App.vue y el guard del router
@@ -34,6 +34,12 @@ async function crearPrimerUsuario(email, nombre, password) {
   bootstrapInfo.value = null;
 }
 
+async function registrar(email, nombre, password) {
+  const { usuario: u } = await authRegistrar(email, nombre, password);
+  usuario.value = u;
+  bootstrapInfo.value = null;
+}
+
 async function fijarPasswordInicial(userId, password) {
   await authFijarPasswordInicial(userId, password);
   bootstrapInfo.value = null;
@@ -51,5 +57,5 @@ async function logout() {
 }
 
 export function useAuth() {
-  return { usuario, cargando, bootstrapInfo, iniciar, crearPrimerUsuario, fijarPasswordInicial, login, logout };
+  return { usuario, cargando, bootstrapInfo, iniciar, crearPrimerUsuario, registrar, fijarPasswordInicial, login, logout };
 }
