@@ -1572,18 +1572,21 @@ def cmd_user_set_password(args):
 
 
 def cmd_login(args):
-    """doctyp login <email> -- conecta el CLI a una cuenta del servidor oficial (URL fija, ver
-    doctyp_sync.DOCTYP_REMOTE_HOST) y sincroniza de inmediato todas sus organizaciones. Solo una
-    cuenta remota a la vez -- 'doctyp logout' primero para cambiar."""
+    """doctyp login [email] [--password …] -- conecta el CLI a una cuenta del servidor oficial
+    (URL fija, ver doctyp_sync.DOCTYP_REMOTE_HOST) y sincroniza de inmediato todas sus
+    organizaciones. Solo una cuenta remota a la vez -- 'doctyp logout' primero para cambiar.
+    Correo y contraseña se piden de forma interactiva si no se entregan por argumento."""
     import doctyp_sync as sync
-    email = args.email.strip().lower()
+    email = args.email.strip().lower() if args.email else input("  Correo: ").strip().lower()
+    if not email:
+        sys.exit("ERROR: el correo no puede estar vacío.")
     sesion = sync.sesion_activa()
     if sesion is not None and sesion.get("email") != email:
         sys.exit(f"ERROR: ya hay una sesión activa como '{sesion['email']}'. "
                   f"Usa 'doctyp logout' primero.")
 
     import getpass
-    password = getpass.getpass("  Contraseña: ")
+    password = args.password or getpass.getpass("  Contraseña: ")
     try:
         usuario, cookie = sync.login(email, password)
     except sync.SyncError as e:
@@ -2802,7 +2805,9 @@ def build_parser() -> argparse.ArgumentParser:
     pu_setpw.set_defaults(func=cmd_user_set_password)
 
     pl = sub.add_parser("login", help="Conecta el CLI a una cuenta remota y sincroniza.")
-    pl.add_argument("email", metavar="EMAIL")
+    pl.add_argument("email", nargs="?", metavar="EMAIL", help="Si se omite, se pide interactivo.")
+    pl.add_argument(
+        "--password", help="Contraseña en texto plano (evítalo; sin esto se pide interactivo sin eco).")
     pl.set_defaults(func=cmd_login)
 
     plo = sub.add_parser("logout", help="Cierra la sesión remota activa.")
