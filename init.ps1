@@ -179,5 +179,29 @@ if ($py) {
   Warn 'Una vez instalado Python, ejecuta:  doctyp config-author'
 }
 
+# ──────────────────────────────────────────────────────
+# 7) Autoarranque del daemon de sincronización (Task Scheduler)
+# ──────────────────────────────────────────────────────
+# A diferencia de systemd/launchd, schtasks no expresa de forma simple un reinicio automático
+# tras una caída del proceso. Se prefiere simplicidad: "doctyp sync"/"doctyp login" ya detectan
+# y relanzan el daemon si murió -- esta tarea solo cubre el arranque al iniciar sesión.
+Info 'Autoarranque de doctyp-sync'
+$taskName = 'doctyp-sync'
+$launcher = Join-Path $BinDir 'doctyp.cmd'
+if (Test-Path $launcher) {
+  try {
+    schtasks /create /tn $taskName /tr "`"$launcher`" _sync-daemon" /sc onlogon /rl limited /f | Out-Null
+    Ok "Tarea programada '$taskName' creada (arranca al iniciar sesión)."
+    Warn 'Nota: a diferencia de systemd/launchd, esto NO reinicia el daemon tras una caída'
+    Warn 'dura entre inicios de sesión -- "doctyp sync"/"doctyp login" lo relanzan solos.'
+    schtasks /run /tn $taskName | Out-Null
+  } catch {
+    Warn "No se pudo crear la tarea programada: $_"
+    Warn '"doctyp sync" igual arranca el daemon en segundo plano bajo demanda.'
+  }
+} else {
+  Warn "No se encontró $launcher; omito el autoarranque (revisa el paso 3)."
+}
+
 Write-Host ''
 Ok 'Instalación completada. En una terminal nueva, prueba:  doctyp list'

@@ -191,5 +191,87 @@ else
   printf '      \033[1mecho '\''export PATH="$HOME/.local/bin:$PATH"'\'' >> ~/.bashrc\033[0m\n'
 fi
 
+# --------------------------------------------------------------------------
+# 7) Autoarranque del daemon de sincronización (doctyp-sync)
+# --------------------------------------------------------------------------
+# 'doctyp sync'/'doctyp login' ya relanzan el daemon solos si detectan que no está vivo -- esta
+# sección solo cubre el arranque automático al iniciar sesión/equipo. Igual que con tinymist
+# (paso 4): se avisa pero no se aborta la instalación si el sistema no lo soporta.
+info "Configurando autoarranque de doctyp-sync..."
+DOCTYP_BIN="${BIN_DIR}/doctyp"
+
+if [ "$DISTRO" = "macos" ]; then
+  PLIST_PATH="$HOME/Library/LaunchAgents/cl.tinorte.doctyp-sync.plist"
+  mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+  cat > "$PLIST_PATH" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>cl.tinorte.doctyp-sync</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${DOCTYP_BIN}</string>
+        <string>_sync-daemon</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${HOME}/Library/Logs/doctyp-sync.log</string>
+    <key>StandardErrorPath</key>
+    <string>${HOME}/Library/Logs/doctyp-sync.log</string>
+</dict>
+</plist>
+EOF
+  if command -v launchctl >/dev/null 2>&1; then
+    launchctl unload "$PLIST_PATH" >/dev/null 2>&1 || true
+    if launchctl load -w "$PLIST_PATH" >/dev/null 2>&1; then
+      ok "doctyp-sync se autoarrancará al iniciar sesión (LaunchAgent)."
+    else
+      warn "No se pudo cargar el LaunchAgent. Cárgalo manualmente:"
+      warn "  launchctl load -w \"$PLIST_PATH\""
+    fi
+  else
+    warn "launchctl no disponible; no se pudo registrar el autoarranque."
+  fi
+else
+  UNIT_DIR="$HOME/.config/systemd/user"
+  UNIT_PATH="$UNIT_DIR/doctyp-sync.service"
+  mkdir -p "$UNIT_DIR"
+  cat > "$UNIT_PATH" <<EOF
+[Unit]
+Description=doctyp — sincronización en segundo plano
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${DOCTYP_BIN} _sync-daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+  if command -v systemctl >/dev/null 2>&1 && systemctl --user daemon-reload >/dev/null 2>&1; then
+    if systemctl --user enable --now doctyp-sync.service >/dev/null 2>&1; then
+      ok "doctyp-sync se autoarrancará al iniciar sesión (systemd --user)."
+    else
+      warn "No se pudo habilitar el servicio. Hazlo manualmente:"
+      warn "  systemctl --user enable --now doctyp-sync.service"
+    fi
+  else
+    warn "systemd de usuario no disponible (entorno headless/minimal); no se pudo registrar"
+    warn "el autoarranque. 'doctyp sync'/'doctyp login' igual arrancan el daemon bajo demanda."
+    warn "Unidad ya escrita en: $UNIT_PATH"
+  fi
+fi
+
 echo
 ok "Instalación completada. Prueba:  doctyp list"

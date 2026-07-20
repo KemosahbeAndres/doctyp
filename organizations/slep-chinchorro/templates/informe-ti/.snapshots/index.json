@@ -1,0 +1,12 @@
+{
+  "nombre": "informe-ti",
+  "versiones": [
+    {
+      "version": 1,
+      "fecha": "20260720",
+      "creado": "2026-07-20T10:05:12",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v1.typ"
+    }
+  ]
+}

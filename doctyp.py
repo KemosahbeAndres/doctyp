@@ -1577,6 +1577,7 @@ def cmd_login(args):
     organizaciones. Solo una cuenta remota a la vez -- 'doctyp logout' primero para cambiar.
     Correo y contraseña se piden de forma interactiva si no se entregan por argumento."""
     import doctyp_sync as sync
+    import doctyp_sync_daemon as daemon
     email = args.email.strip().lower() if args.email else input("  Correo: ").strip().lower()
     if not email:
         sys.exit("ERROR: el correo no puede estar vacío.")
@@ -1594,6 +1595,12 @@ def cmd_login(args):
     sync.guardar_sesion(email, cookie)
     _ok(f"Sesión iniciada: {_c(_C.BOLD, usuario['nombre'])} ({email})")
 
+    pid, ya_estaba = daemon.asegurar_daemon_en_marcha()
+    if ya_estaba:
+        _ok(f"Sincronización en segundo plano ya estaba activa (pid {pid}).")
+    else:
+        _ok(f"Sincronización en segundo plano iniciada (pid {pid}, cada 5s).")
+
     print(f"  {_c(_C.DIM, 'Sincronizando…')}")
     try:
         orgs = sync.sincronizar_todo()
@@ -1605,25 +1612,44 @@ def cmd_login(args):
 
 def cmd_logout(args):
     import doctyp_sync as sync
+    import doctyp_sync_daemon as daemon
     sesion = sync.sesion_activa()
     if sesion is None:
         _warn("no había ninguna sesión remota activa.")
         return
     sync.logout_remoto(sesion["cookie"])
     sync.borrar_sesion()
+    if daemon.detener_daemon():
+        _ok("Sincronización en segundo plano detenida.")
     _ok(f"Sesión cerrada ({sesion['email']}).")
 
 
 def cmd_sync(args):
     import doctyp_sync as sync
+    import doctyp_sync_daemon as daemon
     if sync.sesion_activa() is None:
         sys.exit("ERROR: no hay sesión remota activa. Usa 'doctyp login <email>'.")
+
+    pid, ya_estaba = daemon.asegurar_daemon_en_marcha()
+    if ya_estaba:
+        _ok(f"Sincronización en segundo plano ya estaba activa (pid {pid}).")
+    else:
+        _ok(f"Sincronización en segundo plano iniciada (pid {pid}, cada 5s).")
+
     print(f"  {_c(_C.DIM, 'Sincronizando…')}")
     try:
         orgs = sync.sincronizar_todo()
     except sync.SyncError as e:
         sys.exit(f"ERROR: {e}")
     _ok(f"Sincronizado: {len(orgs)} organización(es).\n")
+
+
+def cmd_sync_daemon(args):
+    """Entrypoint interno de 'doctyp _sync-daemon' -- NO documentado, NO para uso manual (usa
+    'doctyp sync' para eso). Es lo que ejecutan systemd/launchd/Task Scheduler, y también lo
+    que lanza cmd_sync/cmd_login en segundo plano vía doctyp_sync_daemon.lanzar_en_segundo_plano()."""
+    import doctyp_sync_daemon as daemon
+    daemon.ejecutar_foreground()
 
 
 def _sincronizar_si_hay_sesion(slug: str, codigo_base: str) -> None:
@@ -2815,6 +2841,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     psy = sub.add_parser("sync", help="Repite la sincronización con la cuenta remota activa.")
     psy.set_defaults(func=cmd_sync)
+
+    psd = sub.add_parser("_sync-daemon", help=argparse.SUPPRESS)
+    psd.set_defaults(func=cmd_sync_daemon)
 
     ptp = sub.add_parser("template", help="Gestiona plantillas de la organización activa.")
     ptp_sub = ptp.add_subparsers(dest="template_cmd", required=True)
