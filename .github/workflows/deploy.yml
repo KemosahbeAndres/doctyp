@@ -21,6 +21,12 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
+          # Default de la acción son 10m -- insuficientes para "docker compose build" cuando
+          # toca reconstruir el build de Vite (empaqueta los binarios grandes de
+          # @myriaddreamin/typst-ts-*, ~28 MB, ver CLAUDE.md Etapa 11) en un VPS ajustado de
+          # recursos: sin esto la acción corta la conexión a los 10m sin reportar el motivo,
+          # dejando el log truncado a mitad del build en vez de fallar con un error claro.
+          command_timeout: "30m"
           script: |
             set -euo pipefail
             ls -la

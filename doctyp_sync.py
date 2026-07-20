@@ -21,6 +21,7 @@ import os
 import shutil
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -162,7 +163,8 @@ def _bajar_carpeta(cookie: str, ruta_archivos: str, ruta_archivo_tpl: str, carpe
     contenido = _peticion_json("GET", principal_ruta, cookie)["contenido"]
     core._escribir_texto_atomico(carpeta / principal_rel, contenido)
     for rel in _peticion_json("GET", ruta_archivos, cookie):
-        _status, _headers, datos = _peticion("GET", f"{ruta_archivo_tpl}/{rel}", cookie)
+        rel_codificado = "/".join(urllib.parse.quote(parte) for parte in rel.split("/"))
+        _status, _headers, datos = _peticion("GET", f"{ruta_archivo_tpl}/{rel_codificado}", cookie)
         destino = carpeta / rel
         destino.parent.mkdir(parents=True, exist_ok=True)
         core._escribir_bytes_atomico(destino, datos)
