@@ -358,12 +358,9 @@ def _sincronizar_plantilla(slug: str, nombre: str, remoto: dict | None) -> None:
     if mtime_local >= remoto["mtime"]:
         _subir_carpeta(cookie, ruta_sync, carpeta)
     else:
-        # A diferencia de documentos, una plantilla SÍ tiene un mecanismo de versión propio
-        # (guardar_version_plantilla) que ya snapshotea el contenido actual antes de
-        # sobrescribir -- se reutiliza tal cual en vez de duplicar la lógica de respaldo.
-        contenido_remoto = _peticion_json("GET", ruta_lib, cookie)["contenido"]
-        core.guardar_version_plantilla(slug, nombre, contenido_remoto,
-                                        "Respaldo automático por sincronización (conflicto)")
+        # Sin respaldo automático: las plantillas ya tienen su propio historial manual
+        # (`doctyp template save` / "Guardar plantilla"), y el daemon corre cada
+        # INTERVALO_SEGUNDOS -- versionar acá inundaba .snapshots/ con una copia por tick.
         _bajar_carpeta(cookie, ruta_archivos, ruta_archivo, carpeta, "lib.typ", ruta_lib)
 
 
