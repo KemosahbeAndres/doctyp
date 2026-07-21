@@ -63,6 +63,14 @@ def _peticion(metodo: str, ruta: str, cookie: str | None = None, cuerpo: dict | 
         raise SyncError(f"{e.code} {mensaje}")
     except urllib.error.URLError as e:
         raise SyncError(f"no se pudo conectar a {DOCTYP_REMOTE_HOST}: {e.reason}")
+    except OSError as e:
+        # Timeouts de LECTURA (servidor lento/caído a mitad de respuesta, ya conectado) llegan
+        # como TimeoutError/socket.timeout crudos, NO como URLError -- urllib solo envuelve en
+        # URLError los fallos ANTES de mandar la petición (h.request()); getresponse() está
+        # fuera de ese try/except en la stdlib, así que un timeout leyendo la respuesta se
+        # propaga tal cual. TimeoutError/ConnectionError/etc. son subclases de OSError (y
+        # URLError igual lo es, pero ya la capturó la except de arriba primero).
+        raise SyncError(f"se perdió la conexión con {DOCTYP_REMOTE_HOST}: {e}")
 
 
 def _peticion_json(metodo: str, ruta: str, cookie: str | None = None, cuerpo: dict | None = None):
