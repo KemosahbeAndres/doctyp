@@ -12,6 +12,10 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 768M
     volumes:
       - data:/data
       - docs_data:/data/docs

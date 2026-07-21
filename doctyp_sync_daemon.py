@@ -145,11 +145,23 @@ def _manejar_senal(signum, frame):
     _debe_parar = True
 
 
+def _en_contenedor() -> bool:
+    """El daemon es exclusivamente de equipo cliente (autoarranque vía init/init.ps1) -- NUNCA
+    debe correr en el servidor (imagen Docker/VPS, ver Dockerfile: el CMD solo lanza
+    'doctyp web', jamás '_sync-daemon'). /.dockerenv es el marcador estándar de Docker,
+    presente en cualquier contenedor sin importar cómo esté configurado su entorno -- guarda de
+    fondo además de que el CMD nunca lo invoque (decisión explícita del usuario, 2026-07-20)."""
+    return Path("/.dockerenv").exists()
+
+
 def ejecutar_foreground(intervalo: float = INTERVALO_SEGUNDOS) -> None:
     """Entrypoint de 'doctyp _sync-daemon' -- bloqueante, en primer plano. Igual si lo invoca
     systemd/launchd/Task Scheduler directamente, o si lo lanzó 'doctyp sync'/'doctyp login'
     como proceso desprendido (ver lanzar_en_segundo_plano): el bucle no necesita saber cuál de
     los dos es -- siempre se autoregistra en el pidfile al partir y lo limpia al salir."""
+    if _en_contenedor():
+        sys.exit("ERROR: el daemon de sincronización no corre dentro de un contenedor Docker "
+                  "(este equipo es el servidor, no un cliente).")
     _escribir_pid(os.getpid())
     signal.signal(signal.SIGTERM, _manejar_senal)
     signal.signal(signal.SIGINT, _manejar_senal)
@@ -187,10 +199,15 @@ def lanzar_en_segundo_plano() -> int:
     return proc.pid
 
 
-def asegurar_daemon_en_marcha() -> tuple[int, bool]:
+def asegurar_daemon_en_marcha() -> tuple[int | None, bool]:
     """Devuelve (pid, ya_estaba_activo). Si no hay daemon vivo, lo lanza y espera brevemente
     (hasta ~2s) a que se autoregistre en el pidfile antes de devolver el control -- acotado,
-    para que 'doctyp sync'/'doctyp login' nunca se cuelguen esperando indefinidamente."""
+    para que 'doctyp sync'/'doctyp login' nunca se cuelguen esperando indefinidamente.
+
+    Dentro de un contenedor Docker (el servidor) esto es un no-op: pid=None -- el daemon es
+    exclusivo de equipo cliente (ver _en_contenedor/ejecutar_foreground)."""
+    if _en_contenedor():
+        return None, False
     pid = daemon_vivo()
     if pid is not None:
         return pid, True

@@ -1596,7 +1596,9 @@ def cmd_login(args):
     _ok(f"Sesión iniciada: {_c(_C.BOLD, usuario['nombre'])} ({email})")
 
     pid, ya_estaba = daemon.asegurar_daemon_en_marcha()
-    if ya_estaba:
+    if pid is None:
+        pass  # dentro de un contenedor (el servidor): el daemon nunca corre acá, sin aviso
+    elif ya_estaba:
         _ok(f"Sincronización en segundo plano ya estaba activa (pid {pid}).")
     else:
         _ok(f"Sincronización en segundo plano iniciada (pid {pid}, cada 5s).")
@@ -1631,7 +1633,9 @@ def cmd_sync(args):
         sys.exit("ERROR: no hay sesión remota activa. Usa 'doctyp login <email>'.")
 
     pid, ya_estaba = daemon.asegurar_daemon_en_marcha()
-    if ya_estaba:
+    if pid is None:
+        pass  # dentro de un contenedor (el servidor): el daemon nunca corre acá, sin aviso
+    elif ya_estaba:
         _ok(f"Sincronización en segundo plano ya estaba activa (pid {pid}).")
     else:
         _ok(f"Sincronización en segundo plano iniciada (pid {pid}, cada 5s).")
