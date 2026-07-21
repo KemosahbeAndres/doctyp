@@ -245,6 +245,13 @@
       "creado": "2026-07-21T13:17:33",
       "mensaje": "Respaldo automático por sincronización (conflicto)",
       "snapshot": ".snapshots/lib_v35.typ"
+    },
+    {
+      "version": 36,
+      "fecha": "20260721",
+      "creado": "2026-07-21T13:18:47",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v36.typ"
     }
   ]
 }
