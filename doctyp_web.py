@@ -16,7 +16,7 @@ reutiliza exactamente compilar_typ().
 No requiere paquetes externos (solo stdlib).
 """
 from __future__ import annotations
-import base64, binascii, datetime, difflib, http.client, http.cookies, json, mimetypes, os, queue, shutil, subprocess, threading, time, webbrowser
+import base64, binascii, datetime, difflib, hashlib, http.client, http.cookies, json, mimetypes, os, queue, shutil, subprocess, threading, time, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote
@@ -134,10 +134,11 @@ def _slug_seguro(slug: str) -> str:
 # ── Helpers de la API (envuelven funciones ya existentes de doctyp.py) ────────────────────
 
 class ApiError(Exception):
-    def __init__(self, status: int, mensaje: str):
+    def __init__(self, status: int, mensaje: str, extra: dict | None = None):
         super().__init__(mensaje)
         self.status = status
         self.mensaje = mensaje
+        self.extra = extra or {}
 
 
 def _es_miembro(org: dict, user_id: str) -> bool:
@@ -306,16 +307,19 @@ def api_sync_manifiesto(slug: str) -> dict:
     org = _cargar_org_api(slug)
     documentos = []
     for d in org["documentos"]:
-        typ_path = core.doc_dir(slug, d["codigo_base"]) / f"{d['codigo_base']}.typ"
+        doc_dir = core.doc_dir(slug, d["codigo_base"])
+        typ_path = doc_dir / f"{d['codigo_base']}.typ"
         if typ_path.exists():
-            documentos.append({**d, "mtime": typ_path.stat().st_mtime})
+            documentos.append({**d, "mtime": typ_path.stat().st_mtime, "hash": _hash_carpeta(doc_dir)})
     plantillas = []
     base = core.org_dir(slug) / "templates"
     if base.exists():
         for nombre in sorted(p.name for p in base.iterdir() if p.is_dir()):
-            lib_path = core.plantilla_dir(slug, nombre) / "lib.typ"
+            plantilla_dir = core.plantilla_dir(slug, nombre)
+            lib_path = plantilla_dir / "lib.typ"
             if lib_path.exists():
-                plantillas.append({"nombre": nombre, "mtime": lib_path.stat().st_mtime})
+                plantillas.append({"nombre": nombre, "mtime": lib_path.stat().st_mtime,
+                                    "hash": _hash_carpeta(plantilla_dir)})
     return {"documentos": documentos, "plantillas": plantillas}
 
 
@@ -446,6 +450,7 @@ def api_doc_sync(slug: str, codigo_base: str, payload: dict) -> dict:
     archivos = payload.get("archivos") or {}
     if not archivos:
         raise ApiError(400, "no se enviaron archivos")
+    _verificar_y_refrescar_bloqueo(slug, codigo_base, payload.get("device_id"))
     dest_dir = core.doc_dir(slug, codigo_base)
     if core.buscar_doc_org_por_codigo(org, codigo_base) is None:
         _crear_entrada_sync_doc(org, codigo_base)
@@ -897,9 +902,25 @@ _LSP_RESPUESTAS_LOCALES = {
 }
 
 
-def api_doc_typ_put(slug: str, codigo_base: str, contenido: str) -> dict:
+def _verificar_y_refrescar_bloqueo(slug: str, codigo_base: str, device_id: str | None) -> None:
+    """Guardia compartida por las cinco rutas que escriben un documento (autoguardado, meta,
+    subir versión, compilar, sync del CLI): sin device_id no hay forma de distinguir "el mismo
+    equipo que ya tiene el bloqueo" de "otro equipo" -- degradar en silencio dejaría a cualquier
+    cliente que no lo mande saltarse el bloqueo por completo, así que se rechaza con 400 en vez
+    de tratarlo como "sin bloqueo". Ver doctyp_db.refrescar_bloqueo para la semántica de
+    adquirir/refrescar/denegar."""
+    import doctyp_db as _db
+    if not device_id:
+        raise ApiError(400, "falta device_id")
+    resultado = _db.refrescar_bloqueo(slug, codigo_base, device_id)
+    if not resultado["otorgado"]:
+        raise ApiError(423, "documento en edición en otro equipo", extra={"hasta": resultado["hasta"]})
+
+
+def api_doc_typ_put(slug: str, codigo_base: str, contenido: str, device_id: str | None = None) -> dict:
     org = _cargar_org_api(slug)
     _doc_o_404(org, codigo_base)
+    _verificar_y_refrescar_bloqueo(slug, codigo_base, device_id)
     ruta = _ruta_typ_segura(slug, codigo_base)
     if not ruta.parent.exists():
         raise ApiError(404, f"la carpeta del documento no existe: {ruta.parent}")
@@ -922,9 +943,10 @@ def api_doc_meta_get(slug: str, codigo_base: str) -> dict:
     return core.extraer_meta_typ(ruta)
 
 
-def api_doc_meta_put(slug: str, codigo_base: str, cambios: dict) -> dict:
+def api_doc_meta_put(slug: str, codigo_base: str, cambios: dict, device_id: str | None = None) -> dict:
     org = _cargar_org_api(slug)
     doc = _doc_o_404(org, codigo_base)
+    _verificar_y_refrescar_bloqueo(slug, codigo_base, device_id)
     ruta = _ruta_typ_segura(slug, codigo_base)
     if not ruta.exists():
         raise ApiError(404, f"el archivo del documento no existe: {ruta}")
@@ -1024,6 +1046,23 @@ def _listar_archivos_carpeta(base_dir: Path, excluir: set[str]) -> list[str]:
     return sorted(out)
 
 
+def _hash_carpeta(base_dir: Path) -> str | None:
+    """Hash de TODA la carpeta (no solo el .typ/lib.typ principal) -- un hash que solo cubriera
+    el archivo principal dejaría de propagar para siempre cambios en otros archivos (imágenes)
+    que ocurran sin tocar el texto. Mismo listado que _listar_archivos_carpeta/
+    _listar_archivos_locales (doctyp_sync.py, idéntica exclusión en ambos lados), así que
+    contenido idéntico produce el mismo hash en cliente y servidor."""
+    archivos = _listar_archivos_carpeta(base_dir, excluir=set())
+    if not archivos:
+        return None
+    h = hashlib.sha256()
+    for rel in archivos:
+        h.update(rel.encode("utf-8"))
+        h.update(b"\0")
+        h.update(hashlib.sha256((base_dir / rel).read_bytes()).digest())
+    return h.hexdigest()
+
+
 def api_doc_archivos(slug: str, codigo_base: str) -> list[str]:
     org = _cargar_org_api(slug)
     _doc_o_404(org, codigo_base)
@@ -1113,11 +1152,12 @@ def api_doc_archivo_renombrar(slug: str, codigo_base: str, ruta: list[str], nomb
     return {"ok": True, "ruta": f"img/{nombre_nuevo}"}
 
 
-def api_doc_save(slug: str, codigo_base: str, mensaje: str) -> dict:
+def api_doc_save(slug: str, codigo_base: str, mensaje: str, device_id: str | None = None) -> dict:
     if not mensaje:
         raise ApiError(400, "el mensaje es obligatorio")
     org = _cargar_org_api(slug)
     doc = _doc_o_404(org, codigo_base)
+    _verificar_y_refrescar_bloqueo(slug, codigo_base, device_id)
     dest_dir = core.doc_dir(slug, codigo_base)
     if not (dest_dir / f"{codigo_base}.typ").exists():
         raise ApiError(404, f"el archivo del documento no existe en {dest_dir}")
@@ -1126,9 +1166,10 @@ def api_doc_save(slug: str, codigo_base: str, mensaje: str) -> dict:
     return {"version_actual": version_actual, "version_nueva": version_nueva}
 
 
-def api_doc_compile(slug: str, codigo_base: str, mensaje: str | None) -> dict:
+def api_doc_compile(slug: str, codigo_base: str, mensaje: str | None, device_id: str | None = None) -> dict:
     org = _cargar_org_api(slug)
     doc = _doc_o_404(org, codigo_base)
+    _verificar_y_refrescar_bloqueo(slug, codigo_base, device_id)
     dest_dir = core.doc_dir(slug, codigo_base)
     typ_path = dest_dir / f"{codigo_base}.typ"
     if not typ_path.exists():
@@ -1539,8 +1580,8 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _error(self, status: int, mensaje: str) -> None:
-        self._json(status, {"error": mensaje})
+    def _error(self, status: int, mensaje: str, extra: dict | None = None) -> None:
+        self._json(status, {"error": mensaje, **(extra or {})})
 
     def _binario(self, status: int, cuerpo: bytes, content_type: str, nombre_descarga: str | None = None) -> None:
         self.send_response(status)
@@ -1710,7 +1751,7 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             else:
                 self._estaticos(segs)
         except ApiError as e:
-            self._error(e.status, e.mensaje)
+            self._error(e.status, e.mensaje, e.extra)
         except PathTraversalError as e:
             self._error(400, f"ruta inválida: {e}")
         except SystemExit as e:
@@ -1984,7 +2025,8 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                     self._json(200, {"contenido": api_doc_typ_get(slug, codigo_base)})
                 elif metodo == "PUT":
                     cuerpo = self._leer_cuerpo_json()
-                    self._json(200, api_doc_typ_put(slug, codigo_base, cuerpo.get("contenido", "")))
+                    self._json(200, api_doc_typ_put(slug, codigo_base, cuerpo.get("contenido", ""),
+                                                      cuerpo.get("device_id")))
                 else:
                     self._error(405, "método no soportado")
                 return
@@ -1993,7 +2035,8 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                     self._json(200, api_doc_meta_get(slug, codigo_base))
                 elif metodo == "PUT":
                     cuerpo = self._leer_cuerpo_json()
-                    self._json(200, api_doc_meta_put(slug, codigo_base, cuerpo))
+                    device_id = cuerpo.pop("device_id", None)
+                    self._json(200, api_doc_meta_put(slug, codigo_base, cuerpo, device_id))
                 else:
                     self._error(405, "método no soportado")
                 return
@@ -2010,11 +2053,13 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
                 return
             if sub == "save" and len(segs) == 5 and metodo == "POST":
                 cuerpo = self._leer_cuerpo_json()
-                self._json(200, api_doc_save(slug, codigo_base, cuerpo.get("mensaje", "")))
+                self._json(200, api_doc_save(slug, codigo_base, cuerpo.get("mensaje", ""),
+                                              cuerpo.get("device_id")))
                 return
             if sub == "compile" and len(segs) == 5 and metodo == "POST":
                 cuerpo = self._leer_cuerpo_json()
-                self._json(200, api_doc_compile(slug, codigo_base, cuerpo.get("mensaje")))
+                self._json(200, api_doc_compile(slug, codigo_base, cuerpo.get("mensaje"),
+                                                 cuerpo.get("device_id")))
                 return
             if sub == "miniatura" and len(segs) == 5 and metodo == "GET":
                 ruta_png = api_doc_miniatura(slug, codigo_base)
@@ -2207,7 +2252,7 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
         try:
             root, _archivo_editable = _lsp_root_y_editable(tipo, slug, codigo)
         except ApiError as e:
-            self._error(e.status, e.mensaje)
+            self._error(e.status, e.mensaje, e.extra)
             return
 
         if not ws_server.es_peticion_upgrade(self.headers):

@@ -1,3 +1,5 @@
+import { obtenerDeviceId } from "./composables/deviceId.js";
+
 const enc = encodeURIComponent;
 
 // Auth (Etapa 20). request() no necesita `credentials: "include"` -- la SPA se sirve desde el
@@ -67,7 +69,10 @@ async function request(path, options = {}) {
     // respuesta sin cuerpo JSON (no debería ocurrir en /api/...)
   }
   if (!res.ok) {
-    throw new Error(data?.error || `error ${res.status}`);
+    const err = new Error(data?.error || `error ${res.status}`);
+    err.status = res.status;
+    err.hasta = data?.hasta;
+    throw err;
   }
   return data;
 }
@@ -288,7 +293,7 @@ export async function getTyp(slug, codigo) {
 export function putTyp(slug, codigo, contenido) {
   return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/typ`, {
     method: "PUT",
-    body: JSON.stringify({ contenido }),
+    body: JSON.stringify({ contenido, device_id: obtenerDeviceId() }),
   });
 }
 
@@ -299,7 +304,7 @@ export function getMetaDoc(slug, codigo) {
 export function putMetaDoc(slug, codigo, cambios) {
   return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/meta`, {
     method: "PUT",
-    body: JSON.stringify(cambios),
+    body: JSON.stringify({ ...cambios, device_id: obtenerDeviceId() }),
   });
 }
 
@@ -368,14 +373,14 @@ export function eliminarArchivoDoc(slug, codigo, ruta) {
 export function guardarVersion(slug, codigo, mensaje) {
   return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/save`, {
     method: "POST",
-    body: JSON.stringify({ mensaje }),
+    body: JSON.stringify({ mensaje, device_id: obtenerDeviceId() }),
   });
 }
 
 export function compilar(slug, codigo, mensaje) {
   return request(`/api/orgs/${enc(slug)}/documentos/${enc(codigo)}/compile`, {
     method: "POST",
-    body: JSON.stringify({ mensaje }),
+    body: JSON.stringify({ mensaje, device_id: obtenerDeviceId() }),
   });
 }
 

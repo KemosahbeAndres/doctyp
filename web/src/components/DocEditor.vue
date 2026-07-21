@@ -43,6 +43,24 @@ const refreshSignalLocal = ref(0);
 const guardando = ref(false);
 const guardadoHora = ref("");
 const tinymistPreviewRef = ref(null);
+const bloqueado = ref(null); // {hasta} mientras otro equipo tiene el documento en edición
+
+function _horaDesde(iso) {
+  return new Date(iso).toLocaleTimeString("es-CL", { hour12: false });
+}
+
+let temporizadorDesbloqueo = null;
+// Común a autoguardar/subirVersion/compilarDoc (los tres llaman putTyp): si el fallo es un 423
+// (documento en edición en otro equipo), muestra el banner de solo lectura en vez del mensaje de
+// error genérico, y programa el reintento automático para cuando venza el bloqueo reportado.
+function manejarPosibleBloqueo(e) {
+  if (e.status !== 423) return false;
+  bloqueado.value = { hasta: e.hasta };
+  clearTimeout(temporizadorDesbloqueo);
+  const ms = Math.max(0, new Date(e.hasta).getTime() - Date.now());
+  temporizadorDesbloqueo = setTimeout(() => { bloqueado.value = null; }, ms);
+  return true;
+}
 
 const sucio = computed(() => texto.value !== original.value);
 watch(sucio, (v) => emit("sucio-cambio", v));
@@ -123,8 +141,10 @@ async function autoguardar() {
     // (pedido del usuario): reasegurar tinymist fire-and-forget tras cada autoguardado exitoso.
     tinymistPreviewRef.value?.reconectar();
   } catch (e) {
-    mensaje.value = `Autoguardado falló: ${e.message}`;
-    mensajeEsError.value = true;
+    if (!manejarPosibleBloqueo(e)) {
+      mensaje.value = `Autoguardado falló: ${e.message}`;
+      mensajeEsError.value = true;
+    }
   } finally {
     guardando.value = false;
   }
@@ -168,8 +188,10 @@ async function subirVersion() {
     refreshSignalLocal.value++;
     emit("cambio-en-servidor");
   } catch (e) {
-    mensaje.value = `Error al subir versión: ${e.message}`;
-    mensajeEsError.value = true;
+    if (!manejarPosibleBloqueo(e)) {
+      mensaje.value = `Error al subir versión: ${e.message}`;
+      mensajeEsError.value = true;
+    }
   } finally {
     ocupado.value = false;
   }
@@ -194,8 +216,10 @@ async function compilarDoc() {
     refreshSignalLocal.value++;
     emit("cambio-en-servidor");
   } catch (e) {
-    mensaje.value = `Error al compilar: ${e.message}`;
-    mensajeEsError.value = true;
+    if (!manejarPosibleBloqueo(e)) {
+      mensaje.value = `Error al compilar: ${e.message}`;
+      mensajeEsError.value = true;
+    }
   } finally {
     ocupado.value = false;
   }
@@ -246,7 +270,10 @@ defineExpose({ ocupado, subirVersion, compilarDoc, abrirMetadatos: () => { mostr
     <div v-if="!codigo" class="empty-state">Selecciona un documento para editarlo.</div>
     <template v-else>
       <div v-if="cargando" class="empty-state">Cargando…</div>
-      <div v-if="mensaje" class="estado editor-mensaje" :style="{ color: mensajeEsError ? 'var(--danger)' : undefined }">
+      <div v-if="bloqueado" class="estado editor-mensaje" style="color: var(--danger)">
+        Documento en edición en otro equipo — de solo lectura hasta {{ _horaDesde(bloqueado.hasta) }}.
+      </div>
+      <div v-else-if="mensaje" class="estado editor-mensaje" :style="{ color: mensajeEsError ? 'var(--danger)' : undefined }">
         {{ mensaje }}
       </div>
       <div class="editor-body">
@@ -260,7 +287,7 @@ defineExpose({ ocupado, subirVersion, compilarDoc, abrirMetadatos: () => { mostr
           <CodeEditor
             class="editor-textarea"
             v-model="texto"
-            :disabled="cargando"
+            :disabled="cargando || !!bloqueado"
             :slug="slug"
             :codigo="codigo"
             tipo="doc"

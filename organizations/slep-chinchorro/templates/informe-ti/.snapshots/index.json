@@ -21,6 +21,230 @@
       "creado": "2026-07-21T12:08:09",
       "mensaje": "Respaldo automático por sincronización (conflicto)",
       "snapshot": ".snapshots/lib_v3.typ"
+    },
+    {
+      "version": 4,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:14:02",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v4.typ"
+    },
+    {
+      "version": 5,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:15:46",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v5.typ"
+    },
+    {
+      "version": 6,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:17:21",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v6.typ"
+    },
+    {
+      "version": 7,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:18:51",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v7.typ"
+    },
+    {
+      "version": 8,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:20:26",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v8.typ"
+    },
+    {
+      "version": 9,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:23:33",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v9.typ"
+    },
+    {
+      "version": 10,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:28:12",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v10.typ"
+    },
+    {
+      "version": 11,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:32:50",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v11.typ"
+    },
+    {
+      "version": 12,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:34:11",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v12.typ"
+    },
+    {
+      "version": 13,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:36:21",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v13.typ"
+    },
+    {
+      "version": 14,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:38:12",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v14.typ"
+    },
+    {
+      "version": 15,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:39:44",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v15.typ"
+    },
+    {
+      "version": 16,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:41:09",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v16.typ"
+    },
+    {
+      "version": 17,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:43:28",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v17.typ"
+    },
+    {
+      "version": 18,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:44:52",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v18.typ"
+    },
+    {
+      "version": 19,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:45:49",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v19.typ"
+    },
+    {
+      "version": 20,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:46:47",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v20.typ"
+    },
+    {
+      "version": 21,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:47:44",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v21.typ"
+    },
+    {
+      "version": 22,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:48:41",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v22.typ"
+    },
+    {
+      "version": 23,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:49:39",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v23.typ"
+    },
+    {
+      "version": 24,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:51:01",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v24.typ"
+    },
+    {
+      "version": 25,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:52:17",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v25.typ"
+    },
+    {
+      "version": 26,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:53:40",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v26.typ"
+    },
+    {
+      "version": 27,
+      "fecha": "20260721",
+      "creado": "2026-07-21T12:55:15",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v27.typ"
+    },
+    {
+      "version": 28,
+      "fecha": "20260721",
+      "creado": "2026-07-21T13:02:16",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v28.typ"
+    },
+    {
+      "version": 29,
+      "fecha": "20260721",
+      "creado": "2026-07-21T13:08:03",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v29.typ"
+    },
+    {
+      "version": 30,
+      "fecha": "20260721",
+      "creado": "2026-07-21T13:10:31",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v30.typ"
+    },
+    {
+      "version": 31,
+      "fecha": "20260721",
+      "creado": "2026-07-21T13:12:02",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v31.typ"
+    },
+    {
+      "version": 32,
+      "fecha": "20260721",
+      "creado": "2026-07-21T13:13:48",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v32.typ"
+    },
+    {
+      "version": 33,
+      "fecha": "20260721",
+      "creado": "2026-07-21T13:15:04",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v33.typ"
+    },
+    {
+      "version": 34,
+      "fecha": "20260721",
+      "creado": "2026-07-21T13:16:19",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v34.typ"
+    },
+    {
+      "version": 35,
+      "fecha": "20260721",
+      "creado": "2026-07-21T13:17:33",
+      "mensaje": "Respaldo automático por sincronización (conflicto)",
+      "snapshot": ".snapshots/lib_v35.typ"
     }
   ]
 }

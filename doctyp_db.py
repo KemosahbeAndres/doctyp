@@ -141,6 +141,14 @@ CREATE TABLE IF NOT EXISTS correlative_counters (
     ultimo  INTEGER NOT NULL,
     PRIMARY KEY (org_id, anio)
 );
+
+CREATE TABLE IF NOT EXISTS document_locks (
+    org_id      TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    codigo_base TEXT NOT NULL,
+    device_id   TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    PRIMARY KEY (org_id, codigo_base)
+);
 """
 
 
@@ -475,6 +483,39 @@ def asignar_correlativo(slug: str, anio: int, fallback: int = 0) -> int:
                 (proximo, org_id, anio),
             )
         return proximo
+
+
+# ── Bloqueo de edición de documentos ────────────────────────────────────────────────────────
+
+def refrescar_bloqueo(slug: str, codigo_base: str, device_id: str, ttl_segundos: int = 300) -> dict:
+    """Adquiere o refresca el bloqueo de edición de un documento para `device_id`. Si ya está
+    bloqueado por OTRO device_id y no ha expirado, no otorga ni modifica nada (devuelve
+    {"otorgado": False, "hasta": <iso>}). Si no hay fila, expiró, o el dueño es el mismo
+    device_id, la extiende ttl_segundos desde ahora (devuelve {"otorgado": True, "hasta": <iso>}).
+    BEGIN IMMEDIATE (mismo criterio que asignar_correlativo): toma el lock de escritura ya al
+    empezar, así que decidir en Python entre el SELECT y el INSERT/UPDATE es tan seguro como una
+    sola sentencia SQL, y más legible que expresar la denegación como un WHERE de upsert."""
+    import datetime
+    conn = _connect()
+    with _tx(conn, immediate=True):
+        org_id = _org_id(conn, slug)
+        ahora = datetime.datetime.now()
+        ahora_iso = ahora.isoformat(timespec="seconds")
+        fila = conn.execute(
+            "SELECT device_id, expires_at FROM document_locks WHERE org_id = ? AND codigo_base = ?",
+            (org_id, codigo_base),
+        ).fetchone()
+        if fila is not None and fila["device_id"] != device_id and fila["expires_at"] > ahora_iso:
+            return {"otorgado": False, "hasta": fila["expires_at"]}
+        hasta = (ahora + datetime.timedelta(seconds=ttl_segundos)).isoformat(timespec="seconds")
+        conn.execute(
+            """INSERT INTO document_locks(org_id, codigo_base, device_id, expires_at)
+               VALUES (?,?,?,?)
+               ON CONFLICT(org_id, codigo_base) DO UPDATE SET device_id=excluded.device_id,
+                                                               expires_at=excluded.expires_at""",
+            (org_id, codigo_base, device_id, hasta),
+        )
+        return {"otorgado": True, "hasta": hasta}
 
 
 # ── Usuarios (Etapa 20) ────────────────────────────────────────────────────────────────────

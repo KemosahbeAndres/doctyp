@@ -16,6 +16,7 @@ para pruebas automatizadas (mismo patrón que DOCTYP_DOCS_ROOT/DOCTYP_ORGS_DIR).
 from __future__ import annotations
 import base64
 import datetime
+import hashlib
 import json
 import os
 import shutil
@@ -31,7 +32,9 @@ DOCTYP_REMOTE_HOST = os.environ.get("DOCTYP_REMOTE_HOST_OVERRIDE") or "https://d
 
 
 class SyncError(Exception):
-    pass
+    def __init__(self, mensaje: str, status: int | None = None):
+        super().__init__(mensaje)
+        self.status = status
 
 
 # ── Cliente HTTP ───────────────────────────────────────────────────────────────────────────
@@ -60,7 +63,7 @@ def _peticion(metodo: str, ruta: str, cookie: str | None = None, cuerpo: dict | 
             mensaje = json.loads(mensaje).get("error", mensaje)
         except (json.JSONDecodeError, AttributeError):
             pass
-        raise SyncError(f"{e.code} {mensaje}")
+        raise SyncError(f"{e.code} {mensaje}", status=e.code)
     except urllib.error.URLError as e:
         raise SyncError(f"no se pudo conectar a {DOCTYP_REMOTE_HOST}: {e.reason}")
     except OSError as e:
@@ -141,6 +144,19 @@ def borrar_sesion() -> None:
     core.guardar_settings(settings)
 
 
+def device_id_local() -> str:
+    """UUID persistido en settings.json → local.device_id, generado la primera vez que se
+    necesita. Estable entre invocaciones -- lo que distingue a ESTE equipo de otro para el
+    bloqueo de edición del servidor (ver doctyp_web.py: _verificar_y_refrescar_bloqueo)."""
+    import uuid
+    settings = core.cargar_settings()
+    local = settings.setdefault("local", {})
+    if not local.get("device_id"):
+        local["device_id"] = uuid.uuid4().hex
+        core.guardar_settings(settings)
+    return local["device_id"]
+
+
 # ── Archivos: listar local / bajar / subir ──────────────────────────────────────────────────
 
 def _listar_archivos_locales(carpeta: Path) -> list[str]:
@@ -184,7 +200,22 @@ def _subir_carpeta(cookie: str, ruta_sync: str, carpeta: Path) -> None:
         archivos[rel] = base64.b64encode((carpeta / rel).read_bytes()).decode("ascii")
     if not archivos:
         return
-    _peticion_json("POST", ruta_sync, cookie, {"archivos": archivos})
+    _peticion_json("POST", ruta_sync, cookie, {"archivos": archivos, "device_id": device_id_local()})
+
+
+def _hash_carpeta(carpeta: Path) -> str | None:
+    """Espejo exacto de _hash_carpeta en doctyp_web.py, sobre el mismo listado que ya usa
+    _subir_carpeta (_listar_archivos_locales -- ya incluye el .typ/lib.typ principal, mismas
+    exclusiones que el servidor) -- contenido idéntico produce el mismo hash en ambos lados."""
+    archivos = _listar_archivos_locales(carpeta)
+    if not archivos:
+        return None
+    h = hashlib.sha256()
+    for rel in archivos:
+        h.update(rel.encode("utf-8"))
+        h.update(b"\0")
+        h.update(hashlib.sha256((carpeta / rel).read_bytes()).digest())
+    return h.hexdigest()
 
 
 # ── Sincronización ───────────────────────────────────────────────────────────────────────────
@@ -281,9 +312,19 @@ def sincronizar_documento(slug: str, codigo_base: str) -> None:
         _mirror_registro_local_doc(slug, remoto)
         return
 
+    hash_local = _hash_carpeta(carpeta)
+    if hash_local is not None and hash_local == remoto.get("hash"):
+        return  # contenido idéntico -- no-op real: sin escritura, sin tocar mtime, sin llamar a /sync
+
     mtime_local = typ_local.stat().st_mtime
     if mtime_local >= remoto["mtime"]:
-        _subir_carpeta(cookie, ruta_sync, carpeta)
+        try:
+            _subir_carpeta(cookie, ruta_sync, carpeta)
+        except SyncError as e:
+            if e.status == 423:
+                print(f"  {codigo_base}: en edición en otro equipo, no se sube esta vez")
+                return
+            raise
     else:
         _respaldar_documento_perdedor(carpeta, codigo_base)
         _mirror_registro_local_doc(slug, remoto)
@@ -308,6 +349,10 @@ def _sincronizar_plantilla(slug: str, nombre: str, remoto: dict | None) -> None:
     if not lib_local.exists():
         _bajar_carpeta(cookie, ruta_archivos, ruta_archivo, carpeta, "lib.typ", ruta_lib)
         return
+
+    hash_local = _hash_carpeta(carpeta)
+    if hash_local is not None and hash_local == remoto.get("hash"):
+        return  # contenido idéntico -- no-op real, mismo criterio que sincronizar_documento
 
     mtime_local = lib_local.stat().st_mtime
     if mtime_local >= remoto["mtime"]:
@@ -345,7 +390,11 @@ def sincronizar_todo() -> list[str]:
         remotos_doc = {d["codigo_base"]: d for d in manifiesto["documentos"]}
         locales_doc = {p.name for p in carpeta_org.iterdir() if p.is_dir()} if carpeta_org.exists() else set()
         for codigo_base in sorted(remotos_doc.keys() | locales_doc):
-            sincronizar_documento(slug, codigo_base)
+            try:
+                sincronizar_documento(slug, codigo_base)
+            except SyncError as e:
+                print(f"  advertencia: {slug}/{codigo_base} no se sincronizó ({e})")
+                continue
 
         remotos_tpl = {t["nombre"]: t for t in manifiesto["plantillas"]}
         base_tpl = core.org_dir(slug) / "templates"
