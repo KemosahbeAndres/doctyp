@@ -465,6 +465,7 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 20 | **Login básico** (PLAN-V4.md §4, §7): `doctyp_auth.py`, scrypt, sesiones por cookie, bootstrap (sin usuarios → alta del primer usuario; único usuario sin password → fijarla en el primer login). Alcance recortado respecto al plan original (sin `api_tokens`, sin roles/admin en la SPA, sin invitaciones) — ver PLAN-V4.md §7 para el detalle y lo que falta. | **Completada** (alcance reducido, ver PLAN-V4.md §7) |
 | 21 | **Icono de bandeja del sistema** para `doctyp_sync_daemon.py` (pedido explícito del usuario, 2026-07-21, Fedora/KDE Plasma, extendido 2026-07-22): tooltip y menú con usuario logueado y último documento/plantilla sincronizado (nombre, tamaño, fecha/hora); submenú "Cambiar de usuario" (siempre pide contraseña, ver nota) y "Cerrar sesión". El daemon posee el icono directamente (mismo proceso, sin IPC), vía `PySide6` (Qt) — degrada a headless si falta la dependencia o no hay sesión gráfica. Ver notas debajo de la tabla. | **Completada** (ver notas — verificación visual/clics reales en KDE pendiente por el usuario) |
 | 22 | **Sincronización consciente de renombres** (pedido explícito del usuario, 2026-07-22): renombrar un documento (`doctyp change`) o una imagen dentro de su carpeta (a mano, en el explorador de archivos) ya no se sincroniza como "borrar + crear nuevo" — se propaga/detecta como el renombre que es, sin duplicar ni dejar huérfanos. Alcance: solo documentos (plantillas fuera de alcance, confirmado con el usuario). Ver nota debajo de la tabla. | **Completada** (verificado end-to-end con un servidor de prueba real, ver nota) |
+| 23 | **Sincronización consciente de eliminaciones** (pedido explícito del usuario, 2026-07-22, extiende la Etapa 22): eliminar una imagen dentro de la carpeta de un documento (local o remoto) ya no la deja huérfana en el otro lado ni la resucita en el próximo sync — se mueve a una carpeta `.trash/` (nunca se borra de verdad) para poder recuperarla a mano. Requirió agregar una referencia local de "última vez que ambos lados estuvieron de acuerdo" (`.ultimo-sync.json` por documento) — sin eso no se puede distinguir de forma segura un archivo eliminado de uno genuinamente nuevo. Ver nota debajo de la tabla. | **Completada** (verificado end-to-end con un servidor de prueba real, ver nota) |
 
 
 **Nota sobre el alcance real de la Etapa 12** (investigación hecha leyendo el paquete instalado
@@ -1525,7 +1526,69 @@ rename hoy y quedan fuera.
 - **Sin tocar en esta etapa**: plantillas (confirmado fuera de alcance); borrado general de
   archivos ausentes (la detección de renombre solo actúa sobre pares con hash idéntico — un
   archivo que de verdad se borró en un lado sigue sin propagarse como borrado en el otro, mismo
-  comportamiento aditivo de siempre, no fue lo que se pidió).
+  comportamiento aditivo de siempre, no fue lo que se pidió). **⚠ Superado en la Etapa 23**: el
+  usuario pidió exactamente ese caso a continuación — ver esa nota.
+
+**Nota sobre el alcance real de la Etapa 23** (sincronización consciente de eliminaciones,
+pedido explícito del usuario 2026-07-22, extiende directamente la Etapa 22 — plan discutido y
+aprobado antes de implementar, CLAUDE.md §0; se trató con el mismo cuidado que cualquier
+operación destructiva, aunque el resultado nunca borra de verdad).
+
+- **Por qué hace falta más que comparar los dos lados (a diferencia del renombre).** La
+  detección de renombres (Etapa 22) compara SOLO el presente: un archivo que aparece solo-local
+  y otro solo-remoto con el MISMO hash es inequívocamente un renombre, sin importar el
+  historial. Una eliminación no tiene esa señal — un archivo que existe solo en un lado puede
+  ser (a) uno recién creado ahí que todavía no se sincronizó, o (b) uno que existía en ambos
+  lados y se borró en el otro. Sin más información, equivocarse en cualquier dirección es
+  grave: tratar (a) como eliminación manda a la papelera un archivo nuevo real; tratar (b) como
+  "hay que copiarlo" resucita algo que el usuario borró a propósito. La única forma correcta de
+  distinguirlos es un punto de referencia de "qué se sabía la última vez que ambos lados
+  estuvieron de acuerdo" — el mismo problema que resuelven git/rsync/Dropbox con un ancestro
+  común. Antes de esta etapa, `doctyp_sync.py` no guardaba ningún estado así.
+- **`.ultimo-sync.json`** (nuevo, dentro de cada carpeta de documento, oculto -- ya queda
+  excluido de `_listar_archivos_locales`/`_listar_archivos_carpeta` igual que `.snapshots/`,
+  cualquier ruta que empiece con `.`): `{ruta: sha256}` de todos los archivos tal como quedaron
+  la última vez que el documento terminó de sincronizar en cualquier dirección — push, pull, o
+  el no-op cuando el hash agregado ya coincidía (`sincronizar_documento`, `doctyp_sync.py`,
+  todos los puntos de salida exitosos). Si no existe (documento sincronizado antes de esta
+  etapa, o primera vez), la detección de eliminación simplemente no dispara hasta el primer
+  sync exitoso que lo cree — comportamiento seguro por defecto, sin falsos positivos en la
+  transición.
+- **`_detectar_renombres` (Etapa 22) se generalizó a `_detectar_cambios_archivos(locales,
+  remotos, base)`** (`doctyp_sync.py`): primero empareja renombres exactamente igual que antes;
+  sobre lo que queda sin emparejar, compara contra `base` -- si una ruta estaba ahí y el lado
+  que todavía la tiene no le cambió el hash desde el último sync, su ausencia en el otro lado es
+  una eliminación real (no un archivo nuevo, que nunca habría estado en `base`; no uno editado
+  después del último sync, que ya no calzaría con el hash de `base` -- ahí se deja para el flujo
+  normal en vez de arriesgar un borrado sobre algo modificado). Devuelve `eliminados_local`
+  (rutas que ya no están en local -- hay que avisarle al servidor) y `eliminados_remoto` (rutas
+  que ya no están en el servidor -- hay que aplicarlo en local), además de `renombres`.
+- **Nunca se borra de verdad, en ningún lado.** `eliminados_local` viaja en un campo nuevo
+  `eliminados` del payload de `POST .../documentos/<codigo>/sync` (`_subir_carpeta`, junto al
+  `renombrados` que ya existía); `api_doc_sync` (`doctyp_web.py`) los mueve a
+  `dest_dir/.trash/<nombre>_eliminado_<marca>.<ext>` (mismo criterio de marca de tiempo que
+  `_respaldar_typ_antes_de_sync`) en vez de `Path.unlink()`. `eliminados_remoto` se aplica en
+  LOCAL con el mismo criterio (`_mover_a_trash`, espejo cliente/servidor) antes de la bajada
+  completa -- el pedido explícito solo exigía la papelera en remoto, pero aplicar lo mismo en
+  local es igual de barato y evita que un archivo eliminado remotamente quede huérfano en el
+  equipo que lo recibe. `.trash/` queda excluido de los listados de archivos igual que
+  `.snapshots/`, así que no reaparece como "archivo nuevo" en el siguiente sync. No hay comando
+  de "restaurar desde `.trash`" (no se pidió una UX de recuperación, solo que quedara
+  recuperable) ni política de limpieza de `.trash/` (no se pidió).
+- **Alcance**: solo archivos DENTRO de la carpeta de un documento, nunca el `.typ` principal --
+  borrar el `.typ` es borrar el documento entero, ya cubierto por `doctyp delete`, no por este
+  mecanismo de archivos sueltos (imágenes). Documentos, no plantillas (mismo alcance ya
+  confirmado en la Etapa 22).
+- **Verificado end-to-end con un servidor real** (mismo montaje que la Etapa 22: usuario, org,
+  documento con dos imágenes, todo aislado vía `DOCTYP_DB_PATH`/`DOCTYP_ORGS_DIR`/
+  `DOCTYP_DOCS_ROOT`/`DOCTYP_SETTINGS_PATH`/`DOCTYP_REMOTE_HOST_OVERRIDE`, sin tocar
+  `slep-chinchorro`): (1) eliminar una imagen en LOCAL y sincronizar deja el servidor con la
+  otra imagen únicamente, la eliminada en `.trash/` del servidor con su contenido intacto, sin
+  duplicar; (2) un segundo sync no la resucita; (3) eliminar la imagen restante en el SERVIDOR y
+  sincronizar deja local sin esa imagen, movida a `.trash/` local, sin volver a subirse sola;
+  (4) un archivo genuinamente nuevo se sube normal, nunca se confunde con una eliminación. Los
+  cuatro escenarios pasaron. Scripts de prueba descartados tras validar (no quedaron en el
+  repo).
 
 ---
 

@@ -224,22 +224,27 @@ def _bajar_carpeta(cookie: str, ruta_archivos: str, ruta_archivo_tpl: str, carpe
 
 
 def _subir_carpeta(cookie: str, ruta_sync: str, carpeta: Path,
-                    renombrados: list[dict] | None = None) -> None:
-    """`renombrados` ([{'de', 'a'}], opcional) son pares detectados por _detectar_renombres --
-    el servidor los aplica como Path.rename() puro (api_doc_sync, doctyp_web.py) ANTES de
-    escribir `archivos`, así que el destino ('a') se excluye de `archivos` acá: su contenido no
-    cambió, solo el nombre, no hace falta retransferir los bytes."""
+                    renombrados: list[dict] | None = None,
+                    eliminados: list[str] | None = None) -> None:
+    """`renombrados` ([{'de', 'a'}], opcional) son pares detectados por
+    _detectar_cambios_archivos -- el servidor los aplica como Path.rename() puro (api_doc_sync,
+    doctyp_web.py) ANTES de escribir `archivos`, así que el destino ('a') se excluye de
+    `archivos` acá: su contenido no cambió, solo el nombre, no hace falta retransferir los
+    bytes. `eliminados` (opcional) son rutas que ya no existen en local -- el servidor las mueve
+    a .trash/ (nunca las borra de verdad) en vez de dejarlas huérfanas."""
     renombrados = renombrados or []
+    eliminados = eliminados or []
     excluir = {p["a"] for p in renombrados}
     archivos = {}
     for rel in _listar_archivos_locales(carpeta):
         if rel in excluir:
             continue
         archivos[rel] = base64.b64encode((carpeta / rel).read_bytes()).decode("ascii")
-    if not archivos and not renombrados:
+    if not archivos and not renombrados and not eliminados:
         return
     _peticion_json("POST", ruta_sync, cookie,
-                    {"archivos": archivos, "renombrados": renombrados, "device_id": device_id_local()})
+                    {"archivos": archivos, "renombrados": renombrados, "eliminados": eliminados,
+                     "device_id": device_id_local()})
 
 
 def _hash_carpeta(carpeta: Path) -> str | None:
@@ -260,42 +265,112 @@ def _hash_carpeta(carpeta: Path) -> str | None:
 def _hashes_por_archivo_local(carpeta: Path) -> dict[str, str]:
     """Espejo cliente de _hashes_por_archivo en doctyp_web.py -- sha256 por archivo (ruta
     relativa → hex), mismo listado que _listar_archivos_locales. Base de la detección de
-    renombres por contenido (ver _detectar_renombres)."""
+    renombres/eliminaciones por contenido (ver _detectar_cambios_archivos)."""
     return {rel: hashlib.sha256((carpeta / rel).read_bytes()).hexdigest()
             for rel in _listar_archivos_locales(carpeta)}
 
 
-def _detectar_renombres(locales: dict[str, str], remotos: dict[str, str]) -> list[dict]:
-    """Empareja por contenido (sha256) los archivos que solo existen en un lado -- mismo
-    principio que usa git para detectar renombres, sin necesitar ninguna marca persistida (el
-    contenido no cambió, solo el nombre, así que no hace falta rastrear identidad -- alcanza con
-    comparar bytes). Devuelve pares {'local': ruta, 'remoto': ruta}; el llamador
-    (sincronizar_documento) decide la dirección 'de'/'a' según quién gane el sync."""
+# ── Base de sync (detección de eliminaciones) ───────────────────────────────────────────────
+
+_ARCHIVO_BASE_SYNC = ".ultimo-sync.json"
+
+
+def _ruta_base_sync(carpeta: Path) -> Path:
+    return carpeta / _ARCHIVO_BASE_SYNC
+
+
+def _leer_base_sync(carpeta: Path) -> dict[str, str]:
+    """{ruta: hash} tal como quedaron los archivos la última vez que este documento terminó de
+    sincronizar (push, pull, o el no-op cuando el hash agregado ya coincidía) -- el punto de
+    referencia que hace falta para distinguir 'archivo nuevo, todavía no sincronizado' de
+    'archivo que existía y se borró en el otro lado' (ver _detectar_cambios_archivos). Si no
+    existe (documento sincronizado antes de esta función, o primera vez), {} -- sin base, la
+    detección de eliminación simplemente no dispara: comportamiento seguro por defecto, nunca
+    un falso positivo por falta de historial."""
+    p = _ruta_base_sync(carpeta)
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _escribir_base_sync(carpeta: Path, hashes: dict[str, str]) -> None:
+    core._escribir_json_atomico(_ruta_base_sync(carpeta), hashes)
+
+
+def _mover_a_trash(carpeta: Path, ruta_relativa: str) -> None:
+    """Mueve (nunca borra) un archivo eliminado a .trash/ dentro de la carpeta -- mismo criterio
+    de marca de tiempo que _respaldar_documento_perdedor, para poder recuperarlo a mano. .trash/
+    ya queda excluido de _listar_archivos_locales (cualquier ruta que empiece con '.'), así que
+    no reaparece como 'archivo nuevo' en el próximo sync."""
+    origen = carpeta / ruta_relativa
+    if not origen.is_file():
+        return
+    trash = carpeta / ".trash"
+    trash.mkdir(exist_ok=True)
+    marca = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    destino = trash / f"{origen.stem}_eliminado_{marca}{origen.suffix}"
+    origen.rename(destino)
+
+
+# ── Detección de renombres/eliminaciones por contenido ──────────────────────────────────────
+
+def _detectar_cambios_archivos(locales: dict[str, str], remotos: dict[str, str],
+                                base: dict[str, str]) -> dict:
+    """Sobre los archivos que solo existen en un lado: primero los empareja por contenido
+    (sha256) -- mismo principio que usa git para detectar renombres, sin necesitar ninguna marca
+    persistida (el contenido no cambió, solo el nombre). A los que quedan sin emparejar, los
+    compara contra `base` (ver _leer_base_sync): si una ruta estaba ahí y el lado que todavía la
+    tiene no le cambió el hash desde entonces, su ausencia en el otro lado es una eliminación
+    real -- no un archivo nuevo (que nunca habría estado en `base`) ni uno editado después del
+    último sync (que ya no calzaría con el hash de `base`, y se deja para el flujo normal en vez
+    de arriesgar un borrado sobre algo modificado). Devuelve {'renombres': [{'local','remoto'}],
+    'eliminados_local': [ruta,...], 'eliminados_remoto': [ruta,...]} -- 'eliminados_local' son
+    rutas que ya no están en local (hay que avisarle al servidor); 'eliminados_remoto' son rutas
+    que ya no están en el servidor (hay que aplicarlo en local)."""
     solo_locales = {r: h for r, h in locales.items() if r not in remotos}
     solo_remotos = {r: h for r, h in remotos.items() if r not in locales}
+
     por_hash_remoto: dict[str, list[str]] = {}
     for ruta, h in solo_remotos.items():
         por_hash_remoto.setdefault(h, []).append(ruta)
-    pares = []
-    usados: set[str] = set()
+
+    renombres = []
+    emparejados_remotos: set[str] = set()
+    emparejados_locales: set[str] = set()
     for ruta_local, h in solo_locales.items():
-        candidatos = [r for r in por_hash_remoto.get(h, []) if r not in usados]
+        candidatos = [r for r in por_hash_remoto.get(h, []) if r not in emparejados_remotos]
         if candidatos:
             ruta_remota = candidatos[0]
-            usados.add(ruta_remota)
-            pares.append({"local": ruta_local, "remoto": ruta_remota})
-    return pares
+            emparejados_remotos.add(ruta_remota)
+            emparejados_locales.add(ruta_local)
+            renombres.append({"local": ruta_local, "remoto": ruta_remota})
+
+    eliminados_local = [
+        ruta for ruta, h in solo_remotos.items()
+        if ruta not in emparejados_remotos and base.get(ruta) == h
+    ]
+    eliminados_remoto = [
+        ruta for ruta, h in solo_locales.items()
+        if ruta not in emparejados_locales and base.get(ruta) == h
+    ]
+    return {"renombres": renombres, "eliminados_local": eliminados_local,
+            "eliminados_remoto": eliminados_remoto}
 
 
-def _renombres_detectados(cookie: str, slug: str, codigo_base: str, carpeta: Path) -> list[dict]:
+def _cambios_detectados(cookie: str, slug: str, codigo_base: str, carpeta: Path) -> dict:
     """Best-effort: si el endpoint de hashes falla (servidor viejo sin el endpoint, red), no
-    bloquea el sync normal -- detectar renombres es un plus, no un requisito para sincronizar."""
+    bloquea el sync normal -- detectar renombres/eliminaciones es un plus, no un requisito."""
+    vacio = {"renombres": [], "eliminados_local": [], "eliminados_remoto": []}
     try:
         remotos_hash = _peticion_json(
             "GET", f"/api/orgs/{slug}/documentos/{codigo_base}/archivos-hash", cookie)
     except SyncError:
-        return []
-    return _detectar_renombres(_hashes_por_archivo_local(carpeta), remotos_hash)
+        return vacio
+    locales_hash = _hashes_por_archivo_local(carpeta)
+    return _detectar_cambios_archivos(locales_hash, remotos_hash, _leer_base_sync(carpeta))
 
 
 # ── Sincronización ───────────────────────────────────────────────────────────────────────────
@@ -466,6 +541,7 @@ def sincronizar_documento(slug: str, codigo_base: str, on_evento: EventoSync | N
     if remoto is None:
         if typ_local.exists():
             _subir_carpeta(cookie, ruta_sync, carpeta)
+            _escribir_base_sync(carpeta, _hashes_por_archivo_local(carpeta))
             _notificar(on_evento, tipo="documento", slug=slug, nombre=codigo_base,
                        accion="subida", archivo_principal=typ_local)
         return
@@ -473,25 +549,33 @@ def sincronizar_documento(slug: str, codigo_base: str, on_evento: EventoSync | N
         _bajar_carpeta(cookie, ruta_archivos, ruta_archivo, carpeta,
                         f"{codigo_base}.typ", ruta_typ)
         _mirror_registro_local_doc(slug, remoto)
+        _escribir_base_sync(carpeta, _hashes_por_archivo_local(carpeta))
         _notificar(on_evento, tipo="documento", slug=slug, nombre=codigo_base,
                    accion="bajada", archivo_principal=typ_local)
         return
 
     hash_local = _hash_carpeta(carpeta)
     if hash_local is not None and hash_local == remoto.get("hash"):
-        return  # contenido idéntico -- no-op real: sin escritura, sin tocar mtime, sin llamar a /sync
+        # Contenido idéntico -- no-op real: sin escritura, sin tocar mtime, sin llamar a /sync.
+        # Igual se refresca la base (barato, idempotente) para que la detección de eliminación
+        # tenga una referencia lo antes posible en documentos sincronizados antes de esta etapa.
+        _escribir_base_sync(carpeta, _hashes_por_archivo_local(carpeta))
+        return
 
     mtime_local = typ_local.stat().st_mtime
-    renombres = _renombres_detectados(cookie, slug, codigo_base, carpeta)
+    cambios = _cambios_detectados(cookie, slug, codigo_base, carpeta)
+    renombres = cambios["renombres"]
     if mtime_local >= remoto["mtime"]:
         try:
             _subir_carpeta(cookie, ruta_sync, carpeta,
-                            renombrados=[{"de": p["remoto"], "a": p["local"]} for p in renombres])
+                            renombrados=[{"de": p["remoto"], "a": p["local"]} for p in renombres],
+                            eliminados=cambios["eliminados_local"])
         except SyncError as e:
             if e.status == 423:
                 print(f"  {codigo_base}: en edición en otro equipo, no se sube esta vez")
                 return
             raise
+        _escribir_base_sync(carpeta, _hashes_por_archivo_local(carpeta))
         _notificar(on_evento, tipo="documento", slug=slug, nombre=codigo_base,
                    accion="subida", archivo_principal=typ_local)
     else:
@@ -503,10 +587,16 @@ def sincronizar_documento(slug: str, codigo_base: str, on_evento: EventoSync | N
             if origen.is_file() and not destino.exists():
                 destino.parent.mkdir(parents=True, exist_ok=True)
                 origen.rename(destino)
+        # Eliminado en el servidor desde el último sync -- se manda a .trash LOCAL en vez de
+        # dejarlo (la bajada de abajo no borra nada por su cuenta, así que sin esto quedaría
+        # huérfano localmente para siempre).
+        for ruta in cambios["eliminados_remoto"]:
+            _mover_a_trash(carpeta, ruta)
         _respaldar_documento_perdedor(carpeta, codigo_base)
         _mirror_registro_local_doc(slug, remoto)
         _bajar_carpeta(cookie, ruta_archivos, ruta_archivo, carpeta,
                         f"{codigo_base}.typ", ruta_typ)
+        _escribir_base_sync(carpeta, _hashes_por_archivo_local(carpeta))
         _notificar(on_evento, tipo="documento", slug=slug, nombre=codigo_base,
                    accion="bajada", archivo_principal=typ_local)
 

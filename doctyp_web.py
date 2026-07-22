@@ -439,6 +439,22 @@ def _respaldar_typ_antes_de_sync(dest_dir: Path, codigo_base: str) -> None:
     shutil.copy2(typ_path, snapshots / f"{codigo_base}_conflicto-sync_{marca}.typ")
 
 
+def _mover_a_trash(dest_dir: Path, ruta_relativa: str) -> None:
+    """Mueve (nunca borra) un archivo eliminado a .trash/ dentro de la carpeta del documento --
+    mismo criterio de marca de tiempo que _respaldar_typ_antes_de_sync, para que quede
+    recuperable a mano. .trash/ queda excluido de _listar_archivos_carpeta/_hashes_por_archivo
+    igual que .snapshots/ (cualquier ruta que empiece con '.'), así que no reaparece como
+    'archivo nuevo' en el próximo sync."""
+    origen = dest_dir / ruta_relativa
+    if not origen.is_file():
+        return
+    trash = dest_dir / ".trash"
+    trash.mkdir(exist_ok=True)
+    marca = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    destino = trash / f"{origen.stem}_eliminado_{marca}{origen.suffix}"
+    origen.rename(destino)
+
+
 def api_doc_sync(slug: str, codigo_base: str, payload: dict) -> dict:
     """POST .../documentos/<codigo_base>/sync -- usado por `doctyp sync` para subir (push) el
     contenido local cuando gana el lado local. Si el documento no existe todavía en el
@@ -448,11 +464,15 @@ def api_doc_sync(slug: str, codigo_base: str, payload: dict) -> dict:
     bumpea versión oficial). `renombrados` (opcional, [{de, a}]) aplica renombres puros -- sin
     bytes de por medio -- ANTES de escribir `archivos`: detección de renombre de archivo por
     contenido (doctyp_sync.py, sincronización consciente de renombres, 2026-07-22), para no
-    dejar el nombre viejo huérfano ni re-transferir un archivo cuyo contenido no cambió."""
+    dejar el nombre viejo huérfano ni re-transferir un archivo cuyo contenido no cambió.
+    `eliminados` (opcional, [ruta,...]) son archivos que ya no existen en local -- se mueven a
+    .trash/ (nunca Path.unlink()) en vez de quedar huérfanos para siempre (sincronización
+    consciente de eliminaciones, 2026-07-22)."""
     org = _cargar_org_api(slug)
     archivos = payload.get("archivos") or {}
     renombrados = payload.get("renombrados") or []
-    if not archivos and not renombrados:
+    eliminados = payload.get("eliminados") or []
+    if not archivos and not renombrados and not eliminados:
         raise ApiError(400, "no se enviaron archivos")
     _verificar_y_refrescar_bloqueo(slug, codigo_base, payload.get("device_id"))
     dest_dir = core.doc_dir(slug, codigo_base)
@@ -474,6 +494,12 @@ def api_doc_sync(slug: str, codigo_base: str, payload: dict) -> dict:
         if origen.is_file() and not destino.exists():
             destino.parent.mkdir(parents=True, exist_ok=True)
             origen.rename(destino)
+    for ruta in eliminados:
+        partes = [p for p in ruta.split("/") if p]
+        if not partes:
+            continue
+        _resolver_ruta_segura(core.docs_root(), slug, codigo_base, *partes)
+        _mover_a_trash(dest_dir, "/".join(partes))
     for ruta, b64 in archivos.items():
         partes = [p for p in ruta.split("/") if p]
         if not partes:
