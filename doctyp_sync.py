@@ -116,11 +116,37 @@ def sesion_activa() -> dict | None:
 
 
 def guardar_sesion(email: str, cookie: str, orgs: list[str] | None = None) -> None:
+    email = email.strip().lower()
     settings = core.cargar_settings()
     settings.setdefault("local", {})["sesion_remota"] = {
         "email": email, "cookie": cookie, "orgs": orgs or [],
     }
+    _recordar_correo(settings, email)
     core.guardar_settings(settings)
+
+
+def _recordar_correo(settings: dict, email: str) -> None:
+    """Upsert en settings.json → local.correos_conocidos -- SOLO el correo y cuándo se usó por
+    última vez, sin cookie (a diferencia de sesion_remota): alimenta el submenú 'Cambiar de
+    usuario' del icono de bandeja (doctyp_tray.py) como un atajo para no reescribir el correo,
+    NUNCA como un cambio de cuenta sin contraseña -- decisión explícita del usuario, cambiar de
+    usuario siempre vuelve a pedir la clave."""
+    local = settings.setdefault("local", {})
+    conocidos = local.setdefault("correos_conocidos", [])
+    ahora = datetime.datetime.now().isoformat(timespec="seconds")
+    for entrada in conocidos:
+        if entrada["email"] == email:
+            entrada["ultimo_uso"] = ahora
+            return
+    conocidos.append({"email": email, "ultimo_uso": ahora})
+
+
+def correos_conocidos() -> list[str]:
+    """Correos que se han logueado alguna vez en este equipo (más recientes primero) -- ver
+    _recordar_correo."""
+    settings = core.cargar_settings()
+    conocidos = settings.get("local", {}).get("correos_conocidos", [])
+    return [e["email"] for e in sorted(conocidos, key=lambda e: e.get("ultimo_uso", ""), reverse=True)]
 
 
 def _actualizar_orgs_sesion(orgs: list[str]) -> None:
@@ -197,13 +223,23 @@ def _bajar_carpeta(cookie: str, ruta_archivos: str, ruta_archivo_tpl: str, carpe
         core._escribir_bytes_atomico(destino, datos)
 
 
-def _subir_carpeta(cookie: str, ruta_sync: str, carpeta: Path) -> None:
+def _subir_carpeta(cookie: str, ruta_sync: str, carpeta: Path,
+                    renombrados: list[dict] | None = None) -> None:
+    """`renombrados` ([{'de', 'a'}], opcional) son pares detectados por _detectar_renombres --
+    el servidor los aplica como Path.rename() puro (api_doc_sync, doctyp_web.py) ANTES de
+    escribir `archivos`, así que el destino ('a') se excluye de `archivos` acá: su contenido no
+    cambió, solo el nombre, no hace falta retransferir los bytes."""
+    renombrados = renombrados or []
+    excluir = {p["a"] for p in renombrados}
     archivos = {}
     for rel in _listar_archivos_locales(carpeta):
+        if rel in excluir:
+            continue
         archivos[rel] = base64.b64encode((carpeta / rel).read_bytes()).decode("ascii")
-    if not archivos:
+    if not archivos and not renombrados:
         return
-    _peticion_json("POST", ruta_sync, cookie, {"archivos": archivos, "device_id": device_id_local()})
+    _peticion_json("POST", ruta_sync, cookie,
+                    {"archivos": archivos, "renombrados": renombrados, "device_id": device_id_local()})
 
 
 def _hash_carpeta(carpeta: Path) -> str | None:
@@ -219,6 +255,47 @@ def _hash_carpeta(carpeta: Path) -> str | None:
         h.update(b"\0")
         h.update(hashlib.sha256((carpeta / rel).read_bytes()).digest())
     return h.hexdigest()
+
+
+def _hashes_por_archivo_local(carpeta: Path) -> dict[str, str]:
+    """Espejo cliente de _hashes_por_archivo en doctyp_web.py -- sha256 por archivo (ruta
+    relativa → hex), mismo listado que _listar_archivos_locales. Base de la detección de
+    renombres por contenido (ver _detectar_renombres)."""
+    return {rel: hashlib.sha256((carpeta / rel).read_bytes()).hexdigest()
+            for rel in _listar_archivos_locales(carpeta)}
+
+
+def _detectar_renombres(locales: dict[str, str], remotos: dict[str, str]) -> list[dict]:
+    """Empareja por contenido (sha256) los archivos que solo existen en un lado -- mismo
+    principio que usa git para detectar renombres, sin necesitar ninguna marca persistida (el
+    contenido no cambió, solo el nombre, así que no hace falta rastrear identidad -- alcanza con
+    comparar bytes). Devuelve pares {'local': ruta, 'remoto': ruta}; el llamador
+    (sincronizar_documento) decide la dirección 'de'/'a' según quién gane el sync."""
+    solo_locales = {r: h for r, h in locales.items() if r not in remotos}
+    solo_remotos = {r: h for r, h in remotos.items() if r not in locales}
+    por_hash_remoto: dict[str, list[str]] = {}
+    for ruta, h in solo_remotos.items():
+        por_hash_remoto.setdefault(h, []).append(ruta)
+    pares = []
+    usados: set[str] = set()
+    for ruta_local, h in solo_locales.items():
+        candidatos = [r for r in por_hash_remoto.get(h, []) if r not in usados]
+        if candidatos:
+            ruta_remota = candidatos[0]
+            usados.add(ruta_remota)
+            pares.append({"local": ruta_local, "remoto": ruta_remota})
+    return pares
+
+
+def _renombres_detectados(cookie: str, slug: str, codigo_base: str, carpeta: Path) -> list[dict]:
+    """Best-effort: si el endpoint de hashes falla (servidor viejo sin el endpoint, red), no
+    bloquea el sync normal -- detectar renombres es un plus, no un requisito para sincronizar."""
+    try:
+        remotos_hash = _peticion_json(
+            "GET", f"/api/orgs/{slug}/documentos/{codigo_base}/archivos-hash", cookie)
+    except SyncError:
+        return []
+    return _detectar_renombres(_hashes_por_archivo_local(carpeta), remotos_hash)
 
 
 # ── Sincronización ───────────────────────────────────────────────────────────────────────────
@@ -303,6 +380,67 @@ def _mirror_registro_local_doc(slug: str, remoto: dict) -> None:
     core.guardar_org(slug, org)
 
 
+# ── Renombre de documento (doctyp change) ───────────────────────────────────────────────────
+
+def renombrar_documento_remoto(slug: str, codigo_anterior: str, codigo_nuevo: str) -> None:
+    """Propaga al servidor un renombre de documento ya hecho localmente (doctyp change) --
+    POST .../documentos/<codigo_anterior>/renombrar. Lanza SyncError si falla (red, o 409 si el
+    código nuevo ya existe en el servidor por otra vía)."""
+    sesion = sesion_activa()
+    if sesion is None:
+        raise SyncError("no hay sesión remota activa")
+    _peticion_json("POST", f"/api/orgs/{slug}/documentos/{codigo_anterior}/renombrar",
+                    sesion["cookie"], {"codigo_nuevo": codigo_nuevo})
+
+
+def encolar_renombre_pendiente(slug: str, codigo_anterior: str, codigo_nuevo: str) -> None:
+    """Registra en settings.json → local.renombres_pendientes un renombre que todavía no se
+    pudo avisar al servidor (sin sesión activa en el momento de 'doctyp change', o falló la
+    llamada inmediata) -- sincronizar_todo() lo procesa en el próximo sync, antes de la
+    reconciliación normal por codigo_base (ver _procesar_renombres_pendientes)."""
+    settings = core.cargar_settings()
+    local = settings.setdefault("local", {})
+    pendientes = local.setdefault("renombres_pendientes", [])
+    pendientes.append({"slug": slug, "codigo_anterior": codigo_anterior, "codigo_nuevo": codigo_nuevo})
+    core.guardar_settings(settings)
+
+
+def _renombres_pendientes() -> list[dict]:
+    settings = core.cargar_settings()
+    return list(settings.get("local", {}).get("renombres_pendientes", []))
+
+
+def _quitar_renombre_pendiente(entrada: dict) -> None:
+    settings = core.cargar_settings()
+    local = settings.setdefault("local", {})
+    local["renombres_pendientes"] = [p for p in local.get("renombres_pendientes", []) if p != entrada]
+    core.guardar_settings(settings)
+
+
+def _procesar_renombres_pendientes(cookie: str) -> None:
+    """Corre ANTES del bucle normal de sincronizar_todo() -- por cada renombre encolado
+    (offline en el momento de 'doctyp change'), si el servidor todavía tiene el código viejo
+    registrado se le avisa recién ahora; si ya tiene el código nuevo (otro equipo lo sincronizó
+    primero, o un intento previo parcial ya lo dejó consistente) no hace falta nada. En ambos
+    casos se limpia la entrada -- después de esto, la reconciliación normal encuentra
+    codigo_nuevo en ambos lados como cualquier documento existente, sin ruta especial."""
+    for entrada in _renombres_pendientes():
+        slug = entrada["slug"]
+        try:
+            manifiesto = _peticion_json("GET", f"/api/orgs/{slug}/sync/manifiesto", cookie)
+        except SyncError:
+            continue  # sin red -- se reintenta en el próximo sync, la entrada queda encolada
+        codigos_remotos = {d["codigo_base"] for d in manifiesto["documentos"]}
+        if entrada["codigo_anterior"] in codigos_remotos:
+            try:
+                renombrar_documento_remoto(slug, entrada["codigo_anterior"], entrada["codigo_nuevo"])
+            except SyncError as e:
+                print(f"  advertencia: no se pudo propagar el renombre pendiente de "
+                      f"{entrada['codigo_anterior']} ({e}); se reintenta después")
+                continue
+        _quitar_renombre_pendiente(entrada)
+
+
 def sincronizar_documento(slug: str, codigo_base: str, on_evento: EventoSync | None = None) -> None:
     """Sincroniza UN documento (usado tras new/save/compile/add -- no vale la pena barrer todas
     las organizaciones por un solo cambio). Silencioso si no hay sesión activa: el llamador
@@ -344,9 +482,11 @@ def sincronizar_documento(slug: str, codigo_base: str, on_evento: EventoSync | N
         return  # contenido idéntico -- no-op real: sin escritura, sin tocar mtime, sin llamar a /sync
 
     mtime_local = typ_local.stat().st_mtime
+    renombres = _renombres_detectados(cookie, slug, codigo_base, carpeta)
     if mtime_local >= remoto["mtime"]:
         try:
-            _subir_carpeta(cookie, ruta_sync, carpeta)
+            _subir_carpeta(cookie, ruta_sync, carpeta,
+                            renombrados=[{"de": p["remoto"], "a": p["local"]} for p in renombres])
         except SyncError as e:
             if e.status == 423:
                 print(f"  {codigo_base}: en edición en otro equipo, no se sube esta vez")
@@ -355,6 +495,14 @@ def sincronizar_documento(slug: str, codigo_base: str, on_evento: EventoSync | N
         _notificar(on_evento, tipo="documento", slug=slug, nombre=codigo_base,
                    accion="subida", archivo_principal=typ_local)
     else:
+        # Aplicar los renombres detectados EN LOCAL antes de bajar: si no, el archivo con el
+        # nombre viejo queda huérfano (la descarga solo escribe/sobrescribe, nunca borra -- ver
+        # _bajar_carpeta) y el nombre nuevo se baja completo como si fuera contenido nuevo.
+        for par in renombres:
+            origen, destino = carpeta / par["local"], carpeta / par["remoto"]
+            if origen.is_file() and not destino.exists():
+                destino.parent.mkdir(parents=True, exist_ok=True)
+                origen.rename(destino)
         _respaldar_documento_perdedor(carpeta, codigo_base)
         _mirror_registro_local_doc(slug, remoto)
         _bajar_carpeta(cookie, ruta_archivos, ruta_archivo, carpeta,
@@ -414,6 +562,8 @@ def sincronizar_todo(on_evento: EventoSync | None = None) -> list[str]:
     if sesion is None:
         raise SyncError("no hay sesión remota activa (usa 'doctyp login <email>')")
     cookie = sesion["cookie"]
+
+    _procesar_renombres_pendientes(cookie)
 
     orgs = _peticion_json("GET", "/api/orgs", cookie)
     # Antes del primer docs_root_org() de este barrido: doctyp.py lo consulta para decidir si

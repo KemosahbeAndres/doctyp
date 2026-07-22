@@ -463,7 +463,8 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 18 | **Docker** (PLAN-V4.md §2, §7): Dockerfile + docker-compose.yml + compose.override.yml, sin puerto publicado (Traefik descubre el servicio por red compartida). Ver PLAN-V4.md §7 para el detalle de la ejecución (2026-07-17) — el túnel de preview de tinymist bajo `/preview/…` queda pendiente. | **Completada** (parcial, ver PLAN-V4.md §7) |
 | 19 | **Registro en SQLite** (PLAN-V4.md §3, §7): `doctyp_db.py` reemplaza `org.json` como fuente de verdad de organizaciones/equipos/autores/documentos/versiones/correlativos; `doctyp migrate` (+ `--check`) archiva los JSON como `*.migrated`. **A partir de aquí, toda referencia a `org.json` en este documento (§0, §1, §2, §4, etc.) es histórica** — el registro vive en `doctyp.db`, ver PLAN-V4.md §3/§7 para el detalle. | **Completada** (2026-07-17, ver PLAN-V4.md §7) |
 | 20 | **Login básico** (PLAN-V4.md §4, §7): `doctyp_auth.py`, scrypt, sesiones por cookie, bootstrap (sin usuarios → alta del primer usuario; único usuario sin password → fijarla en el primer login). Alcance recortado respecto al plan original (sin `api_tokens`, sin roles/admin en la SPA, sin invitaciones) — ver PLAN-V4.md §7 para el detalle y lo que falta. | **Completada** (alcance reducido, ver PLAN-V4.md §7) |
-| 21 | **Icono de bandeja del sistema** para `doctyp_sync_daemon.py` (pedido explícito del usuario, 2026-07-21, Fedora/KDE Plasma): tooltip con usuario logueado y último documento/plantilla sincronizado (nombre, tamaño, fecha/hora). El daemon posee el icono directamente (mismo proceso, sin IPC), vía `PySide6` (Qt) — degrada a headless si falta la dependencia o no hay sesión gráfica. Ver nota debajo de la tabla. | **Completada** (ver nota — verificación visual del icono real en KDE pendiente por el usuario) |
+| 21 | **Icono de bandeja del sistema** para `doctyp_sync_daemon.py` (pedido explícito del usuario, 2026-07-21, Fedora/KDE Plasma, extendido 2026-07-22): tooltip y menú con usuario logueado y último documento/plantilla sincronizado (nombre, tamaño, fecha/hora); submenú "Cambiar de usuario" (siempre pide contraseña, ver nota) y "Cerrar sesión". El daemon posee el icono directamente (mismo proceso, sin IPC), vía `PySide6` (Qt) — degrada a headless si falta la dependencia o no hay sesión gráfica. Ver notas debajo de la tabla. | **Completada** (ver notas — verificación visual/clics reales en KDE pendiente por el usuario) |
+| 22 | **Sincronización consciente de renombres** (pedido explícito del usuario, 2026-07-22): renombrar un documento (`doctyp change`) o una imagen dentro de su carpeta (a mano, en el explorador de archivos) ya no se sincroniza como "borrar + crear nuevo" — se propaga/detecta como el renombre que es, sin duplicar ni dejar huérfanos. Alcance: solo documentos (plantillas fuera de alcance, confirmado con el usuario). Ver nota debajo de la tabla. | **Completada** (verificado end-to-end con un servidor de prueba real, ver nota) |
 
 
 **Nota sobre el alcance real de la Etapa 12** (investigación hecha leyendo el paquete instalado
@@ -1377,11 +1378,154 @@ del usuario 2026-07-21, plan discutido y aprobado antes de implementar — CLAUD
   este sandbox (una demostración en vivo de que el fallback funciona, pero no del icono en sí).
   Falta que el usuario corra `python3 doctyp.py _sync-daemon` (o `doctyp sync`) directo en su
   terminal real (fuera de cualquier sandbox) y confirme visualmente: el icono aparece en la
-  bandeja de KDE, el hover muestra el tooltip esperado, el menú contextual funciona, y
-  "Sincronizar ahora"/"Salir" hacen lo que dicen.
+  bandeja de KDE, el hover muestra el tooltip esperado, y el menú contextual funciona (ver
+  incrementos posteriores más abajo — el menú original "Sincronizar ahora"/"Salir" ya no es el
+  actual).
 - **Sin tocar durante esta etapa**: `_respaldar_documento_perdedor` (backup de documentos en
   conflicto de sync, sin relación con este pedido); ningún cambio de estilo/UI de la SPA web
   (el pedido fue exclusivamente sobre el daemon nativo, no sobre `doctyp web`).
+
+**Incremento 2026-07-22 (a): logging del fallback silencioso.** El usuario confirmó el icono
+funcionando en su KDE real, pero un segundo intento (`doctyp sync`, sesión ya activa) no
+mostró ícono ni ningún aviso. Causa: `_loop_con_bandeja` solo logueaba si `tray.iniciar()`
+lanzaba una excepción — un `return False` limpio (por `disponible()`/`isSystemTrayAvailable()`
+devolviendo `False`) caía al modo headless en silencio total, sin forma de distinguir "no
+aplica en este sistema" de "algo está roto". Fix: `doctyp_tray.py` gana
+`motivo_no_disponible() -> str` (mensaje legible para cada causa: PySide6 no instalado, sin
+`DISPLAY`/`WAYLAND_DISPLAY`, o ninguna de las dos costosas de chequear); `_loop_con_bandeja`
+ahora loguea SIEMPRE una línea explicando el resultado, sea `"icono de bandeja iniciado"` o
+`"bandeja del sistema no disponible (...)"`. (La causa real en la máquina del usuario resultó
+ser la primera categoría — el daemon que seguía vivo era un proceso arrancado ANTES de que
+existiera el código del ícono, Python no hace hot-reload — no un problema de disponibilidad;
+confirmado con el usuario, resuelto con `doctyp logout` + `doctyp login` para relanzarlo.)
+
+**Incremento 2026-07-22 (b): cambio de usuario, estado de sync en el menú, cerrar sesión.**
+Sobre la base ya funcionando, pedido explícito del usuario — plan discutido y aprobado antes de
+implementar (CLAUDE.md §0), con un ajuste tras la primera versión del plan: **cambiar de
+usuario SIEMPRE pide contraseña**, incluso para una cuenta ya usada antes en este equipo — no
+hay cookies cacheadas por cuenta ni cambio instantáneo, decisión explícita del usuario que
+simplificó el diseño original (que sí las cacheaba).
+
+- **`doctyp_sync.py`**: nuevo `settings.json → local.correos_conocidos` — lista de
+  `{email, ultimo_uso}`, **sin cookie** (a diferencia de `sesion_remota`, que sigue siendo la
+  única cookie guardada en texto plano). `guardar_sesion()` (ya existente, usada tanto por la
+  CLI como por el daemon) hace upsert ahí en cada login exitoso — alimenta el submenú sin
+  duplicar lógica entre CLI y bandeja. `correos_conocidos()` nueva, más recientes primero.
+- **`doctyp_tray.py`**: glifo del icono cambiado de `"d"` a `"D"`. Nuevo `_DialogoLogin`
+  (`QDialog`: correo + contraseña + botones Entrar/Cancelar) — el mismo diálogo sirve para
+  "Otro usuario…" (correo vacío) y para un clic sobre un correo conocido (correo prellenado,
+  pero la contraseña se pide igual). Es bloqueante (`QDialog.exec()`, la llamada de red ocurre
+  en el hilo principal de Qt) — deliberado, el daemon no tiene hilos de trabajo y añadir uno
+  solo para un formulario que el usuario abre a propósito es sobre-ingeniería. Menú
+  reconstruido: dos líneas deshabilitadas arriba (`Usuario: …` / `Última sync: …`, esta última
+  reusa el mismo resumen de una línea que ya arma el tooltip, factorizado a
+  `_resumen_evento()` para no mantener el formato en dos lugares), "Sincronizar ahora", submenú
+  "Cambiar de usuario" (reconstruido en `aboutToShow` para no quedar desactualizado tras un
+  login nuevo), y "Cerrar sesión" reemplazando a "Salir".
+- **`doctyp_sync_daemon.py`** (`_loop_con_bandeja`): nuevos closures `_login` (llama
+  `sync.login`, si OK hace `sync.guardar_sesion` y dispara un tick inmediato; a diferencia de
+  `cmd_login` de la CLI, que bloquea con `sys.exit` si ya hay otra sesión activa, acá se permite
+  reemplazarla directo — es un cambio deliberado desde el menú, no hace falta el mismo candado),
+  `_listar_usuarios` (`sync.correos_conocidos()`, el ícono ya filtra el correo activo antes de
+  mostrarlo), y `_cerrar_sesion` (`sync.logout_remoto` best-effort + `sync.borrar_sesion` +
+  `icono.hide()` + `app.quit()` — mismo efecto neto que `doctyp logout`, disparado desde el
+  menú en vez de una señal; **no** toca `correos_conocidos`, decisión explícita del usuario: la
+  cuenta sigue disponible para volver a loguearse más rápido, solo que pidiendo contraseña de
+  nuevo).
+- **Verificado en esta sesión**: `python3 -m py_compile` sobre los 3 archivos; prueba aislada
+  de `guardar_sesion`/`correos_conocidos` contra un `settings.json` temporal (normalización de
+  correo, upsert sin duplicados, orden por uso más reciente) sin tocar la sesión real del
+  usuario; construcción real de `DoctypTrayIcon`/`_DialogoLogin` (con `QApplication` real
+  contra el mismo Wayland del sandbox) ejercitando tooltip, las dos líneas de menú, el submenú
+  reconstruido (excluye correctamente al usuario activo), y la validación del formulario
+  (campos vacíos no llaman a `on_login`); `ejecutar_foreground()` corrido de punta a punta con
+  `DOCTYP_SETTINGS_PATH` apuntando a un archivo aislado (para no volver a pisar el daemon real
+  del usuario como pasó una vez en la Etapa 21 original) — arranca, loguea el motivo de caer a
+  headless, tickea sin errores, cierra limpio.
+  **No verificado con clics reales en la bandeja de KDE de verdad** (mismo límite del sandbox
+  Flatpak de siempre — `isSystemTrayAvailable()` da `False` acá): abrir el diálogo con
+  `dialogo.exec()` real, clic en un correo conocido del submenú, y "Cerrar sesión" apagando
+  efectivamente el daemon y quitando el ícono quedan pendientes de confirmación del usuario en
+  su terminal real.
+
+**Nota sobre el alcance real de la Etapa 22** (sincronización consciente de renombres, pedido
+explícito del usuario 2026-07-22 — plan discutido y aprobado antes de implementar, CLAUDE.md
+§0). Dos bugs reales confirmados leyendo el código antes de tocar nada: `doctyp change` (único
+mecanismo de renombre de documento, cambia `codigo_base` renombrando la carpeta completa)
+nunca avisaba al servidor, así que el siguiente sync resucitaba el código viejo (lo volvía a
+bajar) Y subía el código nuevo como documento distinto (duplicado); `_subir_carpeta`/
+`_bajar_carpeta` nunca borran nada (solo escriben/sobrescriben), así que renombrar a mano un
+archivo dentro de `img/` dejaba el nombre viejo huérfano en el lado que no lo renombró, además
+de re-transferir el contenido (idéntico) bajo el nombre nuevo como si fuera nuevo. Alcance
+confirmado con el usuario: **solo documentos** — las plantillas no tienen ningún mecanismo de
+rename hoy y quedan fuera.
+
+- **Parte A — renombre de documento completo, propagación explícita (no heurística).**
+  `doctyp change` es la única fuente de este renombre y la máquina que lo ejecuta ya sabe el
+  código viejo y el nuevo en el momento exacto en que pasa — no hace falta detectarlo, alcanza
+  con avisarle al servidor. La mecánica de mover archivos (carpeta, `.typ`, PDFs, actualizar el
+  comentario de cabecera y el campo `correlativo:`) se extrajo de `cmd_change` a
+  `core.renombrar_carpeta_documento(slug, codigo_anterior, codigo_nuevo)` (`doctyp.py`), reusada
+  tanto por el CLI como por el nuevo endpoint `POST /api/orgs/<slug>/documentos/<codigo_actual>/renombrar`
+  (`doctyp_web.py: api_doc_renombrar`) — evita duplicar esa lógica en dos lugares. La fila en
+  `doctyp.db` se actualiza con `doctyp_db.renombrar_documento_codigo()` (nueva): un `UPDATE`
+  dedicado por `id`, a propósito **sin pasar por el upsert genérico de `guardar_org()`**, que
+  matchea filas por `codigo_base` — confirmado leyendo su lógica (`doctyp_db.py:402-433`) que un
+  cambio de código ahí se ve como "borrar la fila vieja, crear una nueva" (pierde el `id` interno
+  y requeriría reconstruir `document_versions`); la operación dedicada preserva ambos intactos.
+  `cmd_change` (`doctyp.py`), tras actualizar el registro local, propaga de inmediato si hay
+  sesión activa (`sync.renombrar_documento_remoto`, mismo criterio best-effort que
+  `_sincronizar_si_hay_sesion`); si no hay sesión (offline) o la llamada falla, encola el
+  renombre en `settings.json → local.renombres_pendientes`
+  (`sync.encolar_renombre_pendiente`) — `sincronizar_todo()` los procesa PRIMERO, antes de la
+  reconciliación normal por `codigo_base` (`_procesar_renombres_pendientes`, `doctyp_sync.py`):
+  si el remoto todavía tiene el código viejo, le avisa recién ahí; si ya tiene el código nuevo
+  (otro equipo ya lo sincronizó, o un intento previo parcial), no hace falta nada — en ambos
+  casos limpia la entrada. Después de esto, la reconciliación normal encuentra el código nuevo
+  en ambos lados como cualquier documento existente, sin ruta especial.
+- **Parte B — renombre de archivo dentro de la carpeta (imágenes), detección por hash de
+  contenido.** A diferencia de A, acá no hay una acción deliberada que avise — el usuario
+  renombra un archivo en su explorador y listo. Mismo principio que usa `git` para detectar
+  renombres, sin necesitar ninguna marca persistida: si un archivo desaparece de un lado y
+  aparece uno con el MISMO sha256 bajo otro nombre en el lado contrario, es un renombre.
+  `_hash_carpeta()` (`doctyp_web.py`) ya calculaba un hash agregado de toda la carpeta a partir
+  de hashes por archivo — se factorizó a `_hashes_por_archivo()` (devuelve el detalle, no solo
+  el agregado) sin cambiar el resultado de `_hash_carpeta` (verificado: mismo algoritmo, ahora
+  compuesto a partir del dict en vez de recalcular inline). Nuevo endpoint de solo lectura
+  `GET .../documentos/<codigo_base>/archivos-hash` expone ese detalle — endpoint NUEVO en vez de
+  agregarle hashes a `GET .../archivos` (que ya consume el compilador WASM del navegador,
+  Etapa 11, esperando `list[str]`; cambiar su forma de respuesta arriesgaba romperlo sin
+  necesidad). `doctyp_sync.py` gana el espejo cliente (`_hashes_por_archivo_local`) y
+  `_detectar_renombres(locales, remotos)` (empareja por hash los archivos que solo existen en
+  un lado). `sincronizar_documento()`, justo antes de la subida/bajada de contenido (rama de
+  conflicto por mtime — las otras dos ramas, documento 100% nuevo en un lado, no tienen nada
+  con qué comparar y no aplican), llama a `_renombres_detectados()` (best-effort: si el
+  endpoint falla, sigue con el sync normal, detectar renombres es un plus, no un requisito) y
+  aplica el resultado según quién gane: si sube, `_subir_carpeta()` manda un nuevo campo
+  `renombrados: [{de, a}]` en el payload de `/sync` — el destino ('a') se excluye de los bytes
+  de `archivos` (contenido idéntico, no hace falta retransferirlo) — y `api_doc_sync`
+  (`doctyp_web.py`) aplica `Path.rename()` por cada par ANTES de escribir el resto, sin bytes de
+  por medio; si baja, se aplica el mismo `Path.rename()` en LOCAL antes de la descarga completa.
+  Archivos sin match de hash siguen exactamente igual que antes (archivo nuevo real → se sube/
+  baja completo) — esto no introduce borrado general de archivos ausentes, sigue siendo aditivo
+  salvo en el caso específico de un renombre detectado.
+- **Verificado end-to-end con un servidor real** (no solo lectura de código ni pruebas
+  unitarias): se montó un servidor `doctyp_web.py` de prueba completo (usuario, organización,
+  documento con una imagen en `img/`, todo aislado vía `DOCTYP_DB_PATH`/`DOCTYP_ORGS_DIR`/
+  `DOCTYP_DOCS_ROOT`/`DOCTYP_SETTINGS_PATH`/`DOCTYP_REMOTE_HOST_OVERRIDE` — sin tocar
+  `slep-chinchorro` ni ningún dato real) y se ejercitaron los cinco escenarios reales: (1) sync
+  inicial baja el documento completo con su imagen; (2) renombrar la imagen en LOCAL y
+  sincronizar deja el servidor con únicamente el nombre nuevo (sin duplicado ni huérfano); (3)
+  `doctyp change` con sesión activa deja el servidor con un único documento bajo el código
+  nuevo; (4) el mismo renombre sin sesión activa (`encolar_renombre_pendiente`) se resuelve
+  correctamente en el siguiente `sincronizar_todo()`, también sin duplicar; (5) renombrar la
+  imagen en el SERVIDOR (dirección de bajada) deja el lado local con únicamente el nombre nuevo.
+  Los cinco escenarios pasaron. Scripts de prueba descartados tras validar (no quedaron en el
+  repo).
+- **Sin tocar en esta etapa**: plantillas (confirmado fuera de alcance); borrado general de
+  archivos ausentes (la detección de renombre solo actúa sobre pares con hash idéntico — un
+  archivo que de verdad se borró en un lado sigue sin propagarse como borrado en el otro, mismo
+  comportamiento aditivo de siempre, no fue lo que se pidió).
 
 ---
 

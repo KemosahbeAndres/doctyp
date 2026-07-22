@@ -445,10 +445,14 @@ def api_doc_sync(slug: str, codigo_base: str, payload: dict) -> dict:
     servidor lo registra primero (ver _crear_entrada_sync_doc); si ya existe, respalda el `.typ`
     vigente en .snapshots/ (ver _respaldar_typ_antes_de_sync) y sobrescribe los archivos
     recibidos (mismo criterio que el autoguardado de la Etapa 16: actualiza contenido, no
-    bumpea versión oficial)."""
+    bumpea versión oficial). `renombrados` (opcional, [{de, a}]) aplica renombres puros -- sin
+    bytes de por medio -- ANTES de escribir `archivos`: detección de renombre de archivo por
+    contenido (doctyp_sync.py, sincronización consciente de renombres, 2026-07-22), para no
+    dejar el nombre viejo huérfano ni re-transferir un archivo cuyo contenido no cambió."""
     org = _cargar_org_api(slug)
     archivos = payload.get("archivos") or {}
-    if not archivos:
+    renombrados = payload.get("renombrados") or []
+    if not archivos and not renombrados:
         raise ApiError(400, "no se enviaron archivos")
     _verificar_y_refrescar_bloqueo(slug, codigo_base, payload.get("device_id"))
     dest_dir = core.doc_dir(slug, codigo_base)
@@ -457,6 +461,19 @@ def api_doc_sync(slug: str, codigo_base: str, payload: dict) -> dict:
         core.guardar_org(slug, org)
     else:
         _respaldar_typ_antes_de_sync(dest_dir, codigo_base)
+    for par in renombrados:
+        de, a = (par.get("de") or ""), (par.get("a") or "")
+        partes_de = [p for p in de.split("/") if p]
+        partes_a = [p for p in a.split("/") if p]
+        if not partes_de or not partes_a:
+            continue
+        _resolver_ruta_segura(core.docs_root(), slug, codigo_base, *partes_de)
+        _resolver_ruta_segura(core.docs_root(), slug, codigo_base, *partes_a)
+        origen = dest_dir.joinpath(*partes_de)
+        destino = dest_dir.joinpath(*partes_a)
+        if origen.is_file() and not destino.exists():
+            destino.parent.mkdir(parents=True, exist_ok=True)
+            origen.rename(destino)
     for ruta, b64 in archivos.items():
         partes = [p for p in ruta.split("/") if p]
         if not partes:
@@ -1046,20 +1063,28 @@ def _listar_archivos_carpeta(base_dir: Path, excluir: set[str]) -> list[str]:
     return sorted(out)
 
 
+def _hashes_por_archivo(base_dir: Path) -> dict[str, str]:
+    """sha256 por archivo (ruta relativa → hash hex), mismo listado/exclusión que
+    _listar_archivos_carpeta. Base de _hash_carpeta (hash agregado de toda la carpeta) y de
+    api_doc_archivos_hash (detección de renombres por contenido, ver doctyp_sync.py)."""
+    archivos = _listar_archivos_carpeta(base_dir, excluir=set())
+    return {rel: hashlib.sha256((base_dir / rel).read_bytes()).hexdigest() for rel in archivos}
+
+
 def _hash_carpeta(base_dir: Path) -> str | None:
     """Hash de TODA la carpeta (no solo el .typ/lib.typ principal) -- un hash que solo cubriera
     el archivo principal dejaría de propagar para siempre cambios en otros archivos (imágenes)
     que ocurran sin tocar el texto. Mismo listado que _listar_archivos_carpeta/
     _listar_archivos_locales (doctyp_sync.py, idéntica exclusión en ambos lados), así que
     contenido idéntico produce el mismo hash en cliente y servidor."""
-    archivos = _listar_archivos_carpeta(base_dir, excluir=set())
-    if not archivos:
+    hashes = _hashes_por_archivo(base_dir)
+    if not hashes:
         return None
     h = hashlib.sha256()
-    for rel in archivos:
+    for rel in sorted(hashes):
         h.update(rel.encode("utf-8"))
         h.update(b"\0")
-        h.update(hashlib.sha256((base_dir / rel).read_bytes()).digest())
+        h.update(bytes.fromhex(hashes[rel]))
     return h.hexdigest()
 
 
@@ -1068,6 +1093,48 @@ def api_doc_archivos(slug: str, codigo_base: str) -> list[str]:
     _doc_o_404(org, codigo_base)
     dest_dir = core.doc_dir(slug, codigo_base)
     return _listar_archivos_carpeta(dest_dir, excluir={f"{codigo_base}.typ"})
+
+
+def api_doc_archivos_hash(slug: str, codigo_base: str) -> dict[str, str]:
+    """GET .../documentos/<codigo_base>/archivos-hash -- ruta relativa → sha256, INCLUYENDO el
+    .typ principal (a diferencia de api_doc_archivos, que lo excluye porque el navegador lo pide
+    aparte como texto en vivo). Endpoint nuevo en vez de agregarle hashes a api_doc_archivos:
+    ese endpoint ya lo consume el compilador WASM del navegador (Etapa 11) esperando
+    list[str] -- cambiar su forma de respuesta arriesgaba romperlo sin necesidad. Usado por
+    doctyp_sync.py para detectar renombres de archivo por contenido (sincronización consciente
+    de renombres, 2026-07-22) -- nunca por el navegador."""
+    org = _cargar_org_api(slug)
+    _doc_o_404(org, codigo_base)
+    dest_dir = core.doc_dir(slug, codigo_base)
+    return _hashes_por_archivo(dest_dir)
+
+
+def api_doc_renombrar(slug: str, codigo_actual: str, payload: dict) -> dict:
+    """POST .../documentos/<codigo_actual>/renombrar -- propaga al servidor un renombre de
+    documento ya hecho en el cliente (`doctyp change`, la única fuente de este tipo de renombre
+    hoy). Reusa core.renombrar_carpeta_documento() (misma mecánica de mover carpeta/.typ/PDFs
+    que ya usa el CLI) y actualiza la fila en doctyp.db con doctyp_db.renombrar_documento_codigo
+    -- UPDATE dedicado que preserva el `id` interno y el historial de versiones, a diferencia
+    del upsert genérico de guardar_org() (matchea por codigo_base, así que vería esto como
+    'documento borrado + documento nuevo')."""
+    import doctyp_db as _db
+    org = _cargar_org_api(slug)
+    doc = _doc_o_404(org, codigo_actual)
+    codigo_nuevo = (payload.get("codigo_nuevo") or "").strip()
+    campos = core.parsear_codigo_base(codigo_nuevo)
+    if campos is None:
+        raise ApiError(400, f"'{codigo_nuevo}' no tiene el formato AREA-TIPO-CAT_AAAA-NNNN")
+    if core.buscar_doc_org_por_codigo(org, codigo_nuevo) is not None:
+        raise ApiError(409, f"ya existe un documento con código '{codigo_nuevo}'")
+    core.renombrar_carpeta_documento(slug, codigo_actual, codigo_nuevo)
+    _db.renombrar_documento_codigo(
+        slug, codigo_actual, codigo_nuevo,
+        area=campos["area"], tipo=campos["tipo"], categoria=campos["categoria"],
+        anio=campos["anio"], correlativo=campos["correlativo"],
+    )
+    _emitir_evento_sse({"tipo": "doc-renombrado", "slug": slug,
+                         "codigo_anterior": codigo_actual, "codigo_nuevo": codigo_nuevo})
+    return {"ok": True, "codigo_base": codigo_nuevo}
 
 
 def api_doc_archivo(slug: str, codigo_base: str, ruta: list[str]) -> Path:
@@ -2068,6 +2135,9 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             if sub == "archivos" and len(segs) == 5 and metodo == "GET":
                 self._json(200, api_doc_archivos(slug, codigo_base))
                 return
+            if sub == "archivos-hash" and len(segs) == 5 and metodo == "GET":
+                self._json(200, api_doc_archivos_hash(slug, codigo_base))
+                return
             if sub == "archivo" and len(segs) >= 6 and metodo == "GET":
                 ruta_archivo = api_doc_archivo(slug, codigo_base, segs[5:])
                 tipo, _ = mimetypes.guess_type(ruta_archivo.name)
@@ -2087,6 +2157,10 @@ class _DoctypRequestHandler(BaseHTTPRequestHandler):
             if sub == "sync" and len(segs) == 5 and metodo == "POST":
                 cuerpo = self._leer_cuerpo_json()
                 self._json(200, api_doc_sync(slug, codigo_base, cuerpo))
+                return
+            if sub == "renombrar" and len(segs) == 5 and metodo == "POST":
+                cuerpo = self._leer_cuerpo_json()
+                self._json(200, api_doc_renombrar(slug, codigo_base, cuerpo))
                 return
             self._error(404, "ruta de API desconocida")
             return

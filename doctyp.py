@@ -873,6 +873,61 @@ def parsear_codigo_base(codigo: str) -> dict | None:
     return {"area": area, "tipo": tipo, "categoria": cat, "anio": int(anio), "correlativo": int(corr)}
 
 
+def renombrar_carpeta_documento(slug: str, codigo_anterior: str, codigo_nuevo: str) -> list[tuple[str, str]]:
+    """Renombra la carpeta completa de un documento (carpeta, .typ, PDFs) de codigo_anterior a
+    codigo_nuevo, incluida la cabecera y el campo `correlativo:` dentro del .typ -- extraído de
+    cmd_change (única fuente de renombres de documento hoy) para que el endpoint de renombrar
+    del servidor (doctyp_web.py, sincronización consciente de renombres) reuse exactamente la
+    misma mecánica en vez de duplicarla. NO toca el registro (org.json/doctyp.db) -- eso lo hace
+    el llamador, con el criterio que corresponda a cada lado. Devuelve los pares
+    (nombre_viejo, nombre_nuevo) de los PDFs renombrados, para que cmd_change los pueda listar."""
+    info_anterior = parsear_codigo_base(codigo_anterior)
+    info_nuevo = parsear_codigo_base(codigo_nuevo)
+    if info_anterior is None or info_nuevo is None:
+        sys.exit(f"ERROR: código de documento inválido ('{codigo_anterior}' → '{codigo_nuevo}').")
+    corr_anterior = info_anterior["correlativo"]
+    corr_nuevo = info_nuevo["correlativo"]
+
+    dir_antiguo = doc_dir(slug, codigo_anterior)
+    dir_nuevo = doc_dir(slug, codigo_nuevo)
+    if not dir_antiguo.exists():
+        sys.exit(f"ERROR: la carpeta del documento no existe: {dir_antiguo}")
+    if dir_nuevo.exists():
+        sys.exit(f"ERROR: ya existe una carpeta en la ruta destino: {dir_nuevo}")
+
+    # ── Actualizar contenido del .typ (aún con el nombre antiguo) ─────────────
+    ruta_antigua = dir_antiguo / f"{codigo_anterior}.typ"
+    texto = ruta_antigua.read_text(encoding="utf-8")
+
+    # 1. Comentario de cabecera: // TI-INF-XXX_2026-NNNN  ·  generado por doctyp
+    texto = re.sub(
+        rf'(//\s*\S+-\S+-\S+_\d{{4}}-)({corr_anterior:04d})(\b)',
+        lambda m: f'{m.group(1)}{corr_nuevo:04d}{m.group(3)}',
+        texto, count=1,
+    )
+    # 2. Campo correlativo en crear-meta
+    texto = re.sub(
+        r'(correlativo:\s*)\d+',
+        lambda m: f'{m.group(1)}{corr_nuevo}',
+        texto, count=1,
+    )
+    ruta_antigua.write_text(texto, encoding="utf-8")
+
+    # ── Renombrar la carpeta completa (preserva .snapshots/, img/, Images/, etc.) ─
+    dir_antiguo.rename(dir_nuevo)
+    ruta_nueva = dir_nuevo / f"{codigo_nuevo}.typ"
+    (dir_nuevo / f"{codigo_anterior}.typ").rename(ruta_nueva)
+
+    # ── Renombrar PDFs si existen (con o sin versión en el nombre) ─────────────
+    pdfs_renombrados = []
+    for pdf_viejo in sorted(dir_nuevo.glob(f"{codigo_anterior}*.pdf")):
+        sufijo = pdf_viejo.name[len(codigo_anterior):]   # "" o " (v1.0)"
+        pdf_nuevo = pdf_viejo.parent / f"{codigo_nuevo}{sufijo}"
+        pdf_viejo.rename(pdf_nuevo)
+        pdfs_renombrados.append((pdf_viejo.name, pdf_nuevo.name))
+    return pdfs_renombrados
+
+
 def ty_str(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -2288,49 +2343,18 @@ def cmd_change(args):
         break
 
     # ── Construir nuevos nombres ───────────────────────────────────────────────
-    base_nuevo  = codigo_base(doc["area"], doc["tipo"], doc["categoria"], anio, corr_nuevo)
-    dir_antiguo = doc_dir(slug, doc["codigo_base"])
-    dir_nuevo   = doc_dir(slug, base_nuevo)
+    codigo_anterior = doc["codigo_base"]
+    base_nuevo      = codigo_base(doc["area"], doc["tipo"], doc["categoria"], anio, corr_nuevo)
+    dir_nuevo       = doc_dir(slug, base_nuevo)
 
     print(f"\n  {_c(_C.BOLD, 'Cambio de correlativo')}")
-    print(f"  De: {_c(_C.DIM,              doc['codigo_base'])}")
+    print(f"  De: {_c(_C.DIM,              codigo_anterior)}")
     print(f"  A:  {_c(_C.BOLD + _C.CYAN,  base_nuevo)}\n")
 
-    if not dir_antiguo.exists():
-        sys.exit(f"ERROR: la carpeta del documento no existe: {dir_antiguo}")
-    if dir_nuevo.exists():
-        sys.exit(f"ERROR: ya existe una carpeta en la ruta destino: {dir_nuevo}")
-
-    # ── Actualizar contenido del .typ (aún con el nombre antiguo) ─────────────
-    ruta_antigua = dir_antiguo / f"{doc['codigo_base']}.typ"
-    texto = ruta_antigua.read_text(encoding="utf-8")
-
-    # 1. Comentario de cabecera: // TI-INF-XXX_2026-NNNN  ·  generado por doctyp
-    texto = re.sub(
-        rf'(//\s*\S+-\S+-\S+_\d{{4}}-)({corr_anterior:04d})(\b)',
-        lambda m: f'{m.group(1)}{corr_nuevo:04d}{m.group(3)}',
-        texto, count=1,
-    )
-    # 2. Campo correlativo en crear-meta
-    texto = re.sub(
-        r'(correlativo:\s*)\d+',
-        lambda m: f'{m.group(1)}{corr_nuevo}',
-        texto, count=1,
-    )
-    ruta_antigua.write_text(texto, encoding="utf-8")
-
-    # ── Renombrar la carpeta completa (preserva .snapshots/, img/, Images/, etc.) ─
-    dir_antiguo.rename(dir_nuevo)
-    ruta_nueva = dir_nuevo / f"{base_nuevo}.typ"
-    (dir_nuevo / f"{doc['codigo_base']}.typ").rename(ruta_nueva)
-    _ok(f"Carpeta: {_c(_C.DIM, dir_antiguo.name)} → {_c(_C.BOLD, dir_nuevo.name)}")
-
-    # ── Renombrar PDFs si existen (con o sin versión en el nombre) ─────────────
-    for pdf_viejo in sorted(dir_nuevo.glob(f"{doc['codigo_base']}*.pdf")):
-        sufijo = pdf_viejo.name[len(doc["codigo_base"]):]   # "" o " (v1.0)"
-        pdf_nuevo = pdf_viejo.parent / f"{base_nuevo}{sufijo}"
-        pdf_viejo.rename(pdf_nuevo)
-        _ok(f"PDF:     {_c(_C.DIM, pdf_viejo.name)} → {_c(_C.BOLD, pdf_nuevo.name)}")
+    pdfs_renombrados = renombrar_carpeta_documento(slug, codigo_anterior, base_nuevo)
+    _ok(f"Carpeta: {_c(_C.DIM, codigo_anterior)} → {_c(_C.BOLD, dir_nuevo.name)}")
+    for nombre_viejo, nombre_nuevo in pdfs_renombrados:
+        _ok(f"PDF:     {_c(_C.DIM, nombre_viejo)} → {_c(_C.BOLD, nombre_nuevo)}")
 
     # ── Actualizar registro ────────────────────────────────────────────────────
     doc["correlativo"] = corr_nuevo
@@ -2338,6 +2362,20 @@ def cmd_change(args):
     doc["ruta"]        = base_nuevo
     guardar_org(slug, org)
     _ok(f"Registro actualizado.")
+
+    # ── Propagar el renombre al servidor: inmediato si hay sesión, si no se encola
+    #    para que el próximo 'doctyp sync' lo resuelva (ver doctyp_sync.py) ───────
+    import doctyp_sync as sync
+    if sync.org_en_sesion(slug):
+        try:
+            sync.renombrar_documento_remoto(slug, codigo_anterior, base_nuevo)
+            _ok("Renombre propagado al servidor.")
+        except sync.SyncError as e:
+            _warn(f"no se pudo propagar el renombre al servidor ahora ({e}); "
+                  f"se reintentará en el próximo 'doctyp sync'.")
+            sync.encolar_renombre_pendiente(slug, codigo_anterior, base_nuevo)
+    else:
+        sync.encolar_renombre_pendiente(slug, codigo_anterior, base_nuevo)
 
     # ── Actualizar doctyp.json en el CWD si existe ────────────────────────────
     cwd = Path.cwd()
@@ -2347,7 +2385,7 @@ def cmd_change(args):
         for e in entradas:
             if e.get("correlativo") == corr_anterior and e.get("anio") == anio:
                 e["correlativo"]    = corr_nuevo
-                e["nombre_archivo"] = ruta_nueva.name
+                e["nombre_archivo"] = f"{base_nuevo}.typ"
                 modificado = True
         if modificado:
             (cwd / DOCTYP_JSON).write_text(

@@ -518,6 +518,37 @@ def refrescar_bloqueo(slug: str, codigo_base: str, device_id: str, ttl_segundos:
         return {"otorgado": True, "hasta": hasta}
 
 
+def renombrar_documento_codigo(slug: str, codigo_anterior: str, codigo_nuevo: str, *,
+                                area: str | None, tipo: str | None, categoria: str | None,
+                                anio: int, correlativo: int) -> None:
+    """Renombra el codigo_base de un documento YA EXISTENTE preservando su `id` y su historial
+    de versiones (document_versions referencia por id, no por codigo_base -- no se toca). A
+    diferencia del upsert genérico de guardar_org() (matchea filas por codigo_base: un cambio de
+    código ahí se ve como 'borrar la fila vieja, crear una nueva' y pierde el id -- ver el bucle
+    de documentos en guardar_org() más arriba), esta es una operación dedicada, UPDATE directo
+    por `id`. Usada por el endpoint de renombrar del servidor (sincronización consciente de
+    renombres, doctyp_web.py) -- nunca por el flujo normal de guardar_org()."""
+    conn = _connect()
+    with _tx(conn):
+        org_id = _org_id(conn, slug)
+        fila = conn.execute(
+            "SELECT id FROM documents WHERE org_id = ? AND codigo_base = ?",
+            (org_id, codigo_anterior),
+        ).fetchone()
+        if fila is None:
+            raise ValueError(f"no existe el documento '{codigo_anterior}' en '{slug}'")
+        conn.execute(
+            """UPDATE documents SET codigo_base=?, area=?, tipo=?, categoria=?, anio=?,
+                                     correlativo=?, ruta=?
+               WHERE id = ?""",
+            (codigo_nuevo, area, tipo, categoria, anio, correlativo, codigo_nuevo, fila["id"]),
+        )
+        conn.execute(
+            "UPDATE document_locks SET codigo_base=? WHERE org_id=? AND codigo_base=?",
+            (codigo_nuevo, org_id, codigo_anterior),
+        )
+
+
 # ── Usuarios (Etapa 20) ────────────────────────────────────────────────────────────────────
 
 def contar_usuarios() -> int:

@@ -176,7 +176,9 @@ def _loop_con_bandeja(intervalo: float) -> bool:
     nada si el escritorio no soporta bandeja de sistema (ej. GNOME sin la extensión
     AppIndicator, o sin sesión gráfica) -- ahí el llamador debe usar _loop_headless."""
     import doctyp_tray as tray
-    if not tray.disponible():
+    motivo = tray.motivo_no_disponible()
+    if motivo:
+        _log(f"bandeja del sistema no disponible ({motivo}); sigo en modo headless (sin icono)")
         return False
     from PySide6.QtCore import QTimer
 
@@ -189,10 +191,55 @@ def _loop_con_bandeja(intervalo: float) -> bool:
         ok, detalle = un_tick(on_evento=icono.actualizar_evento_sync)
         icono.actualizar_estado_tick(ok, detalle)
 
-    app, icono = tray.iniciar(on_sincronizar_ahora=_tick)
+    def _login(email: str, password: str) -> tuple[bool, str | None]:
+        """Callback de _DialogoLogin (doctyp_tray.py) -- tanto para 'Otro usuario…' como para un
+        clic sobre un correo ya conocido: SIEMPRE pide contraseña de verdad, nunca reusa una
+        cookie cacheada (decisión explícita del usuario). Si ya había otra sesión activa, se
+        reemplaza sin más -- a diferencia de 'doctyp login' (CLI), que bloquea eso con un
+        sys.exit; acá es un cambio deliberado disparado desde el menú, no hace falta el mismo
+        candado."""
+        try:
+            _usuario, cookie = sync.login(email, password)
+        except sync.SyncError as e:
+            return False, str(e)
+        sync.guardar_sesion(email, cookie)
+        _tick()
+        return True, None
+
+    def _listar_usuarios() -> list[str]:
+        return sync.correos_conocidos()
+
+    def _cerrar_sesion() -> None:
+        """'Cerrar sesión' del menú -- mismo efecto neto que 'doctyp logout': invalida la
+        cookie server-side (best-effort, sync.logout_remoto ya no lanza), limpia la sesión
+        activa local (sin tocar correos_conocidos, decisión ya tomada: la cuenta sigue
+        disponible para volver a loguearse más rápido, solo que pidiendo contraseña de nuevo) y
+        apaga el daemon -- ejecutar_foreground()'s finally ya limpia pidfile/log al volver de
+        app.exec()."""
+        sesion = sync.sesion_activa()
+        if sesion is not None:
+            sync.logout_remoto(sesion["cookie"])
+        sync.borrar_sesion()
+        estado["icono"].hide()
+        estado["app"].quit()
+
+    app, icono = tray.iniciar(on_sincronizar_ahora=_tick, on_login=_login,
+                               on_listar_usuarios=_listar_usuarios,
+                               on_cerrar_sesion=_cerrar_sesion)
     if app is None:
+        # Los chequeos baratos de motivo_no_disponible() (import + sesión gráfica) ya pasaron
+        # acá arriba -- si igual llegamos a None, es específicamente
+        # QSystemTrayIcon.isSystemTrayAvailable() devolviendo False: el compositor/escritorio
+        # no expone el protocolo de bandeja (StatusNotifierItem vía D-Bus en Linux), o el bus de
+        # sesión no lo anuncia (ej. sandbox que filtra D-Bus, o GNOME estándar sin la extensión
+        # AppIndicator/KStatusNotifierItem).
+        _log("bandeja del sistema no disponible (QSystemTrayIcon.isSystemTrayAvailable() = "
+             "False -- el escritorio no expone el protocolo de bandeja, o el bus de sesión no "
+             "lo anuncia); sigo en modo headless (sin icono)")
         return False
     estado["icono"] = icono
+    estado["app"] = app
+    _log("icono de bandeja iniciado")
     _tick()  # estado inicial inmediato -- no esperar `intervalo` segundos para el primer tooltip
 
     temporizador_tick = QTimer()
