@@ -121,18 +121,24 @@ def _asegurar_carpetas() -> None:
             core.docs_root_org(slug)
 
 
-def un_tick() -> None:
-    """Nunca lanza -- un tick que falla no debe matar el loop; se reintenta en el siguiente."""
+def un_tick(on_evento: sync.EventoSync | None = None) -> tuple[bool, str | None]:
+    """Nunca lanza -- un tick que falla no debe matar el loop; se reintenta en el siguiente.
+    Devuelve (ok, detalle) para quien quiera mostrar el resultado (el tooltip de la bandeja,
+    ver doctyp_tray.py) -- el loop headless lo sigue ignorando, igual que siempre. `on_evento`
+    se reenvía tal cual a sync.sincronizar_todo (ver doctyp_sync.py: EventoSync)."""
     try:
         _asegurar_carpetas()
         if sync.sesion_activa() is None:
-            return  # sin sesión: nada que sincronizar, la carpeta base ya quedó asegurada
-        orgs = sync.sincronizar_todo()
+            return True, None  # sin sesión: nada que sincronizar, no es un error
+        orgs = sync.sincronizar_todo(on_evento=on_evento)
         _log(f"sincronizado: {len(orgs)} organización(es)")
+        return True, None
     except sync.SyncError as e:
         _log(f"advertencia: sync falló ({e}); reintento en el próximo tick")
+        return False, str(e)
     except Exception as e:  # noqa: BLE001 - nunca dejar que un tick mate el loop
         _log(f"error inesperado en tick: {e!r}")
+        return False, repr(e)
 
 
 # ── El loop ──────────────────────────────────────────────────────────────────────────────────
@@ -154,6 +160,57 @@ def _en_contenedor() -> bool:
     return Path("/.dockerenv").exists()
 
 
+def _loop_headless(intervalo: float) -> None:
+    """El loop de siempre -- sin cambios de comportamiento. Usado directo si no hay bandeja
+    (ver _loop_con_bandeja) y como base de la rama gráfica (el primer tick allá también pasa
+    por un_tick, solo que reportando a doctyp_tray además de loguear)."""
+    while not _debe_parar:
+        un_tick()
+        time.sleep(intervalo)
+
+
+def _loop_con_bandeja(intervalo: float) -> bool:
+    """Intenta correr con icono de bandeja (doctyp_tray.py). Devuelve True si pudo -- en ese
+    caso esta función BLOQUEA (corre el event loop de Qt) hasta que el usuario cierra el icono,
+    llega SIGTERM/SIGINT, o el proceso se detiene por 'doctyp logout'. Devuelve False sin tocar
+    nada si el escritorio no soporta bandeja de sistema (ej. GNOME sin la extensión
+    AppIndicator, o sin sesión gráfica) -- ahí el llamador debe usar _loop_headless."""
+    import doctyp_tray as tray
+    if not tray.disponible():
+        return False
+    from PySide6.QtCore import QTimer
+
+    estado: dict = {}
+
+    def _tick() -> None:
+        icono = estado["icono"]
+        sesion = sync.sesion_activa()
+        icono.actualizar_sesion(sesion["email"] if sesion else None)
+        ok, detalle = un_tick(on_evento=icono.actualizar_evento_sync)
+        icono.actualizar_estado_tick(ok, detalle)
+
+    app, icono = tray.iniciar(on_sincronizar_ahora=_tick)
+    if app is None:
+        return False
+    estado["icono"] = icono
+    _tick()  # estado inicial inmediato -- no esperar `intervalo` segundos para el primer tooltip
+
+    temporizador_tick = QTimer()
+    temporizador_tick.timeout.connect(_tick)
+    temporizador_tick.start(int(intervalo * 1000))
+
+    # Timer corto SOLO para que el intérprete de Python atienda las señales POSIX a tiempo: el
+    # loop C++ de Qt (app.exec()) bloquea el chequeo de signal.signal() de Python: sin un timer
+    # frecuente que le devuelva el control, SIGTERM/Ctrl+C podrían demorar hasta `intervalo`
+    # segundos en procesarse.
+    despertador = QTimer()
+    despertador.timeout.connect(lambda: app.quit() if _debe_parar else None)
+    despertador.start(300)
+
+    app.exec()
+    return True
+
+
 def ejecutar_foreground(intervalo: float = INTERVALO_SEGUNDOS) -> None:
     """Entrypoint de 'doctyp _sync-daemon' -- bloqueante, en primer plano. Igual si lo invoca
     systemd/launchd/Task Scheduler directamente, o si lo lanzó 'doctyp sync'/'doctyp login'
@@ -167,9 +224,13 @@ def ejecutar_foreground(intervalo: float = INTERVALO_SEGUNDOS) -> None:
     signal.signal(signal.SIGINT, _manejar_senal)
     _log(f"daemon iniciado (pid={os.getpid()}, intervalo={intervalo}s)")
     try:
-        while not _debe_parar:
-            un_tick()
-            time.sleep(intervalo)
+        uso_bandeja = False
+        try:
+            uso_bandeja = _loop_con_bandeja(intervalo)
+        except Exception as e:  # noqa: BLE001 - un fallo armando el icono no debe tumbar el daemon
+            _log(f"aviso: no se pudo iniciar el icono de bandeja ({e!r}); sigo sin icono")
+        if not uso_bandeja:
+            _loop_headless(intervalo)
     finally:
         _borrar_pid()
         _log("daemon detenido")

@@ -22,3 +22,5 @@ organizations/*/templates/*/.*.preview.pdf
 organizations/*/templates/*/.*.muestra.typ
 organizations/*/templates/*/*.miniatura.png
 doctyp.db
+doctyp.db-shm
+doctyp.db-wal

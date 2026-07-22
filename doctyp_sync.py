@@ -25,8 +25,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from typing import Callable
 
 import doctyp as core
+
+EventoSync = Callable[[dict], None]
 
 DOCTYP_REMOTE_HOST = os.environ.get("DOCTYP_REMOTE_HOST_OVERRIDE") or "https://doctyp.tinorte.cl"
 
@@ -220,6 +223,25 @@ def _hash_carpeta(carpeta: Path) -> str | None:
 
 # ── Sincronización ───────────────────────────────────────────────────────────────────────────
 
+def _notificar(on_evento: EventoSync | None, *, tipo: str, slug: str, nombre: str,
+                accion: str, archivo_principal: Path) -> None:
+    """Reporta una transferencia real (subida/bajada) a quien esté escuchando -- hoy solo el
+    daemon (para el tooltip de la bandeja, ver doctyp_tray.py), pero es un callback genérico
+    para no acoplar doctyp_sync.py a Qt. No-op si no hay callback (CLI actual) o si el archivo
+    principal no quedó en disco por algún motivo."""
+    if on_evento is None:
+        return
+    try:
+        tamano = archivo_principal.stat().st_size
+    except OSError:
+        return
+    on_evento({
+        "tipo": tipo, "slug": slug, "nombre": nombre, "accion": accion,
+        "archivo": archivo_principal.name, "tamano": tamano,
+        "cuando": datetime.datetime.now(),
+    })
+
+
 def _respaldar_documento_perdedor(carpeta: Path, codigo_base: str) -> None:
     """El lado que pierde un conflicto (mtime más antiguo) se respalda ANTES de sobrescribir --
     nunca se descarta en silencio. No es un snapshot 'oficial' (no bumpea version: ni entra al
@@ -281,10 +303,11 @@ def _mirror_registro_local_doc(slug: str, remoto: dict) -> None:
     core.guardar_org(slug, org)
 
 
-def sincronizar_documento(slug: str, codigo_base: str) -> None:
+def sincronizar_documento(slug: str, codigo_base: str, on_evento: EventoSync | None = None) -> None:
     """Sincroniza UN documento (usado tras new/save/compile/add -- no vale la pena barrer todas
     las organizaciones por un solo cambio). Silencioso si no hay sesión activa: el llamador
-    decide si eso amerita una advertencia."""
+    decide si eso amerita una advertencia. `on_evento` es opcional (ver _notificar) -- ningún
+    llamador de la CLI lo pasa, así que su comportamiento no cambia."""
     sesion = sesion_activa()
     if sesion is None:
         return
@@ -305,11 +328,15 @@ def sincronizar_documento(slug: str, codigo_base: str) -> None:
     if remoto is None:
         if typ_local.exists():
             _subir_carpeta(cookie, ruta_sync, carpeta)
+            _notificar(on_evento, tipo="documento", slug=slug, nombre=codigo_base,
+                       accion="subida", archivo_principal=typ_local)
         return
     if not typ_local.exists():
         _bajar_carpeta(cookie, ruta_archivos, ruta_archivo, carpeta,
                         f"{codigo_base}.typ", ruta_typ)
         _mirror_registro_local_doc(slug, remoto)
+        _notificar(on_evento, tipo="documento", slug=slug, nombre=codigo_base,
+                   accion="bajada", archivo_principal=typ_local)
         return
 
     hash_local = _hash_carpeta(carpeta)
@@ -325,14 +352,19 @@ def sincronizar_documento(slug: str, codigo_base: str) -> None:
                 print(f"  {codigo_base}: en edición en otro equipo, no se sube esta vez")
                 return
             raise
+        _notificar(on_evento, tipo="documento", slug=slug, nombre=codigo_base,
+                   accion="subida", archivo_principal=typ_local)
     else:
         _respaldar_documento_perdedor(carpeta, codigo_base)
         _mirror_registro_local_doc(slug, remoto)
         _bajar_carpeta(cookie, ruta_archivos, ruta_archivo, carpeta,
                         f"{codigo_base}.typ", ruta_typ)
+        _notificar(on_evento, tipo="documento", slug=slug, nombre=codigo_base,
+                   accion="bajada", archivo_principal=typ_local)
 
 
-def _sincronizar_plantilla(slug: str, nombre: str, remoto: dict | None) -> None:
+def _sincronizar_plantilla(slug: str, nombre: str, remoto: dict | None,
+                            on_evento: EventoSync | None = None) -> None:
     carpeta = core.plantilla_dir(slug, nombre)
     sesion = sesion_activa()
     cookie = sesion["cookie"]
@@ -345,9 +377,13 @@ def _sincronizar_plantilla(slug: str, nombre: str, remoto: dict | None) -> None:
     if remoto is None:
         if lib_local.exists():
             _subir_carpeta(cookie, ruta_sync, carpeta)
+            _notificar(on_evento, tipo="plantilla", slug=slug, nombre=nombre,
+                       accion="subida", archivo_principal=lib_local)
         return
     if not lib_local.exists():
         _bajar_carpeta(cookie, ruta_archivos, ruta_archivo, carpeta, "lib.typ", ruta_lib)
+        _notificar(on_evento, tipo="plantilla", slug=slug, nombre=nombre,
+                   accion="bajada", archivo_principal=lib_local)
         return
 
     hash_local = _hash_carpeta(carpeta)
@@ -357,16 +393,23 @@ def _sincronizar_plantilla(slug: str, nombre: str, remoto: dict | None) -> None:
     mtime_local = lib_local.stat().st_mtime
     if mtime_local >= remoto["mtime"]:
         _subir_carpeta(cookie, ruta_sync, carpeta)
+        _notificar(on_evento, tipo="plantilla", slug=slug, nombre=nombre,
+                   accion="subida", archivo_principal=lib_local)
     else:
         # Sin respaldo automático: las plantillas ya tienen su propio historial manual
         # (`doctyp template save` / "Guardar plantilla"), y el daemon corre cada
         # INTERVALO_SEGUNDOS -- versionar acá inundaba .snapshots/ con una copia por tick.
         _bajar_carpeta(cookie, ruta_archivos, ruta_archivo, carpeta, "lib.typ", ruta_lib)
+        _notificar(on_evento, tipo="plantilla", slug=slug, nombre=nombre,
+                   accion="bajada", archivo_principal=lib_local)
 
 
-def sincronizar_todo() -> list[str]:
+def sincronizar_todo(on_evento: EventoSync | None = None) -> list[str]:
     """`doctyp login`/`doctyp sync`: todas las organizaciones de la cuenta remota. Devuelve la
-    lista de slugs sincronizados (para el mensaje de confirmación del comando)."""
+    lista de slugs sincronizados (para el mensaje de confirmación del comando). `on_evento`
+    (opcional) recibe un dict por cada transferencia real -- hoy solo lo usa el daemon en
+    segundo plano para alimentar el tooltip de la bandeja del sistema (doctyp_tray.py); la CLI
+    (cmd_sync/cmd_login) no lo pasa, así que su salida no cambia."""
     sesion = sesion_activa()
     if sesion is None:
         raise SyncError("no hay sesión remota activa (usa 'doctyp login <email>')")
@@ -388,7 +431,7 @@ def sincronizar_todo() -> list[str]:
         locales_doc = {p.name for p in carpeta_org.iterdir() if p.is_dir()} if carpeta_org.exists() else set()
         for codigo_base in sorted(remotos_doc.keys() | locales_doc):
             try:
-                sincronizar_documento(slug, codigo_base)
+                sincronizar_documento(slug, codigo_base, on_evento=on_evento)
             except SyncError as e:
                 print(f"  advertencia: {slug}/{codigo_base} no se sincronizó ({e})")
                 continue
@@ -397,6 +440,6 @@ def sincronizar_todo() -> list[str]:
         base_tpl = core.org_dir(slug) / "templates"
         locales_tpl = {p.name for p in base_tpl.iterdir() if p.is_dir()} if base_tpl.exists() else set()
         for nombre in sorted(remotos_tpl.keys() | locales_tpl):
-            _sincronizar_plantilla(slug, nombre, remotos_tpl.get(nombre))
+            _sincronizar_plantilla(slug, nombre, remotos_tpl.get(nombre), on_evento=on_evento)
 
     return [o["slug"] for o in orgs]

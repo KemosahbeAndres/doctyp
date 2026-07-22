@@ -463,6 +463,7 @@ y estructuras **no existen** — no los uses ni los des por hechos.
 | 18 | **Docker** (PLAN-V4.md §2, §7): Dockerfile + docker-compose.yml + compose.override.yml, sin puerto publicado (Traefik descubre el servicio por red compartida). Ver PLAN-V4.md §7 para el detalle de la ejecución (2026-07-17) — el túnel de preview de tinymist bajo `/preview/…` queda pendiente. | **Completada** (parcial, ver PLAN-V4.md §7) |
 | 19 | **Registro en SQLite** (PLAN-V4.md §3, §7): `doctyp_db.py` reemplaza `org.json` como fuente de verdad de organizaciones/equipos/autores/documentos/versiones/correlativos; `doctyp migrate` (+ `--check`) archiva los JSON como `*.migrated`. **A partir de aquí, toda referencia a `org.json` en este documento (§0, §1, §2, §4, etc.) es histórica** — el registro vive en `doctyp.db`, ver PLAN-V4.md §3/§7 para el detalle. | **Completada** (2026-07-17, ver PLAN-V4.md §7) |
 | 20 | **Login básico** (PLAN-V4.md §4, §7): `doctyp_auth.py`, scrypt, sesiones por cookie, bootstrap (sin usuarios → alta del primer usuario; único usuario sin password → fijarla en el primer login). Alcance recortado respecto al plan original (sin `api_tokens`, sin roles/admin en la SPA, sin invitaciones) — ver PLAN-V4.md §7 para el detalle y lo que falta. | **Completada** (alcance reducido, ver PLAN-V4.md §7) |
+| 21 | **Icono de bandeja del sistema** para `doctyp_sync_daemon.py` (pedido explícito del usuario, 2026-07-21, Fedora/KDE Plasma): tooltip con usuario logueado y último documento/plantilla sincronizado (nombre, tamaño, fecha/hora). El daemon posee el icono directamente (mismo proceso, sin IPC), vía `PySide6` (Qt) — degrada a headless si falta la dependencia o no hay sesión gráfica. Ver nota debajo de la tabla. | **Completada** (ver nota — verificación visual del icono real en KDE pendiente por el usuario) |
 
 
 **Nota sobre el alcance real de la Etapa 12** (investigación hecha leyendo el paquete instalado
@@ -1285,6 +1286,102 @@ regla de §0 "Plan antes de código" para cambios estructurales):
   `compilar_vista_previa_plantilla()` (Etapa 8/9) se eliminaron por completo junto con los
   endpoints `POST .../vista-previa` — sin ningún llamador tras el cambio. `compilar_typ()` /
   `generar_miniatura()` / `generar_miniatura_plantilla()` no se tocaron.
+
+**Bug encontrado y corregido (2026-07-21, fuera de cualquier etapa numerada): el daemon de
+sincronización inundaba `.snapshots/` de plantillas con "respaldos" automáticos.** Cada tick de
+`doctyp_sync_daemon.py` (cada `INTERVALO_SEGUNDOS` = 5s) que resolvía un conflicto de
+sincronización de una plantilla (mtime local más antiguo que el remoto, contenido distinto)
+llamaba a `core.guardar_version_plantilla(..., "Respaldo automático por sincronización
+(conflicto)")` (`doctyp_sync.py: _sincronizar_plantilla`, antes de este fix) — a diferencia del
+mismo caso para documentos (`_respaldar_documento_perdedor`, una copia simple sin indexar), para
+plantillas esto creaba una versión real e indexada en `.snapshots/index.json` en CADA tick que
+detectaba diferencia, no solo en conflictos genuinos poco frecuentes. Con el daemon corriendo
+en segundo plano de forma continua, esto llegó a generar 110 versiones espurias
+(`lib_v1.typ`…`lib_v110.typ`) en la plantilla `informe-ti` de `slep-chinchorro` en menos de un
+día. El usuario no quiere respaldos automáticos de plantillas en absoluto — ya tienen
+versionado manual (`doctyp template save` / "Guardar plantilla" en la web) para rollback. Fix:
+`_sincronizar_plantilla` ahora solo descarga y sobrescribe `lib.typ` en ese caso, sin llamar a
+`guardar_version_plantilla` (`doctyp_sync.py:358-361`). El respaldo de documentos
+(`_respaldar_documento_perdedor`) no se tocó — no fue el problema reportado, y no es un
+snapshot indexado (no aparece en `template history`/`doc history`). Limpieza de los datos ya
+generados: el usuario borró manualmente los `lib_v*.typ` sobrantes; `.snapshots/index.json` de
+`informe-ti` se reescribió a mano para reflejar solo los 2 snapshots que quedaron en disco
+(`lib_v1.typ` del 2026-07-20, `lib_v2.typ` — renombrado desde el `lib_v110.typ` que sobrevivió
+— del 2026-07-21), sin usar ningún comando (no existe un comando de "compactar" el índice).
+
+**Nota sobre el alcance real de la Etapa 21** (icono de bandeja del sistema, pedido explícito
+del usuario 2026-07-21, plan discutido y aprobado antes de implementar — CLAUDE.md §0):
+
+- **`doctyp_tray.py` (nuevo)**: todo lo específico de Qt vive acá, para no acoplar
+  `doctyp_sync.py`/`doctyp_sync_daemon.py` a `PySide6` — es la **única dependencia Python fuera
+  de stdlib de todo el proyecto** (decisión explícita del usuario: Qt, no GTK, porque su
+  escritorio es KDE Plasma — `$XDG_CURRENT_DESKTOP=KDE`, sesión Wayland — y KDE soporta
+  `QSystemTrayIcon`/StatusNotifierItem nativamente, sin necesitar una extensión como sí haría
+  falta en GNOME estándar). El import de `PySide6` está detrás de un `try/except ImportError` a
+  nivel de módulo (`_PYSIDE_DISPONIBLE`), y las clases que heredan de tipos de Qt
+  (`DoctypTrayIcon`) quedan definidas condicionalmente dentro de ese guard — el módulo importa
+  limpio aunque `PySide6` no esté instalado.
+- **Guard de disponibilidad de tres capas** (`disponible()`): (a) `PySide6` importó bien, (b)
+  `DISPLAY`/`WAYLAND_DISPLAY` seteado en el entorno (evita que Qt intente conectarse sin sesión
+  gráfica — riesgo real bajo el `systemd --user` del autoarranque, `init` §7, que no siempre
+  hereda el entorno de la sesión de escritorio), (c) tras crear `QApplication`,
+  `QSystemTrayIcon.isSystemTrayAvailable()` es `True`. Si cualquiera falla,
+  `doctyp_sync_daemon.py: _loop_con_bandeja` devuelve `False` sin efectos secundarios y
+  `ejecutar_foreground()` cae al loop headless de siempre — el daemon nunca deja de sincronizar
+  por esto, con o sin icono.
+- **El daemon posee el icono directamente** (decisión explícita del usuario: sin IPC, sin
+  segundo proceso). `_loop_con_bandeja()` reemplaza el `while` + `time.sleep` habitual por
+  `QApplication.exec()` con un `QTimer` (cada `INTERVALO_SEGUNDOS`) que llama a `un_tick()`, más
+  un segundo `QTimer` corto (300 ms) cuyo único propósito es dejar que el intérprete de Python
+  atienda `SIGTERM`/`SIGINT` a tiempo (el loop C++ de Qt bloquea el chequeo de señales de
+  Python; sin ese timer frecuente, `Ctrl+C`/`doctyp logout` podrían demorar hasta 5s en
+  surtir efecto).
+- **Qué muestra el tooltip**: usuario logueado (`sync.sesion_activa()["email"]`), y del último
+  documento/plantilla realmente transferido (no de cada tick — la mayoría son no-ops por hash
+  igual, `doctyp_sync.py:384-386`): tipo, nombre, archivo, tamaño legible (B/KB/MB/GB) y
+  fecha/hora, más si el último intento de sincronización fue exitoso o falló. Para esto,
+  `sincronizar_documento`/`_sincronizar_plantilla`/`sincronizar_todo` (`doctyp_sync.py`) ganaron
+  un parámetro opcional `on_evento` (default `None`) que se invoca solo tras una transferencia
+  real (nunca en el `return` temprano por hash idéntico) — la CLI (`cmd_sync`/`cmd_login`,
+  `doctyp.py`) no lo pasa, así que su comportamiento no cambió. `un_tick()` ahora devuelve
+  `(ok, detalle)` en vez de nada, para que la rama gráfica sepa qué mostrar; el loop headless
+  sigue ignorando el valor de retorno.
+- **Menú contextual mínimo** (clic derecho): "Sincronizar ahora" (dispara `un_tick()` fuera del
+  timer) y "Salir" — un icono de bandeja sin forma de cerrarlo desde la UI obligaría a matar el
+  proceso por terminal, así que se incluyó por defecto sin que el usuario lo pidiera
+  explícitamente (señalado en el plan antes de implementar, no fue una sorpresa).
+- **Icono dibujado en runtime** (`QPainter` sobre un `QPixmap`, glifo simple: cuadrado
+  redondeado azul con una "d" blanca) — sin asset binario nuevo en el repo; no existía ningún
+  logo/favicon propio de la app (fuera de los institucionales de cada organización, que no
+  aplican acá porque el icono representa el daemon, no una org en particular).
+- **`init`**: nuevo paso 4b (mismo patrón best-effort que tinymist, paso 4) que intenta
+  `pkg_install python3-pyside6` en Fedora (nombre de paquete sin verificar contra el repo real
+  al escribir esto) y si falla cae a `pip install --user PySide6-Essentials` (paquete más
+  liviano que `PySide6` completo — solo trae QtCore/QtGui/QtWidgets, lo único que usa
+  `doctyp_tray.py`, sin QtQml/QtQuick/Designer). Si ambos fallan, solo avisa y continúa — nunca
+  aborta la instalación. `init.ps1` (Windows) **no se tocó** — el pedido del usuario fue
+  específicamente Fedora/Linux; el guard de `disponible()` ya hace que Windows sin `PySide6`
+  siga funcionando en modo headless sin cambios.
+- **Verificado en esta sesión**: `python3 -m py_compile` sobre los 4 archivos tocados;
+  `PySide6-Essentials` instalado real (vía pip) en el entorno de trabajo y probado en vivo —
+  `QApplication` se conecta al compositor Wayland real (`app.platformName() == "wayland"`), y
+  el daemon completo (`python3 doctyp.py _sync-daemon`) corrido en primer plano confirma la
+  secuencia esperada: intenta la rama con bandeja, cae a headless limpiamente, tickea con la
+  nueva firma de `on_evento`/`(ok, detalle)` sin errores, y se apaga limpio con `SIGTERM`
+  (pidfile borrado, log "daemon detenido").
+  **No verificado con el icono real visible en la bandeja de KDE**: el entorno de trabajo de
+  esta sesión corre dentro de un sandbox Flatpak (el mismo que ya afecta a `typst`/`tinymist`,
+  ver §10/§13) cuyo proxy de D-Bus (`DBUS_SESSION_BUS_ADDRESS=unix:path=/run/flatpak/bus`) no
+  expone `org.kde.StatusNotifierWatcher` — `QSystemTrayIcon.isSystemTrayAvailable()` da `False`
+  ahí aunque la conexión a Wayland funciona bien, así que el daemon cae a headless también en
+  este sandbox (una demostración en vivo de que el fallback funciona, pero no del icono en sí).
+  Falta que el usuario corra `python3 doctyp.py _sync-daemon` (o `doctyp sync`) directo en su
+  terminal real (fuera de cualquier sandbox) y confirme visualmente: el icono aparece en la
+  bandeja de KDE, el hover muestra el tooltip esperado, el menú contextual funciona, y
+  "Sincronizar ahora"/"Salir" hacen lo que dicen.
+- **Sin tocar durante esta etapa**: `_respaldar_documento_perdedor` (backup de documentos en
+  conflicto de sync, sin relación con este pedido); ningún cambio de estilo/UI de la SPA web
+  (el pedido fue exclusivamente sobre el daemon nativo, no sobre `doctyp web`).
 
 ---
 

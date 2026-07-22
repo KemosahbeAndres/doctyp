@@ -167,6 +167,35 @@ else
 fi
 
 # --------------------------------------------------------------------------
+# 4b) PySide6 (icono de bandeja del daemon de sincronización, doctyp_tray.py)
+# --------------------------------------------------------------------------
+# Única dependencia Python fuera de stdlib de todo el proyecto -- por eso es best-effort, igual
+# que tinymist arriba: si falta, doctyp_tray.disponible() devuelve False en runtime y el daemon
+# sigue sincronizando en el loop headless de siempre, solo que sin icono. Nunca aborta init.
+info "Comprobando PySide6 (icono de bandeja)..."
+if python3 -c "import PySide6" >/dev/null 2>&1; then
+  ok "PySide6 presente."
+else
+  # Nombre de paquete de Fedora sin verificar contra el repo real al escribir esto -- si falla
+  # (dnf no lo tiene, u otra distro), se cae a pip sin abortar. PySide6-Essentials (QtCore/
+  # QtGui/QtWidgets, lo único que usa doctyp_tray.py) pesa bastante menos que el paquete
+  # PySide6 completo (que además trae QtQml/QtQuick/Designer, sin uso acá).
+  instalado=0
+  if [ "$DISTRO" = "fedora" ] && pkg_install python3-pyside6 >/dev/null 2>&1; then
+    instalado=1
+  elif command -v python3 >/dev/null 2>&1 && python3 -m pip install --user PySide6-Essentials >/dev/null 2>&1; then
+    instalado=1
+  fi
+  if [ "$instalado" = "1" ]; then
+    ok "PySide6 instalado."
+  else
+    warn "No se pudo instalar PySide6 automáticamente. El daemon de sincronización seguirá"
+    warn "funcionando sin icono de bandeja. Instálalo manualmente si lo quieres:"
+    warn "  python3 -m pip install --user PySide6-Essentials"
+  fi
+fi
+
+# --------------------------------------------------------------------------
 # 5) Datos del autor (settings.json -> local.author)
 # --------------------------------------------------------------------------
 # Se piden interactivamente y se guardan globalmente; al crear documentos, doctyp los usa por
